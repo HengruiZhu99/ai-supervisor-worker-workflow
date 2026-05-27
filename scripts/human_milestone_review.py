@@ -226,6 +226,17 @@ def prune_accepted_job_refs(review_record: Path) -> str:
     return output or "No accepted job refs needed pruning."
 
 
+def commit_workflow_records(message: str) -> str:
+    script = Path(__file__).resolve().parent / "commit_workflow_records.py"
+    if not script.exists():
+        return f"Workflow record commit skipped: helper not found at {script}"
+    result = run(["python3", str(script), "--message", message])
+    output = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+    if result.returncode != 0:
+        return output or "Workflow record commit failed with no output."
+    return output or "No workflow record changes to commit."
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--gate", default=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md")
@@ -268,6 +279,8 @@ def main() -> int:
         print(f"Archived gate: {archived_gate}")
         print("\nAccepted job branch/worktree pruning:")
         print(prune_output)
+        print("\nWorkflow record commit:")
+        print(commit_workflow_records("workflow: record human milestone approval"))
         return 0
 
     active = active_jobs()
@@ -296,6 +309,8 @@ def main() -> int:
     print(f"Review record: {review_record}")
     print(f"Archived gate: {archived_gate}")
     print(f"Revision job created: {job_path}")
+    print("\nWorkflow record commit:")
+    print(commit_workflow_records("workflow: record human milestone review"))
     return 0
 
 

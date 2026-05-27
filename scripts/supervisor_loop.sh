@@ -25,6 +25,10 @@ done
 
 mkdir -p "$SUPERVISOR_RUNS_DIR"
 
+commit_workflow_records() {
+  python3 scripts/commit_workflow_records.py --message "workflow: record supervisor state" || true
+}
+
 job_signature() {
   {
     if [[ -f "$HUMAN_GATE" ]]; then
@@ -162,9 +166,12 @@ PROMPT
       echo
       echo "- Inspect $log_file and decide whether to rerun the supervisor loop or intervene manually."
     } >"$HUMAN_GATE"
+    commit_workflow_records
     echo "HUMAN_REVIEW_REQUIRED: $HUMAN_GATE"
     return "$codex_exit"
   fi
+
+  commit_workflow_records
 }
 
 last_signature=""

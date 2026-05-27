@@ -8,6 +8,7 @@ It provides:
 - optional Codex supervisor automation loop
 - local browser dashboard for jobs, worker/supervisor state, worktrees, roadmap, and project status
 - automatic pruning of accepted job worktrees and local branches after human milestone approval
+- separate workflow-state commits for `.ai` audit records after supervisor or human-review updates
 - reusable scientific coding skills
 - dependency-free Python helper scripts
 - generic `.ai/` templates
@@ -60,7 +61,7 @@ external/ai-supervisor-worker-workflow/install.sh .
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/human_milestone_review.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/human_milestone_review.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
 ```
 
 ## Dashboard

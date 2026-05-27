@@ -781,6 +781,22 @@ def prune_accepted_job_refs(root: Path, review_record: Path) -> tuple[bool, str]
     return result.returncode == 0, output or "No accepted job refs needed pruning."
 
 
+def commit_workflow_records(root: Path, message: str) -> tuple[bool, str]:
+    script = PACKAGE_ROOT / "scripts" / "commit_workflow_records.py"
+    if not script.exists():
+        return False, f"Workflow record commit skipped: helper not found at {script}"
+    result = subprocess.run(
+        ["python3", str(script), "--message", message],
+        cwd=str(root),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    output = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+    return result.returncode == 0, output or "No workflow record changes to commit."
+
+
 def write_human_review(root: Path, decisions: list[dict]) -> dict:
     gate_path = root / ".ai" / "supervisor" / "HUMAN_REVIEW_REQUIRED.md"
     if not gate_path.exists():
@@ -829,6 +845,7 @@ def write_human_review(root: Path, decisions: list[dict]) -> dict:
             handle.write("- Accepted job branch/worktree pruning:\n")
             for line in prune_output.splitlines():
                 handle.write(f"  - {line}\n")
+        commit_ok, commit_output = commit_workflow_records(root, "workflow: record human milestone approval")
         return {
             "ok": True,
             "message": "Human review approved. Gate archived.",
@@ -836,6 +853,8 @@ def write_human_review(root: Path, decisions: list[dict]) -> dict:
             "archived_gate": str(archived_gate.relative_to(root)),
             "prune_ok": prune_ok,
             "prune_output": prune_output,
+            "commit_ok": commit_ok,
+            "commit_output": commit_output,
         }
 
     active = active_jobs(root)
@@ -904,12 +923,15 @@ def write_human_review(root: Path, decisions: list[dict]) -> dict:
     )
     if result.returncode != 0:
         return {"ok": False, "message": result.stderr or result.stdout or "failed to create revision job"}
+    commit_ok, commit_output = commit_workflow_records(root, "workflow: record human milestone review")
     return {
         "ok": True,
         "message": "Changes requested. Revision job created.",
         "job_path": result.stdout.strip(),
         "review_record": str(review_record.relative_to(root)),
         "archived_gate": str(archived_gate.relative_to(root)),
+        "commit_ok": commit_ok,
+        "commit_output": commit_output,
     }
 
 

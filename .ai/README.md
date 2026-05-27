@@ -132,6 +132,8 @@ The same approval and pruning behavior is available through the dashboard human 
 
 Manual per-job review is still possible. Stop `scripts/supervisor_loop.sh` and ask Codex to review a `ready_for_review` job if you want to inspect a specific job yourself.
 
+Workflow record commits are kept separate from implementation commits when possible. The supervisor and human-review helpers use `scripts/commit_workflow_records.py` to commit `.ai` job records, commit documentation, human-review records, ledger updates, and roadmap updates without mixing them into scientific source commits.
+
 ## Commit Documentation
 
 Each worker attempt should produce a markdown file under:
@@ -156,6 +158,6 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/human_milestone_review.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/human_milestone_review.py scripts/workflow_gui.py
 python3 scripts/summarize_jobs.py
 ```

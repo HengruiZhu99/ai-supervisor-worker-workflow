@@ -125,6 +125,10 @@ If the main worktree has unrelated uncommitted changes that prevent integration,
 
 After a human milestone review is approved, run the accepted-job pruning helper for that approved review record. The helper removes only accepted job worktrees and local worker branches listed in the approved milestone review. Preserve all `.ai/jobs/`, `.ai/commit_docs/`, review records, logs, reports, and patches. Do not prune queued, running, rejected, blocked, or ready-for-review jobs.
 
+## Workflow record commit protocol
+
+Keep `.ai` audit records reviewable but separate from implementation commits. After accepting, rejecting, dispatching, or opening/archiving a human milestone gate, commit workflow records with `python3 scripts/commit_workflow_records.py --message "workflow: record supervisor state"` or a more specific workflow message. The helper stages only `.ai` job records, commit documentation, ledger, roadmap, and human-review records.
+
 ## Rejection protocol
 
 If rejected:

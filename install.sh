@@ -62,6 +62,7 @@ files=(
   "gui/index.html"
   "scripts/create_commit_doc.py"
   "scripts/create_job.py"
+  "scripts/commit_workflow_records.py"
   "scripts/cursor_stream_to_text.py"
   "scripts/human_milestone_review.py"
   "scripts/prune_accepted_job_refs.py"
@@ -83,6 +84,7 @@ done
 
 merge_gitignore
 chmod +x \
+  "$TARGET_DIR/scripts/commit_workflow_records.py" \
   "$TARGET_DIR/scripts/worker_loop.sh" \
   "$TARGET_DIR/scripts/supervisor_loop.sh" \
   "$TARGET_DIR/scripts/human_milestone_review.py" \
