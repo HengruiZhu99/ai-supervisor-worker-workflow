@@ -126,6 +126,8 @@ python3 scripts/human_milestone_review.py
 
 Answer `yes` or `no` for every review item. If an item fails, enter comments when prompted. The script will still cycle through the rest of the list, archive the gate, record the review, and create one revision worker job for all failed items.
 
+For major architecture, dependency, or roadmap changes, use the dashboard's Major Structural Change box or answer yes to the CLI structural-change prompt. That path supersedes the checklist outcome and creates a dedicated structural revision job instead of a normal checklist revision.
+
 If every item passes, the script archives the gate, records approval, and prunes accepted job worktrees and local `ai/JNNNN` branches listed in the approved milestone review. `.ai/jobs/` and `.ai/commit_docs/` records are preserved. Active, rejected, blocked, and ready-for-review jobs are not pruned.
 
 The same approval and pruning behavior is available through the dashboard human review panel.

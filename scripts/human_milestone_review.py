@@ -96,16 +96,18 @@ def write_review_record(
     gate_path: Path,
     gate_text: str,
     decisions: list[dict[str, str | bool]],
+    result_label: str | None = None,
 ) -> Path:
     reviews_dir.mkdir(parents=True, exist_ok=True)
     out_path = reviews_dir / f"human_review_{stamp}.md"
     failed = [item for item in decisions if not item["passed"]]
+    result = result_label or ("changes_requested" if failed else "approved")
     lines = [
         "# Human Milestone Review Record",
         "",
         f"- Gate file: `{gate_path}`",
         f"- Reviewed at: `{stamp}`",
-        f"- Result: `{'changes_requested' if failed else 'approved'}`",
+        f"- Result: `{result}`",
         "",
         "## Checklist Results",
         "",
@@ -186,6 +188,61 @@ def create_revision_task(
     return task_path
 
 
+def create_structural_change_task(
+    reviews_dir: Path,
+    stamp: str,
+    gate_path: Path,
+    review_record: Path,
+    comment: str,
+) -> Path:
+    task_path = reviews_dir / f"structural_change_task_{stamp}.md"
+    lines = [
+        "# Major Structural Change Revision Job",
+        "",
+        "## Objective",
+        "",
+        "Revise the project architecture plan, roadmap, and workflow records to reflect the human-requested structural change below.",
+        "",
+        "## Scope",
+        "",
+        "Allowed:",
+        "- Update roadmap, project brief, ledger, build/dependency policy, and documentation needed to encode the structural decision.",
+        "- Create or revise future job sequencing so implementation follows the new architecture.",
+        "- Keep any existing accepted reference implementations as reference/test-oracle paths unless the human request explicitly says otherwise.",
+        "",
+        "Not allowed:",
+        "- Do not start broad scientific implementation work in this revision job.",
+        "- Do not discard accepted work unless the structural change explicitly requires it.",
+        "- Do not broaden beyond the requested architectural/roadmap correction.",
+        "",
+        "## Review Context",
+        "",
+        f"- Milestone gate: `{gate_path}`",
+        f"- Human review record: `{review_record}`",
+        "",
+        "## Human Structural Change Request",
+        "",
+        comment or "No structural change details provided.",
+        "",
+        "## Required Validation",
+        "",
+        "Run documentation/workflow validation that is relevant to the edited files, and run `python3 scripts/summarize_jobs.py`.",
+        "",
+        "## Worker Report Contract",
+        "",
+        "Return:",
+        "1. Summary",
+        "2. Files changed",
+        "3. Commits made",
+        "4. Validation run and results",
+        "5. Architecture decisions recorded",
+        "6. Known limitations",
+        "7. Suggested next jobs",
+    ]
+    task_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return task_path
+
+
 def create_job(title: str, base_ref: str, test_command: str, task_file: Path) -> str:
     result = run(
         [
@@ -254,18 +311,76 @@ def main() -> int:
 
     decisions: list[dict[str, str | bool]] = []
     print(f"Human milestone review: {gate_path}")
-    print(f"Reviewing {len(items)} item(s). Answer every item; failed items will become one revision job.")
-    for index, item in enumerate(items, 1):
-        print(f"\n{index}. {item}")
-        passed = ask_yes_no("Pass")
-        comment = "" if passed else ask_comment()
-        decisions.append({"item": item, "passed": passed, "comment": comment})
+    structural_requested = ask_yes_no(
+        "Major structural change request? This supersedes the checklist review"
+    )
+    structural_comment = ""
+    if structural_requested:
+        structural_comment = ask_comment()
+        decisions.append(
+            {
+                "item": "Major structural change request superseded checklist review",
+                "passed": False,
+                "comment": structural_comment,
+            }
+        )
+    else:
+        print(f"Reviewing {len(items)} item(s). Answer every item; failed items will become one revision job.")
+        for index, item in enumerate(items, 1):
+            print(f"\n{index}. {item}")
+            passed = ask_yes_no("Pass")
+            comment = "" if passed else ask_comment()
+            decisions.append({"item": item, "passed": passed, "comment": comment})
 
     stamp = utc_stamp()
     reviews_dir = Path(".ai/supervisor/human_reviews")
-    review_record = write_review_record(reviews_dir, stamp, gate_path, gate_text, decisions)
+    review_record = write_review_record(
+        reviews_dir,
+        stamp,
+        gate_path,
+        gate_text,
+        decisions,
+        "structural_change_requested" if structural_requested else None,
+    )
     archived_gate = reviews_dir / f"HUMAN_REVIEW_REQUIRED_{stamp}.md"
     shutil.move(str(gate_path), archived_gate)
+
+    if structural_requested:
+        active = active_jobs()
+        if active:
+            append_ledger(
+                "- Human milestone review requested a major structural change, but no structural revision job was created because active jobs remain: "
+                + ", ".join(active)
+                + f". Record: `{review_record}`."
+            )
+            print("\nMajor structural change requested, but active jobs remain. No revision job created:")
+            for item in active:
+                print(f"- {item}")
+            print(f"Review record: {review_record}")
+            print(f"Archived gate: {archived_gate}")
+            return 1
+
+        base_result = run(["git", "rev-parse", "HEAD"])
+        base_ref = base_result.stdout.strip() if base_result.returncode == 0 else "HEAD"
+        task_file = create_structural_change_task(
+            reviews_dir, stamp, archived_gate, review_record, structural_comment
+        )
+        job_path = create_job(
+            "Address major structural change request",
+            base_ref,
+            "python3 scripts/summarize_jobs.py",
+            task_file,
+        )
+        append_ledger(
+            f"- Human milestone review requested a major structural change. Record: `{review_record}`. Structural revision job created: `{job_path}`."
+        )
+        print("\nMajor structural change requested.")
+        print(f"Review record: {review_record}")
+        print(f"Archived gate: {archived_gate}")
+        print(f"Structural revision job created: {job_path}")
+        print("\nWorkflow record commit:")
+        print(commit_workflow_records("workflow: record major structural change request"))
+        return 0
 
     failed = [item for item in decisions if not item["passed"]]
     if not failed:

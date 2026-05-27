@@ -129,6 +129,10 @@ After a human milestone review is approved, run the accepted-job pruning helper 
 
 Keep `.ai` audit records reviewable but separate from implementation commits. After accepting, rejecting, dispatching, or opening/archiving a human milestone gate, commit workflow records with `python3 scripts/commit_workflow_records.py --message "workflow: record supervisor state"` or a more specific workflow message. The helper stages only `.ai` job records, commit documentation, ledger, roadmap, and human-review records.
 
+## Major structural change protocol
+
+At a human milestone gate, a reviewer may request a major structural change that supersedes the normal checklist review. Treat this as an architecture/roadmap revision, not as approval of the milestone and not as a normal failed checklist item. Archive the gate, record the request, and create exactly one structural revision job. That job should update roadmap, project brief, ledger, build/dependency policy, and future job sequencing before further implementation proceeds.
+
 ## Rejection protocol
 
 If rejected:

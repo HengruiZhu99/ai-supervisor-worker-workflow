@@ -797,7 +797,62 @@ def commit_workflow_records(root: Path, message: str) -> tuple[bool, str]:
     return result.returncode == 0, output or "No workflow record changes to commit."
 
 
-def write_human_review(root: Path, decisions: list[dict]) -> dict:
+def create_structural_change_task(
+    reviews_dir: Path,
+    stamp: str,
+    archived_gate: Path,
+    review_record: Path,
+    comment: str,
+) -> Path:
+    task_path = reviews_dir / f"structural_change_task_{stamp}.md"
+    task_lines = [
+        "# Major Structural Change Revision Job",
+        "",
+        "## Objective",
+        "",
+        "Revise the project architecture plan, roadmap, and workflow records to reflect the human-requested structural change below.",
+        "",
+        "## Scope",
+        "",
+        "Allowed:",
+        "- Update roadmap, project brief, ledger, build/dependency policy, and documentation needed to encode the structural decision.",
+        "- Create or revise future job sequencing so implementation follows the new architecture.",
+        "- Keep accepted reference implementations as reference/test-oracle paths unless the human request explicitly says otherwise.",
+        "",
+        "Not allowed:",
+        "- Do not start broad scientific implementation work in this revision job.",
+        "- Do not discard accepted work unless the structural change explicitly requires it.",
+        "- Do not broaden beyond the requested architectural/roadmap correction.",
+        "",
+        "## Review Context",
+        "",
+        f"- Milestone gate: `{archived_gate}`",
+        f"- Human review record: `{review_record}`",
+        "",
+        "## Human Structural Change Request",
+        "",
+        comment or "No structural change details provided.",
+        "",
+        "## Required Validation",
+        "",
+        "Run documentation/workflow validation that is relevant to the edited files, and run `python3 scripts/summarize_jobs.py`.",
+        "",
+        "## Worker Report Contract",
+        "",
+        "Return:",
+        "1. Summary",
+        "2. Files changed",
+        "3. Commits made",
+        "4. Validation run and results",
+        "5. Architecture decisions recorded",
+        "6. Known limitations",
+        "7. Suggested next jobs",
+    ]
+    task_path.write_text("\n".join(task_lines).rstrip() + "\n", encoding="utf-8")
+    return task_path
+
+
+def write_human_review(root: Path, decisions: list[dict], structural_change: dict | None = None) -> dict:
     gate_path = root / ".ai" / "supervisor" / "HUMAN_REVIEW_REQUIRED.md"
     if not gate_path.exists():
         return {"ok": False, "message": "No human review gate exists."}
@@ -808,28 +863,39 @@ def write_human_review(root: Path, decisions: list[dict]) -> dict:
     reviews_dir.mkdir(parents=True, exist_ok=True)
     review_record = reviews_dir / f"human_review_{stamp}.md"
     archived_gate = reviews_dir / f"HUMAN_REVIEW_REQUIRED_{stamp}.md"
+    structural_requested = bool((structural_change or {}).get("requested"))
+    structural_comment = str((structural_change or {}).get("comment", "")).strip()
     failed = [item for item in decisions if not item.get("passed")]
+    result_label = "structural_change_requested" if structural_requested else (
+        "changes_requested" if failed else "approved"
+    )
 
     lines = [
         "# Human Milestone Review Record",
         "",
         f"- Reviewed at: `{stamp}`",
-        f"- Result: `{'changes_requested' if failed else 'approved'}`",
-        "",
-        "## Checklist Results",
+        f"- Result: `{result_label}`",
         "",
     ]
-    for item in decisions:
-        mark = "x" if item.get("passed") else " "
-        label = str(item.get("item", "Unnamed item"))
-        lines.append(f"- [{mark}] {label}")
-        if not item.get("passed"):
-            comment = str(item.get("comment", "")).strip() or "No comment provided."
-            lines.append("")
-            lines.append("  Comment:")
-            for comment_line in comment.splitlines():
-                lines.append(f"  {comment_line}")
-            lines.append("")
+    if structural_requested:
+        lines.extend(["## Major Structural Change", ""])
+        lines.append(structural_comment or "No structural change details provided.")
+        lines.append("")
+        lines.append("Checklist review was superseded by the structural change request.")
+        lines.append("")
+    else:
+        lines.extend(["## Checklist Results", ""])
+        for item in decisions:
+            mark = "x" if item.get("passed") else " "
+            label = str(item.get("item", "Unnamed item"))
+            lines.append(f"- [{mark}] {label}")
+            if not item.get("passed"):
+                comment = str(item.get("comment", "")).strip() or "No comment provided."
+                lines.append("")
+                lines.append("  Comment:")
+                for comment_line in comment.splitlines():
+                    lines.append(f"  {comment_line}")
+                lines.append("")
     lines.extend(["", "## Original Milestone Gate", "", gate_text])
     review_record.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     shutil.move(str(gate_path), archived_gate)
@@ -838,6 +904,54 @@ def write_human_review(root: Path, decisions: list[dict]) -> dict:
     with ledger.open("a", encoding="utf-8") as handle:
         handle.write("\n## Human milestone review update\n\n")
         handle.write(f"- Review record: `{review_record.relative_to(root)}`.\n")
+
+    if structural_requested:
+        active = active_jobs(root)
+        if active:
+            return {
+                "ok": False,
+                "message": "Major structural change requested, but active jobs remain; no structural revision job created.",
+                "active_jobs": active,
+                "review_record": str(review_record.relative_to(root)),
+                "archived_gate": str(archived_gate.relative_to(root)),
+            }
+        task_path = create_structural_change_task(
+            reviews_dir, stamp, archived_gate, review_record, structural_comment
+        )
+        _, base_ref, _ = run(["git", "rev-parse", "HEAD"], root)
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/create_job.py",
+                "--title",
+                "Address major structural change request",
+                "--base-ref",
+                base_ref or "HEAD",
+                "--test-command",
+                "python3 scripts/summarize_jobs.py",
+                "--task-file",
+                str(task_path),
+            ],
+            cwd=str(root),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if result.returncode != 0:
+            return {"ok": False, "message": result.stderr or result.stdout or "failed to create structural revision job"}
+        with ledger.open("a", encoding="utf-8") as handle:
+            handle.write(f"- Major structural change requested. Revision job: `{result.stdout.strip()}`.\n")
+        commit_ok, commit_output = commit_workflow_records(root, "workflow: record major structural change request")
+        return {
+            "ok": True,
+            "message": "Major structural change requested. Structural revision job created.",
+            "job_path": result.stdout.strip(),
+            "review_record": str(review_record.relative_to(root)),
+            "archived_gate": str(archived_gate.relative_to(root)),
+            "commit_ok": commit_ok,
+            "commit_output": commit_output,
+        }
 
     if not failed:
         prune_ok, prune_output = prune_accepted_job_refs(root, review_record)
@@ -1006,7 +1120,11 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/human-review":
-            result = write_human_review(self.project_root, list(payload.get("decisions", [])))
+            result = write_human_review(
+                self.project_root,
+                list(payload.get("decisions", [])),
+                payload.get("structural_change") if isinstance(payload.get("structural_change"), dict) else None,
+            )
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return
 

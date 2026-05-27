@@ -225,7 +225,16 @@ function renderHumanReview(supervisor) {
   }
 
   state.humanReviewSignature = signature;
-  form.innerHTML = items.map((item, index) => `
+  form.innerHTML = `
+    <div class="review-item structural-change">
+      <div class="review-question">Major Structural Change</div>
+      <label class="check-line">
+        <input id="structuralChangeRequested" type="checkbox" name="structural-change-requested" />
+        <span>Supersede checklist review and create a structural revision job</span>
+      </label>
+      <textarea id="structuralChangeComment" name="structural-change-comment" placeholder="Architecture, dependency, roadmap, or milestone change request"></textarea>
+    </div>
+  ` + items.map((item, index) => `
     <div class="review-item" data-index="${index}">
       <div class="review-question">${escapeHtml(item)}</div>
       <div class="review-choice">
@@ -328,7 +337,13 @@ $("stopSupervisorButton").addEventListener("click", async () => {
 $("humanReviewForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const items = [...event.currentTarget.querySelectorAll(".review-item")];
-  const decisions = items.map((item) => {
+  const structuralRequested = $("structuralChangeRequested")?.checked || false;
+  const structuralComment = $("structuralChangeComment")?.value || "";
+  if (structuralRequested && !structuralComment.trim()) {
+    alert("Enter the major structural change request before submitting.");
+    return;
+  }
+  const decisions = items.filter((item) => item.dataset.index !== undefined).map((item) => {
     const index = item.dataset.index;
     const label = item.querySelector(".review-question").textContent;
     const choice = item.querySelector(`input[name="review-${index}"]:checked`).value;
@@ -336,7 +351,13 @@ $("humanReviewForm").addEventListener("submit", async (event) => {
     return { item: label, passed: choice === "yes", comment };
   });
   try {
-    const result = await postJson("/api/human-review", { decisions });
+    const result = await postJson("/api/human-review", {
+      decisions,
+      structural_change: {
+        requested: structuralRequested,
+        comment: structuralComment,
+      },
+    });
     alert(result.message || "Human review submitted.");
     await refresh({ refreshStaticPanels: true });
   } catch (error) {

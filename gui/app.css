@@ -456,6 +456,16 @@ textarea {
   padding: 12px;
 }
 
+.structural-change {
+  border-color: rgba(160, 90, 24, 0.38);
+  background: #fff7ec;
+}
+
+.structural-change textarea {
+  margin-top: 10px;
+  min-height: 116px;
+}
+
 .review-question {
   font-weight: 900;
   margin-bottom: 10px;
