@@ -181,7 +181,37 @@ def criterion_is_active(item_text: str, active_contexts: list[str]) -> bool:
     return False
 
 
-def parse_roadmap(text: str, active_contexts: list[str] | None = None) -> list[dict]:
+def human_gate_milestone(gate_text: str) -> str:
+    lines = gate_text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() == "## Milestone":
+            for value in lines[index + 1 :]:
+                value = value.strip()
+                if value:
+                    return value.rstrip(".")
+        match = re.match(r"^##\s+(M\d+:.+)$", line.strip())
+        if match:
+            return match.group(1).rstrip(".")
+    return ""
+
+
+def same_milestone(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    left = left.strip().rstrip(".").lower()
+    right = right.strip().rstrip(".").lower()
+    if left == right:
+        return True
+    left_id = re.match(r"^(m\d+)\b", left)
+    right_id = re.match(r"^(m\d+)\b", right)
+    return bool(left_id and right_id and left_id.group(1) == right_id.group(1))
+
+
+def parse_roadmap(
+    text: str,
+    active_contexts: list[str] | None = None,
+    pending_human_milestone: str = "",
+) -> list[dict]:
     active_contexts = active_contexts or []
     milestones = []
     current: dict | None = None
@@ -192,10 +222,20 @@ def parse_roadmap(text: str, active_contexts: list[str] | None = None) -> list[d
             current = {"title": line[3:].strip(), "items": [], "done": 0, "total": 0}
             continue
         if current and re.match(r"^-\s+\[[ xX]\]", line.strip()):
-            done = "[x]" in line.lower()
+            roadmap_done = "[x]" in line.lower()
             item_text = line.strip()[6:].strip()
-            active = (not done) and criterion_is_active(item_text, active_contexts)
-            current["items"].append({"text": item_text, "done": done, "active": active})
+            pending_human = roadmap_done and same_milestone(current["title"], pending_human_milestone)
+            done = roadmap_done and not pending_human
+            active = pending_human or ((not done) and criterion_is_active(item_text, active_contexts))
+            current["items"].append(
+                {
+                    "text": item_text,
+                    "done": done,
+                    "active": active,
+                    "pending_human_review": pending_human,
+                    "roadmap_done": roadmap_done,
+                }
+            )
             current["total"] += 1
             if done:
                 current["done"] += 1
@@ -209,7 +249,7 @@ def parse_roadmap(text: str, active_contexts: list[str] | None = None) -> list[d
 def active_job_contexts(job_rows: list[dict]) -> list[str]:
     contexts = []
     for job in job_rows:
-        if job.get("state") not in {"queued", "running", "rejected"}:
+        if job.get("state") not in {"queued", "running", "rejected", "ready_for_review", "blocked"}:
             continue
         contexts.append(
             "\n".join(
@@ -230,17 +270,22 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
     ledger = read_text(supervisor / "ledger.md")
     project_brief = read_text(supervisor / "project_brief.md")
     gate_path = supervisor / "HUMAN_REVIEW_REQUIRED.md"
+    gate_text = read_text(gate_path)
     runs_dir = root / ".ai" / "supervisor_runs"
     run_logs = sorted(runs_dir.glob("supervisor.*.log"))
     latest_log = run_logs[-1] if run_logs else None
     return {
         "roadmap": roadmap,
-        "milestones": parse_roadmap(roadmap, active_job_contexts(job_rows)),
+        "milestones": parse_roadmap(
+            roadmap,
+            active_job_contexts(job_rows),
+            human_gate_milestone(gate_text) if gate_path.exists() else "",
+        ),
         "ledger": ledger,
         "project_brief": project_brief,
         "human_gate_exists": gate_path.exists(),
-        "human_gate": read_text(gate_path),
-        "human_gate_checklist": parse_gate_checklist(read_text(gate_path)) if gate_path.exists() else [],
+        "human_gate": gate_text,
+        "human_gate_checklist": parse_gate_checklist(gate_text) if gate_path.exists() else [],
         "latest_supervisor_log": str(latest_log.relative_to(root)) if latest_log else "",
         "latest_supervisor_tail": tail(latest_log, LOG_DISPLAY_LINES) if latest_log else "",
     }
