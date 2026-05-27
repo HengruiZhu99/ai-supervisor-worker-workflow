@@ -74,16 +74,18 @@ The supervisor loop invokes `codex exec` only when action is needed:
 
 It does not ask for human input after every small job. It reviews job reports, tests, diffs, and commit documentation; accepts or rejects jobs; updates the ledger; and dispatches the next small job while the current milestone remains approved.
 
-To choose a Codex model for the supervisor loop:
+The supervisor loop uses your Codex CLI default model unless `CODEX_MODEL` is set. Cursor model ids and Codex model ids are not guaranteed to match.
+
+To choose a Codex-supported model for the supervisor loop:
 
 ```bash
-CODEX_MODEL=gpt-5.5-high ./scripts/supervisor_loop.sh
+CODEX_MODEL=<codex-model-id> ./scripts/supervisor_loop.sh
 ```
 
 To print a heartbeat while the supervisor is waiting:
 
 ```bash
-SUPERVISOR_VERBOSE=1 SUPERVISOR_POLL_SECONDS=60 CODEX_MODEL=gpt-5.5-high ./scripts/supervisor_loop.sh
+SUPERVISOR_VERBOSE=1 SUPERVISOR_POLL_SECONDS=60 ./scripts/supervisor_loop.sh
 ```
 
 ### Step 5
