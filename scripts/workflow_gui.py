@@ -526,6 +526,10 @@ def open_project_file(root: Path, relative_path: str) -> dict:
     return {"ok": True, "message": f"opened {relative_path}", "path": relative_path}
 
 
+def argv_has_script(argv: list[str], script_name: str) -> bool:
+    return any(Path(arg).name == script_name for arg in argv)
+
+
 def process_blocks(root: Path) -> dict:
     blocks = {"worker": [], "supervisor": [], "cursor": [], "codex": []}
     proc_root = Path("/proc")
@@ -533,7 +537,13 @@ def process_blocks(root: Path) -> dict:
         if not proc.name.isdigit():
             continue
         try:
-            cmdline = (proc / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", errors="replace").strip()
+            raw_cmdline = (proc / "cmdline").read_bytes()
+            argv = [
+                part.decode("utf-8", errors="replace")
+                for part in raw_cmdline.split(b"\0")
+                if part
+            ]
+            cmdline = " ".join(argv).strip()
             if not cmdline:
                 continue
             cwd = Path(os.readlink(proc / "cwd"))
@@ -548,9 +558,9 @@ def process_blocks(root: Path) -> dict:
         except OSError:
             state = "?"
         item = {"pid": int(proc.name), "state": state, "cmd": cmdline[:900]}
-        if "/worker_loop.sh" in cmdline:
+        if argv_has_script(argv, "worker_loop.sh"):
             blocks["worker"].append(item)
-        elif "/supervisor_loop.sh" in cmdline:
+        elif argv_has_script(argv, "supervisor_loop.sh"):
             blocks["supervisor"].append(item)
         elif "cursor-agent" in cmdline:
             blocks["cursor"].append(item)
