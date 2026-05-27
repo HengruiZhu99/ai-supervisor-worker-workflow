@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .ai/jobs/*/*.log
 .ai/jobs/*/*.patch
+.ai/jobs/*/*.jsonl
 .ai/jobs/*/cursor_stderr*
 .ai/jobs/*/worker_prompt*
 .ai/supervisor_runs/*.log

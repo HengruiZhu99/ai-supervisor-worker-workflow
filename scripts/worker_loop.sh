@@ -7,6 +7,8 @@ cd "$ROOT"
 CURSOR_TIMEOUT="${CURSOR_TIMEOUT:-3600}"
 CURSOR_MODEL="${CURSOR_MODEL:-gpt-5.5-high}"
 CURSOR_AGENT_EXTRA_ARGS="${CURSOR_AGENT_EXTRA_ARGS:-}"
+CURSOR_OUTPUT_FORMAT="${CURSOR_OUTPUT_FORMAT:-stream-json}"
+CURSOR_STREAM_PARTIAL_OUTPUT="${CURSOR_STREAM_PARTIAL_OUTPUT:-1}"
 WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-0}"
 WORKER_MAX_TIMEOUT_RESUMES="${WORKER_MAX_TIMEOUT_RESUMES:-1}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
@@ -40,10 +42,16 @@ run_cursor_agent() {
   # The workflow protocol around this invocation is intentionally filesystem-based.
   # Set CURSOR_MODEL to choose a model, for example:
   #   CURSOR_MODEL=gpt-5.5-high ./scripts/worker_loop.sh
+  # The default stream-json mode lets the dashboard show partial model output.
+  # Set CURSOR_OUTPUT_FORMAT=text to restore Cursor's plain final-output mode.
   # Set CURSOR_AGENT_EXTRA_ARGS for local flags such as --force if desired.
+  local output_args=(--output-format "$CURSOR_OUTPUT_FORMAT")
+  if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" && "$CURSOR_STREAM_PARTIAL_OUTPUT" == "1" ]]; then
+    output_args+=(--stream-partial-output)
+  fi
   # shellcheck disable=SC2086
   timeout "$CURSOR_TIMEOUT" \
-    cursor-agent -p --trust --workspace "$worktree" --output-format text --model "$CURSOR_MODEL" $CURSOR_AGENT_EXTRA_ARGS "$(cat "$prompt_file")"
+    cursor-agent -p --trust --workspace "$worktree" "${output_args[@]}" --model "$CURSOR_MODEL" $CURSOR_AGENT_EXTRA_ARGS "$(cat "$prompt_file")"
 }
 
 update_status() {
@@ -130,11 +138,20 @@ process_job() {
 
   local cursor_out="$job/cursor_final.attempt-$attempt.md"
   local cursor_err="$job/cursor_stderr.attempt-$attempt.log"
+  local cursor_stream="$job/cursor_stream.attempt-$attempt.jsonl"
   local worker_exit=0
   local timed_out=false
   local worker_error=""
   set +e
-  run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" 2> >(tee "$cursor_err" >&2) | tee "$cursor_out"
+  if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" ]]; then
+    run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" \
+      2> >(tee "$cursor_err" >&2) \
+      | tee "$cursor_stream" \
+      | python3 scripts/cursor_stream_to_text.py \
+      | tee "$cursor_out"
+  else
+    run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" 2> >(tee "$cursor_err" >&2) | tee "$cursor_out"
+  fi
   worker_exit=${PIPESTATUS[0]}
   set -e
   if [[ "$worker_exit" -eq 124 ]]; then
