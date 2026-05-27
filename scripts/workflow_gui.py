@@ -646,9 +646,6 @@ def stop_loop(root: Path, name: str) -> dict:
         targets.add(pid)
     for item in process_blocks(root).get(process_key, []):
         targets.add(int(item.get("pid", 0)))
-    if name == "worker_loop":
-        for item in process_blocks(root).get("cursor", []):
-            targets.add(int(item.get("pid", 0)))
 
     targets = {target for target in targets if target and pid_running(target)}
     if not targets:
