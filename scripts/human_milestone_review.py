@@ -215,6 +215,17 @@ def append_ledger(message: str) -> None:
         handle.write(message.rstrip() + "\n")
 
 
+def prune_accepted_job_refs(review_record: Path) -> str:
+    script = Path(__file__).resolve().parent / "prune_accepted_job_refs.py"
+    if not script.exists():
+        return f"Prune skipped: helper not found at {script}"
+    result = run(["python3", str(script), "--review-record", str(review_record)])
+    output = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+    if result.returncode != 0:
+        return output or "Prune failed with no output."
+    return output or "No accepted job refs needed pruning."
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--gate", default=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md")
@@ -247,9 +258,16 @@ def main() -> int:
 
     failed = [item for item in decisions if not item["passed"]]
     if not failed:
-        append_ledger(f"- Human milestone review approved all items. Record: `{review_record}`.")
+        prune_output = prune_accepted_job_refs(review_record)
+        append_ledger(
+            f"- Human milestone review approved all items. Record: `{review_record}`.\n"
+            "- Accepted job branch/worktree pruning:\n"
+            + "\n".join(f"  - {line}" for line in prune_output.splitlines())
+        )
         print(f"\nApproved. Review record: {review_record}")
         print(f"Archived gate: {archived_gate}")
+        print("\nAccepted job branch/worktree pruning:")
+        print(prune_output)
         return 0
 
     active = active_jobs()
@@ -283,4 +301,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

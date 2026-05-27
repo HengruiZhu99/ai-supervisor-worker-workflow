@@ -64,6 +64,7 @@ files=(
   "scripts/create_job.py"
   "scripts/cursor_stream_to_text.py"
   "scripts/human_milestone_review.py"
+  "scripts/prune_accepted_job_refs.py"
   "scripts/summarize_jobs.py"
   "scripts/supervisor_loop.sh"
   "scripts/update_job_status.py"

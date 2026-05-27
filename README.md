@@ -7,6 +7,7 @@ It provides:
 - Cursor worker loop
 - optional Codex supervisor automation loop
 - local browser dashboard for jobs, worker/supervisor state, worktrees, roadmap, and project status
+- automatic pruning of accepted job worktrees and local branches after human milestone approval
 - reusable scientific coding skills
 - dependency-free Python helper scripts
 - generic `.ai/` templates
@@ -59,7 +60,7 @@ external/ai-supervisor-worker-workflow/install.sh .
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/human_milestone_review.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/human_milestone_review.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
 ```
 
 ## Dashboard
@@ -85,6 +86,8 @@ The dashboard includes:
 - project worktree and expandable file-tree views
 - click-to-open files through the system default opener on Ubuntu
 - an interactive human milestone review checklist that can create a revision job from failed review items
+
+When a human milestone review is approved, the workflow removes accepted job worktrees and local `ai/JNNNN` branches listed in that approved review record. Job records, logs, reports, patches, and commit documentation under `.ai/` are preserved. Active, rejected, blocked, and ready-for-review jobs are not pruned.
 
 The log panes show the last 10000 lines by default. To change that display limit:
 

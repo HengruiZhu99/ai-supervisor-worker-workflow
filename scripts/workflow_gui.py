@@ -765,6 +765,22 @@ def active_jobs(root: Path) -> list[str]:
     return active
 
 
+def prune_accepted_job_refs(root: Path, review_record: Path) -> tuple[bool, str]:
+    script = PACKAGE_ROOT / "scripts" / "prune_accepted_job_refs.py"
+    if not script.exists():
+        return False, f"Prune skipped: helper not found at {script}"
+    result = subprocess.run(
+        ["python3", str(script), "--review-record", str(review_record)],
+        cwd=str(root),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    output = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+    return result.returncode == 0, output or "No accepted job refs needed pruning."
+
+
 def write_human_review(root: Path, decisions: list[dict]) -> dict:
     gate_path = root / ".ai" / "supervisor" / "HUMAN_REVIEW_REQUIRED.md"
     if not gate_path.exists():
@@ -808,11 +824,18 @@ def write_human_review(root: Path, decisions: list[dict]) -> dict:
         handle.write(f"- Review record: `{review_record.relative_to(root)}`.\n")
 
     if not failed:
+        prune_ok, prune_output = prune_accepted_job_refs(root, review_record)
+        with ledger.open("a", encoding="utf-8") as handle:
+            handle.write("- Accepted job branch/worktree pruning:\n")
+            for line in prune_output.splitlines():
+                handle.write(f"  - {line}\n")
         return {
             "ok": True,
             "message": "Human review approved. Gate archived.",
             "review_record": str(review_record.relative_to(root)),
             "archived_gate": str(archived_gate.relative_to(root)),
+            "prune_ok": prune_ok,
+            "prune_output": prune_output,
         }
 
     active = active_jobs(root)

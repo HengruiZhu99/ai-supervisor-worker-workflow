@@ -126,7 +126,9 @@ python3 scripts/human_milestone_review.py
 
 Answer `yes` or `no` for every review item. If an item fails, enter comments when prompted. The script will still cycle through the rest of the list, archive the gate, record the review, and create one revision worker job for all failed items.
 
-If every item passes, the script archives the gate and records approval. Restart or continue the supervisor loop afterward.
+If every item passes, the script archives the gate, records approval, and prunes accepted job worktrees and local `ai/JNNNN` branches listed in the approved milestone review. `.ai/jobs/` and `.ai/commit_docs/` records are preserved. Active, rejected, blocked, and ready-for-review jobs are not pruned.
+
+The same approval and pruning behavior is available through the dashboard human review panel.
 
 Manual per-job review is still possible. Stop `scripts/supervisor_loop.sh` and ask Codex to review a `ready_for_review` job if you want to inspect a specific job yourself.
 

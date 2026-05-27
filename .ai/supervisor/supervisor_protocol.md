@@ -121,6 +121,10 @@ If accepted:
 
 If the main worktree has unrelated uncommitted changes that prevent integration, accept/reject the job decision in `status.json`, record the integration blocker in the ledger, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, and do not create the next job until the blocker is resolved.
 
+## Post-milestone pruning protocol
+
+After a human milestone review is approved, run the accepted-job pruning helper for that approved review record. The helper removes only accepted job worktrees and local worker branches listed in the approved milestone review. Preserve all `.ai/jobs/`, `.ai/commit_docs/`, review records, logs, reports, and patches. Do not prune queued, running, rejected, blocked, or ready-for-review jobs.
+
 ## Rejection protocol
 
 If rejected:
