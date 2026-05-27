@@ -106,6 +106,7 @@ textarea {
 .health.live, .state-dot.live { color: var(--good); border-color: rgba(36, 114, 79, 0.24); background: #eef8f2; }
 .health.gate, .badge.gate { color: var(--warn); border-color: rgba(160, 90, 24, 0.28); background: #fff7ec; }
 .badge.ready { color: var(--accent-2); border-color: rgba(49, 95, 159, 0.25); background: #f0f5fc; }
+.badge.reviewing { color: var(--warn); border-color: rgba(160, 90, 24, 0.28); background: #fff7ec; }
 .badge.running { color: var(--warn); border-color: rgba(160, 90, 24, 0.28); background: #fff7ec; }
 .badge.accepted { color: var(--good); border-color: rgba(36, 114, 79, 0.24); background: #eef8f2; }
 .badge.rejected, .badge.blocked { color: var(--bad); border-color: rgba(164, 58, 58, 0.25); background: #fff1f1; }

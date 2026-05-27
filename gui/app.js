@@ -8,12 +8,21 @@ const $ = (id) => document.getElementById(id);
 
 function badgeClass(status) {
   const value = String(status || "unknown").toLowerCase();
+  if (value.includes("reviewing")) return "reviewing";
   if (value.includes("ready")) return "ready";
   if (value.includes("running") || value.includes("queued")) return "running";
   if (value.includes("accepted")) return "accepted";
   if (value.includes("rejected")) return "rejected";
   if (value.includes("blocked")) return "blocked";
   return "";
+}
+
+function jobDisplayStatus(job, data) {
+  const status = job.state || "unknown";
+  const codexActive = Boolean(data?.processes?.codex?.length);
+  if (status === "ready_for_review" && codexActive) return "reviewing";
+  if (status === "ready_for_review") return "ready for review";
+  return status.replaceAll("_", " ");
 }
 
 function escapeHtml(value) {
@@ -61,14 +70,14 @@ function formValues(form) {
   return data;
 }
 
-function renderJobs(jobs) {
+function renderJobs(jobs, data) {
   const box = $("jobs");
   if (!jobs.length) {
     box.innerHTML = '<div class="job">No jobs found.</div>';
     return;
   }
   box.innerHTML = jobs.map((job) => {
-    const status = job.state || "unknown";
+    const status = jobDisplayStatus(job, data);
     const title = job.title || job.id || "Untitled job";
     return `
       <article class="job">
@@ -266,7 +275,7 @@ function render(data, options = {}) {
 
   renderProcesses("workerProcesses", [...data.processes.worker, ...data.processes.cursor]);
   renderProcesses("supervisorProcesses", [...data.processes.supervisor, ...data.processes.codex]);
-  renderJobs(data.jobs);
+  renderJobs(data.jobs, data);
   renderWorktrees(data.worktrees);
   if (refreshStaticPanels) {
     renderMilestones(data.supervisor.milestones);
