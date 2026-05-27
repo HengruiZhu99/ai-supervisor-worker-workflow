@@ -131,7 +131,11 @@ Keep `.ai` audit records reviewable but separate from implementation commits. Af
 
 ## Major structural change protocol
 
-At a human milestone gate, a reviewer may request a major structural change that supersedes the normal checklist review. Treat this as an architecture/roadmap revision, not as approval of the milestone and not as a normal failed checklist item. Archive the gate, record the request, and create exactly one structural revision job. That job should update roadmap, project brief, ledger, build/dependency policy, and future job sequencing before further implementation proceeds.
+At a human milestone gate, a reviewer may request a major structural change that supersedes the normal checklist review. Treat this as an architecture/roadmap revision, not as approval of the milestone and not as a normal failed checklist item. Archive the gate, record the request, and create exactly one structural revision job.
+
+That job should update roadmap, project brief, ledger, build/dependency policy, and future job sequencing before further implementation proceeds. It must also create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` with a summary of the revised milestones, what changed, why it changed, the proposed next milestone, and a `## Human Review To-Do List` checklist.
+
+After accepting and integrating a structural revision job, do not dispatch the next implementation job. Stop at the new human gate until the revised plan is approved. If the supervisor loop was launched with `SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE=1`, push the integrated structural revision and review gate to the configured remote; if push fails, record the failure in the ledger and keep the gate in place.
 
 ## Rejection protocol
 

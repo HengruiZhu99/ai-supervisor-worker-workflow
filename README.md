@@ -88,7 +88,15 @@ The dashboard includes:
 - click-to-open files through the system default opener on Ubuntu
 - an interactive human milestone review checklist that can create a revision job from failed review items
 
+If the human review marks a major structural change, the workflow creates a planning revision job instead of continuing implementation. That job must update the milestone plan and create a fresh `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` gate summarizing what changed and what the next small worker jobs should be. The supervisor stops at that second gate until the revised plan is approved.
+
 When a human milestone review is approved, the workflow removes accepted job worktrees and local `ai/JNNNN` branches listed in that approved review record. Job records, logs, reports, patches, and commit documentation under `.ai/` are preserved. Active, rejected, blocked, and ready-for-review jobs are not pruned.
+
+To ask the supervisor loop to push the main branch after accepting a structural planning revision and opening the follow-up human review gate, launch it with:
+
+```bash
+SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE=1 ./scripts/supervisor_loop.sh
+```
 
 The log panes show the last 10000 lines by default. To change that display limit:
 

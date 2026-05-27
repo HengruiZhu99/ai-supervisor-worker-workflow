@@ -21,6 +21,8 @@ Responsibilities:
 
 In milestone-gated autonomous mode, Codex may review completed jobs, accept or reject them, update the ledger, and dispatch the next small job without human input until the current milestone is complete or blocked. Human input is required at milestone boundaries, for scope changes, and for unresolved scientific or engineering decisions.
 
+When a human milestone review requests a major structural change, Codex should treat the response as a planning revision. The revision job should update the roadmap, project brief, ledger, and related architecture documents, then create a new human review gate summarizing the changed milestones and proposed next worker jobs. Codex should not continue implementation until that revised plan is approved.
+
 ### Cursor worker
 
 Cursor acts as the implementation worker.

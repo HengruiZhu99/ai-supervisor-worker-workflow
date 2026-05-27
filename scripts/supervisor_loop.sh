@@ -10,6 +10,7 @@ SUPERVISOR_VERBOSE="${SUPERVISOR_VERBOSE:-0}"
 CODEX_MODEL="${CODEX_MODEL:-gpt-5.5}"
 CODEX_REASONING_EFFORT="${CODEX_REASONING_EFFORT:-high}"
 CODEX_EXTRA_ARGS="${CODEX_EXTRA_ARGS:-}"
+SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE="${SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE:-0}"
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 
 require_command() {
@@ -113,6 +114,8 @@ run_codex_supervisor() {
 
   set +e
   {
+    echo "Runtime option: SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE=$SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE"
+    echo
     cat <<'PROMPT'
 You are Codex running as the autonomous milestone-gated supervisor for this repository.
 
@@ -141,6 +144,10 @@ Rules:
 - The human gate must include a milestone summary, a `## Human Review To-Do List` section with `- [ ]` checklist items, and instructions to run `python3 scripts/human_milestone_review.py`.
 - Do not create a new worker job after creating a human gate.
 - Keep human input at milestone boundaries, not individual jobs or commits.
+- If reviewing and accepting a job whose title or task is a major structural change revision, treat it as a planning milestone update, not normal implementation progress.
+- For an accepted major structural change revision job: integrate the accepted branch into the main worktree, update the job status and ledger, ensure `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` exists, and make that gate summarize the updated milestones, what changed, why it changed, the proposed next milestone, and the first few small worker jobs.
+- After an accepted major structural change revision job, do not dispatch the next implementation job. Stop at the new human review gate so the human can approve the revised plan.
+- If the runtime option `SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE` shown above is `1`, and after integrating the structural revision and creating the review gate the main branch has a configured remote, commit workflow records as needed and push the updated main branch. If push fails, record the failure in the ledger and leave the human gate in place.
 - Use skills under `skills/` when relevant.
 
 Return a concise summary of what you reviewed, accepted/rejected/dispatched, and whether the workflow is waiting for worker or human review.

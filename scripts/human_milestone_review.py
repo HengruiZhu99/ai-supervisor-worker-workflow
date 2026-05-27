@@ -201,19 +201,36 @@ def create_structural_change_task(
         "",
         "## Objective",
         "",
-        "Revise the project architecture plan, roadmap, and workflow records to reflect the human-requested structural change below.",
+        "Revise the project architecture plan, roadmap, milestone sequence, and workflow records to reflect the human-requested structural change below.",
+        "",
+        "This is a planning and architecture revision job. Its main output is an updated milestone plan for human review before implementation continues.",
         "",
         "## Scope",
         "",
         "Allowed:",
         "- Update roadmap, project brief, ledger, build/dependency policy, and documentation needed to encode the structural decision.",
-        "- Create or revise future job sequencing so implementation follows the new architecture.",
+        "- Create or revise future milestone and worker-job sequencing so implementation follows the new architecture.",
+        "- Create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` with a concise summary of the updated milestones, what changed, why it changed, and a `## Human Review To-Do List` checklist.",
         "- Keep any existing accepted reference implementations as reference/test-oracle paths unless the human request explicitly says otherwise.",
         "",
         "Not allowed:",
         "- Do not start broad scientific implementation work in this revision job.",
+        "- Do not create the next implementation worker job.",
         "- Do not discard accepted work unless the structural change explicitly requires it.",
         "- Do not broaden beyond the requested architectural/roadmap correction.",
+        "",
+        "## Required human review gate",
+        "",
+        "Before the supervisor resumes implementation after this job, the updated plan must be reviewed by the human.",
+        "",
+        "Create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` with:",
+        "- A short title identifying this as a structural revision review.",
+        "- A summary of the structural request.",
+        "- A summary of the milestone/roadmap changes made.",
+        "- The next proposed milestone and the first few small worker jobs.",
+        "- Any risks, unresolved choices, or implementation-order tradeoffs.",
+        "- A `## Human Review To-Do List` section with unchecked checklist items.",
+        "- Instructions to run `python3 scripts/human_milestone_review.py` or use the dashboard human-review panel.",
         "",
         "## Review Context",
         "",
@@ -237,7 +254,8 @@ def create_structural_change_task(
         "4. Validation run and results",
         "5. Architecture decisions recorded",
         "6. Known limitations",
-        "7. Suggested next jobs",
+        "7. Human review gate created or updated",
+        "8. Suggested next jobs",
     ]
     task_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return task_path
@@ -378,6 +396,7 @@ def main() -> int:
         print(f"Review record: {review_record}")
         print(f"Archived gate: {archived_gate}")
         print(f"Structural revision job created: {job_path}")
+        print("The structural revision job must update the milestones and open a follow-up human review gate before implementation resumes.")
         print("\nWorkflow record commit:")
         print(commit_workflow_records("workflow: record major structural change request"))
         return 0
