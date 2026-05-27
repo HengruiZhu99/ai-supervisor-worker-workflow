@@ -399,7 +399,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
     elif active and active.get("state") == "blocked":
         summary = f"Worker is blocked on {active.get('id', 'a job')}."
     elif preparing_human_review:
-        summary = "Supervisor is preparing material for human review."
+        summary = "Supervisor is preparing a human review."
     elif codex_active:
         summary = "Supervisor is preparing the next worker job."
     elif worker_running or supervisor_running:
@@ -437,7 +437,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
     elif any(job.get("state") == "ready_for_review" for job in job_rows):
         supervisor_text = "Supervisor should review a job that is ready_for_review."
     elif preparing_human_review:
-        supervisor_text = "Supervisor is drafting the milestone review summary and checklist."
+        supervisor_text = "Supervisor is preparing the milestone review summary and checklist."
     elif codex_active:
         supervisor_text = "Supervisor is actively planning, reviewing, or dispatching work."
     elif supervisor_running:
