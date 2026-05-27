@@ -133,19 +133,57 @@ function renderWorktrees(worktrees) {
   `).join("");
 }
 
-function renderTree(tree) {
-  const box = $("tree");
-  box.innerHTML = tree.map((item) => {
-    const icon = item.type === "dir" ? "▸" : item.type === "file" ? "•" : "…";
-    const size = item.size ? `${Math.round(item.size / 1024)} KB` : "";
+function formatSize(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderTreeNode(node, depth = 0) {
+  if (!node) return "";
+  if (node.type === "file") {
     return `
-      <div class="tree-row" style="padding-left:${Math.min(item.depth || 0, 8) * 12}px">
-        <span>${icon}</span>
-        <code>${escapeHtml(item.path)}</code>
-        <span class="muted">${size}</span>
+      <div class="tree-file" style="padding-left:${Math.min(depth, 12) * 12}px">
+        <button type="button" class="file-link" data-path="${escapeHtml(node.path)}" title="Open ${escapeHtml(node.path)}">
+          <span>•</span>
+          <code>${escapeHtml(node.name || node.path)}</code>
+        </button>
+        <span class="muted">${escapeHtml(formatSize(node.size))}</span>
       </div>
     `;
-  }).join("");
+  }
+  const children = (node.children || []).map((child) => renderTreeNode(child, depth + 1)).join("");
+  const open = depth <= 1 ? "open" : "";
+  const truncated = node.truncated ? '<span class="muted">truncated</span>' : "";
+  return `
+    <details class="tree-dir" ${open} style="padding-left:${Math.min(depth, 12) * 12}px">
+      <summary>
+        <span>${depth === 0 ? "Project" : "Folder"}</span>
+        <code>${escapeHtml(node.name || node.path || ".")}</code>
+        ${truncated}
+      </summary>
+      <div class="tree-children">${children}</div>
+    </details>
+  `;
+}
+
+function renderTree(tree) {
+  const box = $("tree");
+  if (!tree || !tree.children) {
+    box.innerHTML = '<div class="tree-empty">No project tree available.</div>';
+    return;
+  }
+  box.innerHTML = renderTreeNode(tree, 0);
+  box.querySelectorAll(".file-link").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await postJson("/api/open-file", { path: button.dataset.path });
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  });
 }
 
 function renderHumanReview(supervisor) {
@@ -206,6 +244,14 @@ function render(data) {
   $("ledger").textContent = data.supervisor.ledger || "No ledger found.";
   $("latestLog").textContent = data.supervisor.latest_supervisor_log || "";
   $("supervisorLog").textContent = data.supervisor.latest_supervisor_tail || "No supervisor log found.";
+  $("workerLoopLog").textContent = data.controls?.worker?.log_tail || "No worker loop log found.";
+  $("supervisorLoopLog").textContent = data.controls?.supervisor?.log_tail || "No supervisor loop log found.";
+  $("workerLoopLogMeta").textContent = data.controls?.worker?.log_file
+    ? `${data.controls.worker.log_file} · last ${data.controls.worker.log_display_lines} lines`
+    : "";
+  $("supervisorLoopLogMeta").textContent = data.controls?.supervisor?.log_file
+    ? `${data.controls.supervisor.log_file} · last ${data.controls.supervisor.log_display_lines} lines`
+    : "";
 
   renderProcesses("workerProcesses", [...data.processes.worker, ...data.processes.cursor]);
   renderProcesses("supervisorProcesses", [...data.processes.supervisor, ...data.processes.codex]);
@@ -279,6 +325,6 @@ $("humanReviewForm").addEventListener("submit", async (event) => {
 refresh().catch((error) => {
   $("healthPill").textContent = "Error";
   $("healthPill").className = "health gate";
-  $("supervisorLog").textContent = error.stack || String(error);
+  $("supervisorLoopLog").textContent = error.stack || String(error);
 });
 state.timer = setInterval(() => refresh().catch(console.error), 5000);

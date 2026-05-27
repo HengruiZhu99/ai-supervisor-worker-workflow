@@ -81,5 +81,13 @@ The dashboard includes:
 - supervisor launch/stop controls with Codex model, reasoning effort, poll interval, and verbose heartbeat options
 - job status and logs
 - expandable milestone criteria
-- project worktree and file-tree views
+- bounded live worker/supervisor loop log panes
+- project worktree and expandable file-tree views
+- click-to-open files through the system default opener on Ubuntu
 - an interactive human milestone review checklist that can create a revision job from failed review items
+
+The log panes show the last 10000 lines by default. To change that display limit:
+
+```bash
+AI_WORKFLOW_GUI_LOG_LINES=2000 python3 scripts/workflow_gui.py
+```

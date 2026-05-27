@@ -11,6 +11,7 @@ import shutil
 import signal
 import subprocess
 import sys
+from collections import deque
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -20,6 +21,18 @@ from urllib.parse import urlparse
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 GUI_ROOT = PACKAGE_ROOT / "gui"
+DEFAULT_LOG_DISPLAY_LINES = 10_000
+
+
+def env_int(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return max(100, value)
+
+
+LOG_DISPLAY_LINES = env_int("AI_WORKFLOW_GUI_LOG_LINES", DEFAULT_LOG_DISPLAY_LINES)
 
 
 def run(args: list[str], cwd: Path) -> tuple[int, str, str]:
@@ -52,10 +65,13 @@ def read_json(path: Path) -> dict:
 
 
 def tail(path: Path, lines: int = 80) -> str:
-    text = read_text(path)
-    if not text:
+    if not path:
         return ""
-    return "\n".join(text.splitlines()[-lines:])
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            return "".join(deque(handle, maxlen=max(1, lines))).rstrip()
+    except OSError:
+        return ""
 
 
 def runs_dir(root: Path) -> Path:
@@ -96,7 +112,8 @@ def control_info(root: Path, name: str) -> dict:
         "running": pid is not None,
         "pid_file": str(pid_file(root, name).relative_to(root)),
         "log_file": str(log.relative_to(root)),
-        "log_tail": tail(log, 60),
+        "log_tail": tail(log, LOG_DISPLAY_LINES),
+        "log_display_lines": LOG_DISPLAY_LINES,
     }
 
 
@@ -185,7 +202,7 @@ def supervisor_state(root: Path) -> dict:
         "human_gate": read_text(gate_path),
         "human_gate_checklist": parse_gate_checklist(read_text(gate_path)) if gate_path.exists() else [],
         "latest_supervisor_log": str(latest_log.relative_to(root)) if latest_log else "",
-        "latest_supervisor_tail": tail(latest_log, 80) if latest_log else "",
+        "latest_supervisor_tail": tail(latest_log, LOG_DISPLAY_LINES) if latest_log else "",
     }
 
 
@@ -218,29 +235,87 @@ def worktrees(root: Path) -> list[dict]:
     return entries
 
 
-def file_tree(root: Path, max_depth: int = 3, max_entries: int = 260) -> list[dict]:
-    ignored = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
-    rows = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        current = Path(dirpath)
-        rel = current.relative_to(root)
-        depth = 0 if rel == Path(".") else len(rel.parts)
-        dirnames[:] = [name for name in sorted(dirnames) if name not in ignored]
-        filenames = sorted(filenames)
-        if depth >= max_depth:
-            dirnames[:] = []
-        if rel != Path("."):
-            rows.append({"type": "dir", "path": str(rel), "depth": depth})
-        for name in filenames:
-            path = current / name
-            rel_file = path.relative_to(root)
-            if any(part in ignored for part in rel_file.parts):
+def project_tree(root: Path, max_depth: int = 6, max_entries: int = 2_000) -> dict:
+    ignored = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".DS_Store"}
+    counter = 0
+    truncated = False
+
+    def walk(path: Path, depth: int) -> list[dict]:
+        nonlocal counter, truncated
+        if truncated or depth > max_depth:
+            return []
+        try:
+            entries = sorted(path.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+        except OSError:
+            return []
+
+        children = []
+        for entry in entries:
+            if entry.name in ignored:
                 continue
-            rows.append({"type": "file", "path": str(rel_file), "depth": depth + 1, "size": path.stat().st_size})
-            if len(rows) >= max_entries:
-                rows.append({"type": "more", "path": f"Showing first {max_entries} entries", "depth": 0})
-                return rows
-    return rows
+            if counter >= max_entries:
+                truncated = True
+                break
+            try:
+                rel = entry.relative_to(root)
+            except ValueError:
+                continue
+            counter += 1
+            if entry.is_dir():
+                node = {
+                    "type": "dir",
+                    "name": entry.name,
+                    "path": str(rel),
+                    "children": walk(entry, depth + 1),
+                }
+                if truncated:
+                    node["truncated"] = True
+                children.append(node)
+            elif entry.is_file():
+                try:
+                    size = entry.stat().st_size
+                except OSError:
+                    size = None
+                children.append({"type": "file", "name": entry.name, "path": str(rel), "size": size})
+        return children
+
+    return {
+        "type": "dir",
+        "name": root.name,
+        "path": ".",
+        "children": walk(root, 0),
+        "truncated": truncated,
+        "max_entries": max_entries,
+        "max_depth": max_depth,
+    }
+
+
+def safe_project_path(root: Path, relative_path: str) -> Path:
+    if not relative_path or "\0" in relative_path:
+        raise ValueError("missing or invalid path")
+    candidate = (root / relative_path).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError("path is outside the project root")
+    return candidate
+
+
+def open_project_file(root: Path, relative_path: str) -> dict:
+    try:
+        path = safe_project_path(root, relative_path)
+    except ValueError as exc:
+        return {"ok": False, "message": str(exc)}
+    if not path.exists():
+        return {"ok": False, "message": f"path does not exist: {relative_path}"}
+    if path.is_dir():
+        return {"ok": False, "message": "select a file, not a directory"}
+    opener = shutil.which("xdg-open")
+    if not opener:
+        return {"ok": False, "message": "xdg-open is not available on this system"}
+    try:
+        subprocess.Popen([opener, str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as exc:
+        return {"ok": False, "message": f"failed to open file: {exc}"}
+    return {"ok": True, "message": f"opened {relative_path}", "path": relative_path}
 
 
 def process_blocks(root: Path) -> dict:
@@ -298,7 +373,7 @@ def state(root: Path) -> dict:
             "worker": control_info(root, "worker_loop"),
             "supervisor": control_info(root, "supervisor_loop"),
         },
-        "tree": file_tree(root),
+        "tree": project_tree(root),
     }
 
 
@@ -566,6 +641,11 @@ class Handler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/human-review":
             result = write_human_review(self.project_root, list(payload.get("decisions", [])))
+            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            return
+
+        if parsed.path == "/api/open-file":
+            result = open_project_file(self.project_root, str(payload.get("path", "")))
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return
 

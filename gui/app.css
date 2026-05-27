@@ -405,18 +405,85 @@ textarea {
 }
 
 .tree {
-  max-height: 430px;
+  max-height: 520px;
   overflow: auto;
   font-size: 12px;
 }
 
-.tree-row {
+.tree-dir {
+  border-bottom: 1px solid #edf1f4;
+}
+
+.tree-dir summary {
   display: grid;
-  grid-template-columns: 22px 1fr auto;
+  grid-template-columns: 14px 54px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+  padding: 7px 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.tree-dir summary::-webkit-details-marker { display: none; }
+
+.tree-dir summary::before {
+  content: "▸";
+  width: 14px;
+  color: var(--accent-2);
+}
+
+.tree-dir[open] > summary::before {
+  content: "▾";
+}
+
+.tree-dir summary code {
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.tree-children {
+  display: grid;
+  gap: 0;
+}
+
+.tree-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   border-bottom: 1px solid #edf1f4;
-  padding: 5px 0;
+  padding: 4px 0;
+}
+
+.file-link {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  color: var(--ink);
+  font-weight: 700;
+  text-align: left;
+}
+
+.file-link:hover {
+  color: var(--accent);
+}
+
+.file-link code {
+  color: inherit;
+}
+
+.tree-empty {
+  color: var(--muted);
+  font-weight: 700;
+  padding: 10px;
 }
 
 .text-box {
@@ -431,6 +498,11 @@ textarea {
   padding: 14px;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.log-box {
+  max-height: 520px;
+  min-height: 320px;
 }
 
 @media (max-width: 1080px) {
