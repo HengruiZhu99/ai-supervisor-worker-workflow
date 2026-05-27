@@ -377,6 +377,14 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_
     else:
         summary = "Workflow is idle."
 
+    offline = []
+    if not worker_running:
+        offline.append("worker loop")
+    if not supervisor_running:
+        offline.append("supervisor loop")
+    if offline:
+        summary = f"{summary} Offline: {', '.join(offline)}."
+
     if active:
         if active.get("state") == "ready_for_review":
             worker_text = f"Cursor finished {active.get('id')} attempt {active.get('attempt')}; awaiting supervisor review."
