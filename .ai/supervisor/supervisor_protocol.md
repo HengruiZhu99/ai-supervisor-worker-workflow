@@ -77,6 +77,19 @@ If a job is `ready_for_review`, inspect:
 - `test.attempt-N.log`
 - `.ai/commit_docs/JNNNN_attempt-N_*.md`
 - selected patch sections only if needed
+- the job branch named in `status.json`
+- the isolated worktree `.worktrees/JNNNN/`
+
+Worker implementation files are not expected to exist in the main worktree before acceptance. Inspect implementation files with commands such as:
+
+```bash
+git -C .worktrees/JNNNN status --short
+git -C .worktrees/JNNNN show --stat --oneline HEAD
+git -C .worktrees/JNNNN diff BASE_REF..HEAD -- path
+sed -n '1,160p' .worktrees/JNNNN/path/to/file
+```
+
+Do not reject or fail review just because a worker-created file is absent from the main worktree before the job is accepted.
 
 Accept only if:
 - scope is correct
@@ -97,6 +110,10 @@ If accepted:
 - record any new scientific assumptions or risks
 - optionally create the next job if appropriate
 - in milestone-gated mode, create the next job automatically if the current milestone still has approved work remaining
+- integrate the accepted worker branch into the main project history using a reviewable Git merge or cherry-pick strategy appropriate for the repository state
+- preserve the worker's meaningful commits when practical
+
+If the main worktree has unrelated uncommitted changes that prevent integration, accept/reject the job decision in `status.json`, record the integration blocker in the ledger, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, and do not create the next job until the blocker is resolved.
 
 ## Rejection protocol
 

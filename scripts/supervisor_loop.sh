@@ -124,10 +124,13 @@ Read:
 
 Rules:
 - Do not implement scientific project code yourself.
+- Worker implementation files live on the branch and isolated worktree named in each job's `status.json`; they are not expected to exist in the main worktree before acceptance.
+- When reviewing a job, inspect `.worktrees/JNNNN/`, `git -C .worktrees/JNNNN ...`, job artifacts, commit docs, and patches. Do not fail review merely because worker-created files are absent from the main worktree.
 - Review jobs in `ready_for_review` according to the supervisor protocol.
 - Accept or reject completed jobs based on report, tests, diffstat, selected patch context, and commit documentation.
 - For rejected jobs, write concise actionable `feedback.md` and set state to `rejected`.
-- For accepted jobs, set state to `accepted`, update the ledger, and record assumptions/risks.
+- For accepted jobs, integrate the accepted worker branch into the main project history using a reviewable merge or cherry-pick strategy, set state to `accepted`, update the ledger, and record assumptions/risks.
+- If unrelated uncommitted main-worktree changes prevent integration, record the accepted/rejected decision and blocker, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, and do not create the next job.
 - If the current milestone still has approved work remaining and no job is queued/running/rejected, create exactly one next small worker job.
 - If a job is queued/running/rejected after your actions, stop with `WAITING_FOR_WORKER`.
 - If the milestone is complete, blocked, or needs a human scope/science decision, create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` using `.ai/supervisor/milestone_review_template.md`, do not create a new worker job, and stop.
