@@ -4,19 +4,20 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import subprocess
 from pathlib import Path
 
 
 DEFAULT_MESSAGE = "workflow: record ai workflow state"
-DEFAULT_PATHS = [
-    ".ai/jobs",
-    ".ai/commit_docs",
+SUPERVISOR_PATHS = [
     ".ai/supervisor/ledger.md",
     ".ai/supervisor/roadmap.md",
     ".ai/supervisor/HUMAN_REVIEW_REQUIRED.md",
     ".ai/supervisor/human_reviews",
 ]
+JOB_ID_RE = re.compile(r"(J\d{4,})")
 
 
 def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -30,16 +31,46 @@ def git_root() -> Path:
     return Path(result.stdout.strip()).resolve()
 
 
+def job_state(status_path: Path) -> str:
+    try:
+        return str(json.loads(status_path.read_text(encoding="utf-8")).get("state", ""))
+    except (OSError, json.JSONDecodeError):
+        return "invalid"
+
+
+def stable_job_ids(root: Path) -> set[str]:
+    stable = set()
+    for status_path in sorted((root / ".ai" / "jobs").glob("J*/status.json")):
+        if job_state(status_path) != "running":
+            stable.add(status_path.parent.name)
+    return stable
+
+
+def commit_doc_paths(root: Path, stable_jobs: set[str]) -> list[str]:
+    paths = []
+    for path in sorted((root / ".ai" / "commit_docs").glob("*.md")):
+        match = JOB_ID_RE.search(path.name)
+        if match and match.group(1) in stable_jobs:
+            paths.append(str(path.relative_to(root)))
+    return paths
+
+
 def existing_pathspecs(root: Path) -> list[str]:
     pathspecs = []
-    for path in DEFAULT_PATHS:
+    for job_id in sorted(stable_job_ids(root)):
+        pathspecs.append(f".ai/jobs/{job_id}")
+    pathspecs.extend(commit_doc_paths(root, stable_job_ids(root)))
+    pathspecs.extend(SUPERVISOR_PATHS)
+
+    existing = []
+    for path in pathspecs:
         if (root / path).exists():
-            pathspecs.append(path)
+            existing.append(path)
             continue
         tracked = run(["git", "ls-files", "--error-unmatch", path], root)
         if tracked.returncode == 0:
-            pathspecs.append(path)
-    return pathspecs
+            existing.append(path)
+    return existing
 
 
 def has_staged_changes(root: Path, pathspecs: list[str]) -> bool:
