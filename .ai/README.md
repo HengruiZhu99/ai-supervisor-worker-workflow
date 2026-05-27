@@ -80,6 +80,12 @@ To choose a Codex model for the supervisor loop:
 CODEX_MODEL=gpt-5.5-high ./scripts/supervisor_loop.sh
 ```
 
+To print a heartbeat while the supervisor is waiting:
+
+```bash
+SUPERVISOR_VERBOSE=1 SUPERVISOR_POLL_SECONDS=60 CODEX_MODEL=gpt-5.5-high ./scripts/supervisor_loop.sh
+```
+
 ### Step 5
 
 Check jobs any time:

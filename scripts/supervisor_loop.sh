@@ -6,6 +6,7 @@ cd "$ROOT"
 
 SUPERVISOR_POLL_SECONDS="${SUPERVISOR_POLL_SECONDS:-10}"
 SUPERVISOR_RUNS_DIR="${SUPERVISOR_RUNS_DIR:-.ai/supervisor_runs}"
+SUPERVISOR_VERBOSE="${SUPERVISOR_VERBOSE:-0}"
 CODEX_MODEL="${CODEX_MODEL:-}"
 CODEX_EXTRA_ARGS="${CODEX_EXTRA_ARGS:-}"
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
@@ -54,6 +55,39 @@ if any(state in {"ready_for_review", "blocked", "invalid"} for state in states):
 if not any(state in {"queued", "running", "rejected"} for state in states):
     raise SystemExit(0)
 raise SystemExit(1)
+PY
+}
+
+print_waiting_status() {
+  if [[ "$SUPERVISOR_VERBOSE" != "1" ]]; then
+    return 0
+  fi
+
+  python3 - <<'PY'
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+parts = []
+for status_path in sorted(Path(".ai/jobs").glob("J*/status.json")):
+    try:
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        parts.append(f"{status_path.parent.name}:invalid({exc})")
+        continue
+    job_id = data.get("id") or status_path.parent.name
+    state = data.get("state", "unknown")
+    attempt = data.get("attempt", "")
+    if attempt != "":
+        parts.append(f"{job_id}:{state}:attempt-{attempt}")
+    else:
+        parts.append(f"{job_id}:{state}")
+
+if parts:
+    print(f"{now} supervisor waiting; jobs: " + ", ".join(parts), flush=True)
+else:
+    print(f"{now} supervisor waiting; no jobs found", flush=True)
 PY
 }
 
@@ -139,8 +173,11 @@ while true; do
       ran_initial=1
       last_signature="$(job_signature)"
     else
+      print_waiting_status
       last_signature="$signature"
     fi
+  else
+    print_waiting_status
   fi
 
   sleep "$SUPERVISOR_POLL_SECONDS"
