@@ -21,7 +21,19 @@ cleanup_current_lock() {
   fi
 }
 
-trap cleanup_current_lock EXIT INT TERM
+stop_worker_loop() {
+  cleanup_current_lock
+  exit 143
+}
+
+interrupt_worker_loop() {
+  cleanup_current_lock
+  exit 130
+}
+
+trap cleanup_current_lock EXIT
+trap interrupt_worker_loop INT
+trap stop_worker_loop TERM
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {

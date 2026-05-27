@@ -11,6 +11,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from collections import deque
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -93,7 +94,11 @@ def pid_running(pid: int) -> bool:
         os.kill(pid, 0)
     except OSError:
         return False
-    return True
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()[2]
+    except OSError:
+        return False
+    return state != "Z"
 
 
 def read_pid(path: Path) -> int | None:
@@ -634,14 +639,73 @@ def start_loop(root: Path, name: str, env_updates: dict[str, str]) -> dict:
 
 
 def stop_loop(root: Path, name: str) -> dict:
+    process_key = "worker" if name == "worker_loop" else "supervisor"
+    targets: set[int] = set()
     pid = read_pid(pid_file(root, name))
-    if not pid:
+    if pid:
+        targets.add(pid)
+    for item in process_blocks(root).get(process_key, []):
+        targets.add(int(item.get("pid", 0)))
+    if name == "worker_loop":
+        for item in process_blocks(root).get("cursor", []):
+            targets.add(int(item.get("pid", 0)))
+
+    targets = {target for target in targets if target and pid_running(target)}
+    if not targets:
+        try:
+            pid_file(root, name).unlink()
+        except OSError:
+            pass
         return {"ok": True, "message": f"{name} is not running"}
+
+    groups: set[int] = set()
+    for target in targets:
+        try:
+            groups.add(os.getpgid(target))
+        except OSError:
+            pass
+
+    errors = []
+    for group in groups:
+        try:
+            os.killpg(group, signal.SIGTERM)
+        except OSError as exc:
+            errors.append(str(exc))
+    for target in targets:
+        try:
+            os.kill(target, signal.SIGTERM)
+        except OSError:
+            pass
+
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if not any(pid_running(target) for target in targets):
+            break
+        time.sleep(0.1)
+
+    stubborn = {target for target in targets if pid_running(target)}
+    if stubborn:
+        for group in groups:
+            try:
+                os.killpg(group, signal.SIGKILL)
+            except OSError:
+                pass
+        for target in stubborn:
+            try:
+                os.kill(target, signal.SIGKILL)
+            except OSError:
+                pass
+
     try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError as exc:
-        return {"ok": False, "message": f"failed to stop {name}: {exc}"}
-    return {"ok": True, "message": f"sent SIGTERM to {name}", "pid": pid}
+        pid_file(root, name).unlink()
+    except OSError:
+        pass
+
+    stopped = sorted(targets)
+    killed = sorted(target for target in targets if not pid_running(target))
+    if errors and not killed:
+        return {"ok": False, "message": f"failed to stop {name}: {'; '.join(errors)}", "pids": stopped}
+    return {"ok": True, "message": f"stopped {name}", "pids": stopped, "stopped_pids": killed}
 
 
 def active_jobs(root: Path) -> list[str]:
