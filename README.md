@@ -6,6 +6,7 @@ It provides:
 - Codex supervisor protocol and review templates
 - Cursor worker loop
 - optional Codex supervisor automation loop
+- local browser dashboard for jobs, worker/supervisor state, worktrees, roadmap, and project status
 - reusable scientific coding skills
 - dependency-free Python helper scripts
 - generic `.ai/` templates
@@ -58,6 +59,19 @@ external/ai-supervisor-worker-workflow/install.sh .
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/human_milestone_review.py scripts/workflow_gui.py
 ```
 
+## Dashboard
+
+From a project repository with the workflow installed:
+
+```bash
+python3 scripts/workflow_gui.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765/
+```

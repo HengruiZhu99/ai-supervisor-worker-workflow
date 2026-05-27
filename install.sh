@@ -57,6 +57,9 @@ files=(
   ".ai/supervisor/roadmap.md"
   ".ai/supervisor/supervisor_protocol.md"
   ".ai/supervisor_runs/.gitkeep"
+  "gui/app.css"
+  "gui/app.js"
+  "gui/index.html"
   "scripts/create_commit_doc.py"
   "scripts/create_job.py"
   "scripts/human_milestone_review.py"
@@ -64,6 +67,7 @@ files=(
   "scripts/supervisor_loop.sh"
   "scripts/update_job_status.py"
   "scripts/worker_loop.sh"
+  "scripts/workflow_gui.py"
   "skills/cursor-worker-dispatch/SKILL.md"
   "skills/numerical-test-design/SKILL.md"
   "skills/paper-equation-implementation/SKILL.md"
@@ -76,6 +80,10 @@ for file in "${files[@]}"; do
 done
 
 merge_gitignore
-chmod +x "$TARGET_DIR/scripts/worker_loop.sh" "$TARGET_DIR/scripts/supervisor_loop.sh"
+chmod +x \
+  "$TARGET_DIR/scripts/worker_loop.sh" \
+  "$TARGET_DIR/scripts/supervisor_loop.sh" \
+  "$TARGET_DIR/scripts/human_milestone_review.py" \
+  "$TARGET_DIR/scripts/workflow_gui.py"
 
 echo "AI workflow installation complete."

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Workflow Console</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">AI Supervisor / Worker</div>
+          <h1 id="projectName">Workflow Console</h1>
+        </div>
+        <div class="top-actions">
+          <div class="refresh">
+            <span id="updatedAt">Loading...</span>
+            <button id="refreshButton" type="button">Refresh</button>
+          </div>
+          <div class="health" id="healthPill">Checking</div>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero-grid">
+          <article class="panel overview">
+            <div class="panel-title">
+              <span>Project Overview</span>
+              <span class="muted" id="projectRoot"></span>
+            </div>
+            <div class="metric-row">
+              <div class="metric">
+                <strong id="gitBranch">-</strong>
+                <span>Branch</span>
+              </div>
+              <div class="metric">
+                <strong id="gitHead">-</strong>
+                <span>HEAD</span>
+              </div>
+              <div class="metric">
+                <strong id="dirtyCount">0</strong>
+                <span>Dirty Files</span>
+              </div>
+            </div>
+            <div class="progress-wrap">
+              <div class="progress-label">
+                <span>Accepted Job Progress</span>
+                <strong id="jobProgressText">0%</strong>
+              </div>
+              <div class="progress-track"><div id="jobProgressBar" class="progress-bar"></div></div>
+            </div>
+          </article>
+
+          <article class="panel process-card">
+            <div class="panel-title"><span>Worker</span><span id="workerState" class="state-dot">Idle</span></div>
+            <div id="workerProcesses" class="process-list"></div>
+          </article>
+
+          <article class="panel process-card">
+            <div class="panel-title"><span>Supervisor</span><span id="supervisorState" class="state-dot">Idle</span></div>
+            <div id="supervisorProcesses" class="process-list"></div>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <article class="panel jobs-panel">
+            <div class="panel-title">
+              <span>Jobs</span>
+              <span id="jobCounts" class="muted"></span>
+            </div>
+            <div id="jobs" class="jobs"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-title"><span>Stages</span><span class="muted">Roadmap</span></div>
+            <div id="milestones" class="milestones"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-title"><span>Worktrees</span><span class="muted">Git</span></div>
+            <div id="worktrees" class="worktrees"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-title"><span>Project Tree</span><span class="muted">Depth 3</span></div>
+            <div id="tree" class="tree"></div>
+          </article>
+        </section>
+
+        <section class="detail-grid">
+          <article class="panel">
+            <div class="panel-title"><span>Supervisor Ledger</span><span class="muted">Memory</span></div>
+            <pre id="ledger" class="text-box"></pre>
+          </article>
+          <article class="panel">
+            <div class="panel-title"><span>Latest Supervisor Log</span><span id="latestLog" class="muted"></span></div>
+            <pre id="supervisorLog" class="text-box"></pre>
+          </article>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>
+

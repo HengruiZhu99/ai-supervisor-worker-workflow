@@ -96,6 +96,18 @@ Check jobs any time:
 python3 scripts/summarize_jobs.py
 ```
 
+Open the local workflow dashboard:
+
+```bash
+python3 scripts/workflow_gui.py
+```
+
+Then visit:
+
+```text
+http://127.0.0.1:8765/
+```
+
 ### Step 6
 
 When the current milestone is complete or blocked, the supervisor loop writes:
@@ -140,6 +152,6 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/human_milestone_review.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/human_milestone_review.py scripts/workflow_gui.py
 python3 scripts/summarize_jobs.py
 ```
