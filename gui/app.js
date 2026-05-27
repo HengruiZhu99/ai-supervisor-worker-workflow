@@ -154,7 +154,7 @@ function renderTreeNode(node, depth = 0) {
     `;
   }
   const children = (node.children || []).map((child) => renderTreeNode(child, depth + 1)).join("");
-  const open = depth <= 1 ? "open" : "";
+  const open = "";
   const truncated = node.truncated ? '<span class="muted">truncated</span>' : "";
   return `
     <details class="tree-dir" ${open} style="padding-left:${Math.min(depth, 12) * 12}px">
