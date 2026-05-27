@@ -304,10 +304,15 @@ def worker_display_log(root: Path, job_rows: list[dict], fallback: dict) -> dict
 def activity_state(job_rows: list[dict], processes: dict, controls: dict) -> dict:
     active = active_job_summary(job_rows)
     if active:
-        worker_text = (
-            f"Cursor is handling {active.get('id')} attempt {active.get('attempt')}: "
-            f"{active.get('title')} ({active.get('state')})."
-        )
+        if active.get("state") == "ready_for_review":
+            worker_text = f"Cursor finished {active.get('id')} attempt {active.get('attempt')}; awaiting supervisor review."
+        elif active.get("state") == "blocked":
+            worker_text = f"Worker blocked on {active.get('id')} attempt {active.get('attempt')}; supervisor review or feedback is needed."
+        else:
+            worker_text = (
+                f"Cursor is handling {active.get('id')} attempt {active.get('attempt')}: "
+                f"{active.get('title')} ({active.get('state')})."
+            )
     elif controls.get("worker", {}).get("running"):
         worker_text = "Worker loop is live and waiting for queued or rejected jobs."
     else:
