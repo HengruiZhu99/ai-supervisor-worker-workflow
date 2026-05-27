@@ -6,3 +6,4 @@ __pycache__/
 .ai/jobs/*/cursor_stderr*
 .ai/jobs/*/worker_prompt*
 .ai/supervisor_runs/*.log
+.ai/supervisor_runs/*.pid
