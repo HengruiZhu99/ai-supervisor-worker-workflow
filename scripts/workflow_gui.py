@@ -306,6 +306,9 @@ def worker_display_log(root: Path, job_rows: list[dict], fallback: dict) -> dict
 def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_gate_exists: bool) -> dict:
     active = active_job_summary(job_rows)
     ready_job = next((job for job in job_rows if job.get("state") == "ready_for_review"), None)
+    codex_active = bool(processes.get("codex"))
+    supervisor_running = bool(controls.get("supervisor", {}).get("running"))
+    worker_running = bool(controls.get("worker", {}).get("running"))
 
     if human_gate_exists:
         summary = "Wait for Human Milestone Review."
@@ -317,7 +320,9 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_
         summary = f"Worker is working on {active.get('id', 'a job')}."
     elif active and active.get("state") == "blocked":
         summary = f"Worker is blocked on {active.get('id', 'a job')}."
-    elif controls.get("worker", {}).get("running") or controls.get("supervisor", {}).get("running"):
+    elif codex_active:
+        summary = "Supervisor is preparing the next worker job."
+    elif worker_running or supervisor_running:
         summary = "Worker and supervisor are waiting for the next workflow event."
     else:
         summary = "Workflow is idle."
@@ -334,7 +339,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_
                 f"Cursor is handling {active.get('id')} attempt {active.get('attempt')}: "
                 f"{active.get('title')} ({active.get('state')})."
             )
-    elif controls.get("worker", {}).get("running"):
+    elif worker_running:
         worker_text = "Worker loop is live and waiting for queued or rejected jobs."
     else:
         worker_text = "Worker loop is idle."
@@ -343,7 +348,9 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_
         supervisor_text = f"Supervisor is waiting for worker state changes on {active.get('id')}."
     elif any(job.get("state") == "ready_for_review" for job in job_rows):
         supervisor_text = "Supervisor should review a job that is ready_for_review."
-    elif controls.get("supervisor", {}).get("running"):
+    elif codex_active:
+        supervisor_text = "Supervisor is actively planning, reviewing, or dispatching work."
+    elif supervisor_running:
         supervisor_text = "Supervisor loop is live and watching job state."
     else:
         supervisor_text = "Supervisor loop is idle."
