@@ -548,9 +548,9 @@ def process_blocks(root: Path) -> dict:
         except OSError:
             state = "?"
         item = {"pid": int(proc.name), "state": state, "cmd": cmdline[:900]}
-        if "worker_loop.sh" in cmdline:
+        if "/worker_loop.sh" in cmdline:
             blocks["worker"].append(item)
-        elif "supervisor_loop.sh" in cmdline:
+        elif "/supervisor_loop.sh" in cmdline:
             blocks["supervisor"].append(item)
         elif "cursor-agent" in cmdline:
             blocks["cursor"].append(item)
