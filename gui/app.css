@@ -207,22 +207,27 @@ textarea {
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
 }
 
-.activity-card {
+.overview-split {
   display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 250px;
+}
+
+.overview-half {
+  min-height: 0;
+}
+
+.status-half {
+  display: grid;
+  align-content: center;
   gap: 8px;
-  margin-top: 14px;
   border-top: 1px solid var(--line);
-  padding-top: 12px;
+  min-height: 0;
+  padding-top: 14px;
 }
 
-.activity-row {
-  display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-}
-
-.activity-label {
+.status-title {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -233,14 +238,15 @@ textarea {
   font-size: 12px;
   font-weight: 900;
   padding: 4px 8px;
+  width: max-content;
 }
 
-.activity-row p {
-  margin: 2px 0 0;
+.status-half p {
+  margin: 0;
   color: var(--ink);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.35;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.28;
 }
 
 .process-list, .jobs, .milestones, .worktrees, .tree {

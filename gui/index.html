@@ -29,35 +29,33 @@
               <span>Project Overview</span>
               <span class="muted" id="projectRoot"></span>
             </div>
-            <div class="metric-row">
-              <div class="metric">
-                <strong id="gitBranch">-</strong>
-                <span>Branch</span>
+            <div class="overview-split">
+              <div class="overview-half">
+                <div class="metric-row">
+                  <div class="metric">
+                    <strong id="gitBranch">-</strong>
+                    <span>Branch</span>
+                  </div>
+                  <div class="metric">
+                    <strong id="gitHead">-</strong>
+                    <span>HEAD</span>
+                  </div>
+                  <div class="metric">
+                    <strong id="dirtyCount">0</strong>
+                    <span>Dirty Files</span>
+                  </div>
+                </div>
+                <div class="progress-wrap">
+                  <div class="progress-label">
+                    <span>Accepted Job Progress</span>
+                    <strong id="jobProgressText">0%</strong>
+                  </div>
+                  <div class="progress-track"><div id="jobProgressBar" class="progress-bar"></div></div>
+                </div>
               </div>
-              <div class="metric">
-                <strong id="gitHead">-</strong>
-                <span>HEAD</span>
-              </div>
-              <div class="metric">
-                <strong id="dirtyCount">0</strong>
-                <span>Dirty Files</span>
-              </div>
-            </div>
-            <div class="progress-wrap">
-              <div class="progress-label">
-                <span>Accepted Job Progress</span>
-                <strong id="jobProgressText">0%</strong>
-              </div>
-              <div class="progress-track"><div id="jobProgressBar" class="progress-bar"></div></div>
-            </div>
-            <div class="activity-card">
-              <div class="activity-row">
-                <span class="activity-label">Worker</span>
-                <p id="workerActivity">Checking...</p>
-              </div>
-              <div class="activity-row">
-                <span class="activity-label">Supervisor</span>
-                <p id="supervisorActivity">Checking...</p>
+              <div class="status-half">
+                <div class="status-title">Current Status</div>
+                <p id="currentStatus">Checking...</p>
               </div>
             </div>
           </article>

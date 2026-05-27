@@ -301,8 +301,23 @@ def worker_display_log(root: Path, job_rows: list[dict], fallback: dict) -> dict
     }
 
 
-def activity_state(job_rows: list[dict], processes: dict, controls: dict) -> dict:
+def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_gate_exists: bool) -> dict:
     active = active_job_summary(job_rows)
+    ready_job = next((job for job in job_rows if job.get("state") == "ready_for_review"), None)
+
+    if human_gate_exists:
+        summary = "Wait for Human Milestone Review."
+    elif ready_job:
+        summary = f"Reviewer is reviewing {ready_job.get('id', 'a job')}."
+    elif active and active.get("state") in {"queued", "running", "rejected"}:
+        summary = f"Worker is working on {active.get('id', 'a job')}."
+    elif active and active.get("state") == "blocked":
+        summary = f"Worker is blocked on {active.get('id', 'a job')}."
+    elif controls.get("worker", {}).get("running") or controls.get("supervisor", {}).get("running"):
+        summary = "Worker and supervisor are waiting for the next workflow event."
+    else:
+        summary = "Workflow is idle."
+
     if active:
         if active.get("state") == "ready_for_review":
             worker_text = f"Cursor finished {active.get('id')} attempt {active.get('attempt')}; awaiting supervisor review."
@@ -328,6 +343,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict) -> dic
         supervisor_text = "Supervisor loop is idle."
 
     return {
+        "summary": summary,
         "worker": worker_text,
         "supervisor": supervisor_text,
         "active_job": active,
@@ -494,6 +510,7 @@ def state(root: Path) -> dict:
         "supervisor": control_info(root, "supervisor_loop"),
     }
     controls["worker"].update(worker_display_log(root, job_rows, controls["worker"]))
+    supervisor = supervisor_state(root, job_rows)
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "project": {"root": str(root), "name": root.name},
@@ -501,11 +518,11 @@ def state(root: Path) -> dict:
         "jobs": job_rows,
         "job_counts": counts,
         "job_progress": progress,
-        "supervisor": supervisor_state(root, job_rows),
+        "supervisor": supervisor,
         "worktrees": worktrees(root),
         "processes": processes,
         "controls": controls,
-        "activity": activity_state(job_rows, processes, controls),
+        "activity": activity_state(job_rows, processes, controls, bool(supervisor.get("human_gate_exists"))),
         "tree": project_tree(root),
     }
 

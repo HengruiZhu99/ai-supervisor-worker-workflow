@@ -241,8 +241,7 @@ function render(data) {
   $("jobProgressText").textContent = `${data.job_progress}%`;
   $("jobProgressBar").style.width = `${data.job_progress}%`;
   $("jobCounts").textContent = Object.entries(data.job_counts).map(([key, value]) => `${key}: ${value}`).join(" · ");
-  $("workerActivity").textContent = data.activity?.worker || "Worker status unavailable.";
-  $("supervisorActivity").textContent = data.activity?.supervisor || "Supervisor status unavailable.";
+  $("currentStatus").textContent = data.activity?.summary || "Workflow status unavailable.";
   $("ledger").textContent = data.supervisor.ledger || "No ledger found.";
   $("latestLog").textContent = data.supervisor.latest_supervisor_log || "";
   $("supervisorLog").textContent = data.supervisor.latest_supervisor_tail || "No supervisor log found.";
