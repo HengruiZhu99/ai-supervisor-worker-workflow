@@ -89,6 +89,8 @@ function renderJobs(jobs, data) {
           <span>Attempt ${escapeHtml(job.attempt ?? 0)}</span>
           <span>Branch ${escapeHtml(job.branch || "-")}</span>
           <span>Tests ${job.tests_passed === true ? "passed" : job.tests_passed === false ? "failed" : "unknown"}</span>
+          <span>Reviewer A ${job.reviewer_a_exit === 0 ? "done" : job.reviewer_a_exit !== undefined ? `exit ${escapeHtml(job.reviewer_a_exit)}` : "pending"}</span>
+          <span>Reviewer B ${job.reviewer_b_exit === 0 ? "done" : job.reviewer_b_exit !== undefined ? `exit ${escapeHtml(job.reviewer_b_exit)}` : "pending"}</span>
           <span>${escapeHtml(job.updated_at || "")}</span>
         </div>
         <code>${escapeHtml(job._path || "")}</code>
@@ -284,6 +286,16 @@ function render(data, options = {}) {
 
   renderProcesses("workerProcesses", [...data.processes.worker, ...data.processes.cursor]);
   renderProcesses("supervisorProcesses", [...data.processes.supervisor, ...data.processes.codex]);
+  $("reviewerTitle").textContent = data.reviewers?.title || "Reviewer Reports";
+  $("reviewerMeta").textContent = data.reviewers?.job_id
+    ? [
+        data.reviewers.state,
+        data.reviewers.reviewer_a_model ? `A: ${data.reviewers.reviewer_a_model}` : "",
+        data.reviewers.reviewer_b_model ? `B: ${data.reviewers.reviewer_b_model}` : "",
+      ].filter(Boolean).join(" · ")
+    : "";
+  $("reviewerAReport").textContent = data.reviewers?.reviewer_a || "No reviewer A report found.";
+  $("reviewerBReport").textContent = data.reviewers?.reviewer_b || "No reviewer B report found.";
   renderJobs(data.jobs, data);
   renderWorktrees(data.worktrees);
   if (refreshStaticPanels) {

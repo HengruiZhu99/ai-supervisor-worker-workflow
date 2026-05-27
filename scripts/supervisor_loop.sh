@@ -58,7 +58,7 @@ if not states:
     raise SystemExit(0)
 if any(state in {"ready_for_review", "blocked", "invalid"} for state in states):
     raise SystemExit(0)
-if not any(state in {"queued", "running", "rejected"} for state in states):
+if not any(state in {"queued", "running", "reviewing", "rejected"} for state in states):
     raise SystemExit(0)
 raise SystemExit(1)
 PY
@@ -134,6 +134,9 @@ Rules:
 - Worker implementation files live on the branch and isolated worktree named in each job's `status.json`; they are not expected to exist in the main worktree before acceptance.
 - When reviewing a job, inspect `.worktrees/JNNNN/`, `git -C .worktrees/JNNNN ...`, job artifacts, commit docs, and patches. Do not fail review merely because worker-created files are absent from the main worktree.
 - Review jobs in `ready_for_review` according to the supervisor protocol.
+- A job in `reviewing` is still in the worker/reviewer pipeline. Do not review or modify it yet; wait for `ready_for_review`.
+- For each `ready_for_review` job, inspect the worker report plus reviewer reports under `.ai/jobs/JNNNN/reviews/` when present.
+- Treat reviewer reports as advisory but important. If a reviewer recommends revision, either reject with actionable feedback or explicitly document why the concern is waived.
 - Accept or reject completed jobs based on report, tests, diffstat, selected patch context, and commit documentation.
 - For rejected jobs, write concise actionable `feedback.md` and set state to `rejected`.
 - For accepted jobs, integrate the accepted worker branch into the main project history using a reviewable merge or cherry-pick strategy, set state to `accepted`, update the ledger, and record assumptions/risks.

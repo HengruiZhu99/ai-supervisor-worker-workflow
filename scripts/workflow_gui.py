@@ -166,8 +166,49 @@ def jobs(root: Path) -> list[dict]:
         data["_test_tail"] = tail(job_dir / f"test.attempt-{attempt}.log", 60)
         data["_cursor_tail"] = tail(job_dir / f"cursor_final.attempt-{attempt}.md", 60)
         data["_task_text"] = read_text(job_dir / "task.md", 40_000)
+        reviews_dir = job_dir / "reviews"
+        data["_reviewer_a_tail"] = tail(reviews_dir / f"reviewer-a.attempt-{attempt}.md", 80)
+        data["_reviewer_b_tail"] = tail(reviews_dir / f"reviewer-b.attempt-{attempt}.md", 80)
         out.append(data)
     return out
+
+
+def reviewer_state(root: Path, job_rows: list[dict]) -> dict:
+    priority = {"reviewing": 0, "ready_for_review": 1, "accepted": 2, "rejected": 3, "blocked": 4}
+    candidates = [
+        job for job in job_rows
+        if job.get("_reviewer_a_tail") or job.get("_reviewer_b_tail") or job.get("state") == "reviewing"
+    ]
+    if not candidates:
+        return {
+            "title": "No reviewer reports yet.",
+            "job_id": "",
+            "reviewer_a": "",
+            "reviewer_b": "",
+            "reviewer_a_path": "",
+            "reviewer_b_path": "",
+        }
+    def job_number(job: dict) -> int:
+        match = re.search(r"J(\d+)", str(job.get("id", "")))
+        return int(match.group(1)) if match else -1
+
+    candidates.sort(key=lambda job: (priority.get(str(job.get("state")), 9), -job_number(job)))
+    job = candidates[0]
+    attempt = job.get("attempt", 0)
+    job_id = str(job.get("id", ""))
+    return {
+        "title": f"{job_id} reviewer reports",
+        "job_id": job_id,
+        "state": job.get("state", ""),
+        "reviewer_a_model": job.get("reviewer_a_model", ""),
+        "reviewer_b_model": job.get("reviewer_b_model", ""),
+        "reviewer_a_exit": job.get("reviewer_a_exit", ""),
+        "reviewer_b_exit": job.get("reviewer_b_exit", ""),
+        "reviewer_a": job.get("_reviewer_a_tail") or "Reviewer A has not emitted a report yet.",
+        "reviewer_b": job.get("_reviewer_b_tail") or "Reviewer B has not emitted a report yet.",
+        "reviewer_a_path": f".ai/jobs/{job_id}/reviews/reviewer-a.attempt-{attempt}.md" if job_id else "",
+        "reviewer_b_path": f".ai/jobs/{job_id}/reviews/reviewer-b.attempt-{attempt}.md" if job_id else "",
+    }
 
 
 def criterion_is_active(item_text: str, active_contexts: list[str]) -> bool:
@@ -254,7 +295,7 @@ def parse_roadmap(
 def active_job_contexts(job_rows: list[dict]) -> list[str]:
     contexts = []
     for job in job_rows:
-        if job.get("state") not in {"queued", "running", "rejected", "ready_for_review", "blocked"}:
+        if job.get("state") not in {"queued", "running", "reviewing", "rejected", "ready_for_review", "blocked"}:
             continue
         contexts.append(
             "\n".join(
@@ -306,7 +347,7 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
 
 
 def active_job_summary(job_rows: list[dict]) -> dict | None:
-    priority = {"running": 0, "queued": 1, "rejected": 2, "ready_for_review": 3, "blocked": 4}
+    priority = {"running": 0, "reviewing": 1, "queued": 2, "rejected": 3, "ready_for_review": 4, "blocked": 5}
     candidates = [job for job in job_rows if job.get("state") in priority]
     if not candidates:
         return None
@@ -337,6 +378,18 @@ def worker_display_log(root: Path, job_rows: list[dict], fallback: dict) -> dict
 
     job_dir = root / ".ai" / "jobs" / str(job.get("id"))
     attempt = job.get("attempt", 0)
+    if job.get("state") == "reviewing":
+        reviews_dir = job_dir / "reviews"
+        reviewer_b = tail(reviews_dir / f"reviewer-b.attempt-{attempt}.md", LOG_DISPLAY_LINES)
+        reviewer_a = tail(reviews_dir / f"reviewer-a.attempt-{attempt}.md", LOG_DISPLAY_LINES)
+        if reviewer_b or reviewer_a:
+            report_name = f"reviewer-b.attempt-{attempt}.md" if reviewer_b else f"reviewer-a.attempt-{attempt}.md"
+            return {
+                "log_tail": reviewer_b or reviewer_a,
+                "log_file": str((reviews_dir / report_name).relative_to(root)),
+                "log_display_lines": LOG_DISPLAY_LINES,
+                "log_label": "Cursor Reviewer Output",
+            }
     cursor_out = job_dir / f"cursor_final.attempt-{attempt}.md"
     cursor_err = job_dir / f"cursor_stderr.attempt-{attempt}.log"
     cursor_tail = tail(cursor_out, LOG_DISPLAY_LINES)
@@ -367,7 +420,7 @@ def supervisor_preparing_human_review(supervisor: dict, job_rows: list[dict]) ->
         return False
     if supervisor.get("latest_human_review_result") == "approved":
         return False
-    if any(job.get("state") in {"queued", "running", "rejected", "ready_for_review", "blocked"} for job in job_rows):
+    if any(job.get("state") in {"queued", "running", "reviewing", "rejected", "ready_for_review", "blocked"} for job in job_rows):
         return False
     ledger = str(supervisor.get("ledger", "")).lower()
     review_phrases = [
@@ -391,7 +444,13 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
     if human_gate_exists:
         summary = "Wait for Human Milestone Review."
     elif ready_job:
-        summary = f"Reviewer is reviewing {ready_job.get('id', 'a job')}."
+        summary = (
+            f"Supervisor is reviewing {ready_job.get('id', 'a job')}."
+            if codex_active
+            else f"{ready_job.get('id', 'A job')} is ready for supervisor review."
+        )
+    elif active and active.get("state") == "reviewing":
+        summary = f"Cursor reviewers are reviewing {active.get('id', 'a job')}."
     elif active and active.get("timed_out"):
         summary = f"Worker timed out on {active.get('id', 'a job')}."
     elif active and active.get("state") in {"queued", "running", "rejected"}:
@@ -418,6 +477,8 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
     if active:
         if active.get("state") == "ready_for_review":
             worker_text = f"Cursor finished {active.get('id')} attempt {active.get('attempt')}; awaiting supervisor review."
+        elif active.get("state") == "reviewing":
+            worker_text = f"Cursor reviewers are reviewing {active.get('id')} attempt {active.get('attempt')}."
         elif active.get("timed_out"):
             worker_text = f"Cursor timed out on {active.get('id')} attempt {active.get('attempt')}: {active.get('worker_error')}"
         elif active.get("state") == "blocked":
@@ -432,7 +493,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
     else:
         worker_text = "Worker loop is idle."
 
-    if active and active.get("state") in {"queued", "running", "rejected"}:
+    if active and active.get("state") in {"queued", "running", "reviewing", "rejected"}:
         supervisor_text = f"Supervisor is waiting for worker state changes on {active.get('id')}."
     elif any(job.get("state") == "ready_for_review" for job in job_rows):
         supervisor_text = "Supervisor should review a job that is ready_for_review."
@@ -636,6 +697,7 @@ def state(root: Path) -> dict:
         "processes": processes,
         "controls": controls,
         "activity": activity_state(job_rows, processes, controls, supervisor),
+        "reviewers": reviewer_state(root, job_rows),
         "tree": project_tree(root),
     }
 
@@ -760,7 +822,7 @@ def active_jobs(root: Path) -> list[str]:
     for status_path in sorted((root / ".ai" / "jobs").glob("J*/status.json")):
         data = read_json(status_path)
         state_value = data.get("state", "")
-        if state_value in {"queued", "running", "rejected", "ready_for_review", "blocked"}:
+        if state_value in {"queued", "running", "reviewing", "rejected", "ready_for_review", "blocked"}:
             active.append(f"{data.get('id', status_path.parent.name)}: {state_value}")
     return active
 
@@ -1107,6 +1169,10 @@ class Handler(SimpleHTTPRequestHandler):
                     "CURSOR_MODEL": str(payload.get("model", "gpt-5.5-high")),
                     "CURSOR_TIMEOUT": str(payload.get("timeout", "3600")),
                     "CURSOR_AGENT_EXTRA_ARGS": extra_args,
+                    "CURSOR_REVIEWERS_ENABLED": "1" if payload.get("reviewers_enabled", True) else "0",
+                    "CURSOR_REVIEW_TIMEOUT": str(payload.get("review_timeout", "2400")),
+                    "CURSOR_REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "claude-opus-4-7-thinking-high")),
+                    "CURSOR_REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.3-codex-high")),
                     "WORKER_AUTO_RESUME_TIMEOUT": "1" if payload.get("auto_resume_timeout", False) else "0",
                     "WORKER_MAX_TIMEOUT_RESUMES": str(payload.get("max_timeout_resumes", "2")),
                 },

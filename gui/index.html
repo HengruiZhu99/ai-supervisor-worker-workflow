@@ -83,6 +83,22 @@
                 <input name="auto_resume_timeout" type="checkbox" />
                 <span>Automatically resume after timeout</span>
               </label>
+              <label class="check-line">
+                <input name="reviewers_enabled" type="checkbox" checked />
+                <span>Run two Cursor reviewers after worker finishes</span>
+              </label>
+              <label>
+                Reviewer A model
+                <input name="reviewer_a_model" value="claude-opus-4-7-thinking-high" />
+              </label>
+              <label>
+                Reviewer B model
+                <input name="reviewer_b_model" value="gpt-5.3-codex-high" />
+              </label>
+              <label>
+                Reviewer timeout seconds
+                <input name="review_timeout" type="number" min="60" step="60" value="2400" />
+              </label>
               <div class="button-row">
                 <button type="submit">Launch Worker</button>
                 <button type="button" id="stopWorkerButton">Stop</button>
@@ -167,6 +183,19 @@
           <article class="panel">
             <div class="panel-title"><span id="workerLogTitle">Cursor Worker Output</span><span id="workerLoopLogMeta" class="muted"></span></div>
             <pre id="workerLoopLog" class="text-box log-box"></pre>
+          </article>
+          <article class="panel">
+            <div class="panel-title"><span id="reviewerTitle">Reviewer Reports</span><span id="reviewerMeta" class="muted"></span></div>
+            <div class="reviewer-grid">
+              <div>
+                <div class="reviewer-label">Reviewer A</div>
+                <pre id="reviewerAReport" class="text-box reviewer-box"></pre>
+              </div>
+              <div>
+                <div class="reviewer-label">Reviewer B</div>
+                <pre id="reviewerBReport" class="text-box reviewer-box"></pre>
+              </div>
+            </div>
           </article>
           <article class="panel">
             <div class="panel-title"><span>Supervisor Loop Log</span><span id="supervisorLoopLogMeta" class="muted"></span></div>

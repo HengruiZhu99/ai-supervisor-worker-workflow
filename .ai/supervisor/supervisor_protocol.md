@@ -79,6 +79,7 @@ If a job is `ready_for_review`, inspect:
 
 - `status.json`
 - `report.md`
+- reviewer reports under `reviews/`, when present
 - `diffstat.attempt-N.txt`
 - `test.attempt-N.log`
 - `.ai/commit_docs/JNNNN_attempt-N_*.md`
@@ -106,6 +107,16 @@ Accept only if:
 - commit history is reviewable
 - commit documentation exists
 - the worker report matches the actual diff and tests
+- reviewer concerns are resolved, converted into rejection feedback, or explicitly waived with rationale
+
+## Reviewer protocol
+
+When enabled, the worker loop runs two read-only Cursor reviewers after the worker attempt and validation finish:
+
+- reviewer A focuses on scientific/numerical correctness, assumptions, tolerances, edge cases, and validation quality.
+- reviewer B focuses on build/code quality, Kokkos/MPI/OpenMP/SYCL portability, memory layout, tests, and maintainability.
+
+Reviewer outputs are stored in `.ai/jobs/JNNNN/reviews/`. A job in `reviewing` is not ready for supervisor action. The supervisor should wait until the job returns to `ready_for_review`, then inspect the worker report and both reviewer reports before accepting or rejecting.
 
 ## Acceptance protocol
 

@@ -45,6 +45,16 @@ The worker loop defaults to GPT-5.5 High through Cursor's model id:
 CURSOR_MODEL=gpt-5.5-high ./scripts/worker_loop.sh
 ```
 
+By default, the worker loop also runs two read-only Cursor reviewers after a successful worker attempt and before the supervisor sees the job as ready for review:
+
+```bash
+CURSOR_REVIEWER_A_MODEL=claude-opus-4-7-thinking-high \
+CURSOR_REVIEWER_B_MODEL=gpt-5.3-codex-high \
+./scripts/worker_loop.sh
+```
+
+Reviewer A focuses on scientific/numerical correctness. Reviewer B focuses on code quality, build behavior, Kokkos/backend portability, tests, and maintainability. Set `CURSOR_REVIEWERS_ENABLED=0` to skip reviewer passes.
+
 To see the model ids available to your Cursor account:
 
 ```bash
@@ -134,7 +144,7 @@ If every item passes, the script archives the gate, records approval, and prunes
 
 The same approval and pruning behavior is available through the dashboard human review panel.
 
-Manual per-job review is still possible. Stop `scripts/supervisor_loop.sh` and ask Codex to review a `ready_for_review` job if you want to inspect a specific job yourself.
+Manual per-job review is still possible. Stop `scripts/supervisor_loop.sh` and ask Codex to review a `ready_for_review` job if you want to inspect a specific job yourself. If reviewer reports exist under `.ai/jobs/JNNNN/reviews/`, include them in the review.
 
 Workflow record commits are kept separate from implementation commits when possible. The supervisor and human-review helpers use `scripts/commit_workflow_records.py` to commit `.ai` job records, commit documentation, human-review records, ledger updates, and roadmap updates without mixing them into scientific source commits.
 

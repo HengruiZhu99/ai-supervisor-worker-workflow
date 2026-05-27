@@ -41,7 +41,7 @@ def job_state(status_path: Path) -> str:
 def stable_job_ids(root: Path) -> set[str]:
     stable = set()
     for status_path in sorted((root / ".ai" / "jobs").glob("J*/status.json")):
-        if job_state(status_path) != "running":
+        if job_state(status_path) not in {"running", "reviewing"}:
             stable.add(status_path.parent.name)
     return stable
 

@@ -10,6 +10,11 @@ CURSOR_MODEL="${CURSOR_MODEL:-gpt-5.5-high}"
 CURSOR_AGENT_EXTRA_ARGS="${CURSOR_AGENT_EXTRA_ARGS:-}"
 CURSOR_OUTPUT_FORMAT="${CURSOR_OUTPUT_FORMAT:-stream-json}"
 CURSOR_STREAM_PARTIAL_OUTPUT="${CURSOR_STREAM_PARTIAL_OUTPUT:-1}"
+CURSOR_REVIEWERS_ENABLED="${CURSOR_REVIEWERS_ENABLED:-1}"
+CURSOR_REVIEW_TIMEOUT="${CURSOR_REVIEW_TIMEOUT:-2400}"
+CURSOR_REVIEWER_A_MODEL="${CURSOR_REVIEWER_A_MODEL:-claude-opus-4-7-thinking-high}"
+CURSOR_REVIEWER_B_MODEL="${CURSOR_REVIEWER_B_MODEL:-gpt-5.3-codex-high}"
+CURSOR_REVIEWER_EXTRA_ARGS="${CURSOR_REVIEWER_EXTRA_ARGS:-}"
 WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-0}"
 WORKER_MAX_TIMEOUT_RESUMES="${WORKER_MAX_TIMEOUT_RESUMES:-1}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
@@ -67,6 +72,22 @@ run_cursor_agent() {
     cursor-agent -p --trust --workspace "$worktree" "${output_args[@]}" --model "$CURSOR_MODEL" $CURSOR_AGENT_EXTRA_ARGS "$(cat "$prompt_file")"
 }
 
+run_cursor_reviewer() {
+  local worktree="$1"
+  local prompt_file="$2"
+  local model="$3"
+
+  local output_args=(--output-format "$CURSOR_OUTPUT_FORMAT")
+  if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" && "$CURSOR_STREAM_PARTIAL_OUTPUT" == "1" ]]; then
+    output_args+=(--stream-partial-output)
+  fi
+  # Reviewers run in Cursor ask mode so their role is critique only. If your
+  # local cursor-agent changes read-only mode flags, edit only this function.
+  # shellcheck disable=SC2086
+  timeout "$CURSOR_REVIEW_TIMEOUT" \
+    cursor-agent -p --trust --mode ask --workspace "$worktree" "${output_args[@]}" --model "$model" $CURSOR_REVIEWER_EXTRA_ARGS "$(cat "$prompt_file")"
+}
+
 update_status() {
   local status_file="$1"
   shift
@@ -77,6 +98,135 @@ json_field() {
   local status_file="$1"
   local field="$2"
   jq -r --arg field "$field" '.[$field] // ""' "$status_file"
+}
+
+write_reviewer_prompt() {
+  local role="$1"
+  local job="$2"
+  local id="$3"
+  local attempt="$4"
+  local worktree="$5"
+  local base_ref="$6"
+  local final_commit="$7"
+  local prompt_file="$8"
+  local focus
+
+  if [[ "$role" == "reviewer-a" ]]; then
+    focus="scientific and numerical correctness, mathematical assumptions, units/dimensions, tolerances, edge cases, validation quality, documentation of scientific meaning, and scope discipline"
+  else
+    focus="code quality, CMake/build behavior, tests, Git hygiene, Kokkos/MPI/OpenMP/SYCL portability, memory layout, race/rank/backend risks, and maintainability"
+  fi
+
+  {
+    echo "# Cursor Reviewer Instructions"
+    echo
+    echo "You are $role for job $id attempt $attempt."
+    echo
+    echo "This is a read-only review. Do not edit files, create commits, change branches, or modify the worktree."
+    echo "Focus on: $focus."
+    echo
+    echo "## Review Context"
+    echo
+    echo "- Worktree: $ROOT/$worktree"
+    echo "- Base ref: $base_ref"
+    echo "- Final worker commit: $final_commit"
+    echo "- Task: $ROOT/$job/task.md"
+    echo "- Worker report: $ROOT/$job/report.md"
+    echo "- Diffstat: $ROOT/$job/diffstat.attempt-$attempt.txt"
+    echo "- Patch: $ROOT/$job/diff.attempt-$attempt.patch"
+    echo "- Test log: $ROOT/$job/test.attempt-$attempt.log"
+    echo "- Commit docs: $ROOT/.ai/commit_docs/"
+    echo
+    echo "Read the task, worker report, test log, diffstat, and selected patch/source sections. Check whether the worker stayed in scope and whether the evidence supports acceptance."
+    echo
+    echo "## Output Format"
+    echo
+    echo "Return a concise markdown report with:"
+    echo "1. Recommendation: accept, revise, or needs-supervisor-judgment"
+    echo "2. Blocking concerns"
+    echo "3. Nonblocking concerns"
+    echo "4. Evidence reviewed"
+    echo "5. Test and validation assessment"
+    echo "6. Scope assessment"
+    echo "7. Suggested supervisor decision rationale"
+  } >"$prompt_file"
+}
+
+run_one_reviewer() {
+  local role="$1"
+  local model="$2"
+  local job="$3"
+  local id="$4"
+  local attempt="$5"
+  local worktree="$6"
+  local base_ref="$7"
+  local final_commit="$8"
+  local reviews_dir="$job/reviews"
+
+  mkdir -p "$reviews_dir"
+
+  local prompt_file="$reviews_dir/$role.prompt.attempt-$attempt.md"
+  local review_out="$reviews_dir/$role.attempt-$attempt.md"
+  local review_err="$reviews_dir/$role.stderr.attempt-$attempt.log"
+  local review_stream="$reviews_dir/$role.stream.attempt-$attempt.jsonl"
+  local reviewer_exit=0
+
+  write_reviewer_prompt "$role" "$job" "$id" "$attempt" "$worktree" "$base_ref" "$final_commit" "$prompt_file"
+
+  set +e
+  if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" ]]; then
+    run_cursor_reviewer "$ROOT/$worktree" "$ROOT/$prompt_file" "$model" \
+      2> >(tee "$review_err" >&2) \
+      | tee "$review_stream" \
+      | python3 "$SCRIPT_DIR/cursor_stream_to_text.py" \
+      | tee "$review_out"
+  else
+    run_cursor_reviewer "$ROOT/$worktree" "$ROOT/$prompt_file" "$model" 2> >(tee "$review_err" >&2) | tee "$review_out"
+  fi
+  reviewer_exit=${PIPESTATUS[0]}
+  set -e
+
+  if [[ "$reviewer_exit" -eq 124 ]]; then
+    echo "Reviewer $role timed out after ${CURSOR_REVIEW_TIMEOUT}s" | tee -a "$review_err" >&2
+  elif [[ "$reviewer_exit" -ne 0 ]]; then
+    echo "Reviewer $role exited with code $reviewer_exit" | tee -a "$review_err" >&2
+  fi
+
+  return "$reviewer_exit"
+}
+
+run_reviewers() {
+  local job="$1"
+  local status_file="$2"
+  local id="$3"
+  local attempt="$4"
+  local worktree="$5"
+  local base_ref="$6"
+  local final_commit="$7"
+  local reviewer_a_exit=0
+  local reviewer_b_exit=0
+
+  if [[ "$CURSOR_REVIEWERS_ENABLED" != "1" ]]; then
+    update_status "$status_file" reviewers_enabled=false
+    return 0
+  fi
+
+  update_status "$status_file" \
+    state=reviewing \
+    reviewers_enabled=true \
+    reviewer_a_model="$CURSOR_REVIEWER_A_MODEL" \
+    reviewer_b_model="$CURSOR_REVIEWER_B_MODEL"
+
+  run_one_reviewer "reviewer-a" "$CURSOR_REVIEWER_A_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_ref" "$final_commit" || reviewer_a_exit=$?
+  run_one_reviewer "reviewer-b" "$CURSOR_REVIEWER_B_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_ref" "$final_commit" || reviewer_b_exit=$?
+
+  update_status "$status_file" \
+    reviewer_a_exit="$reviewer_a_exit" \
+    reviewer_b_exit="$reviewer_b_exit" \
+    reviewer_a_report="$job/reviews/reviewer-a.attempt-$attempt.md" \
+    reviewer_b_report="$job/reviews/reviewer-b.attempt-$attempt.md"
+
+  return 0
 }
 
 process_job() {
@@ -256,6 +406,10 @@ process_job() {
   if [[ "$timed_out" == true && "$WORKER_AUTO_RESUME_TIMEOUT" == "1" && "$attempt" -lt "$WORKER_MAX_TIMEOUT_RESUMES" ]]; then
     next_state=queued
     echo "Requeueing $id after timeout attempt $attempt; max timeout resumes: $WORKER_MAX_TIMEOUT_RESUMES"
+  fi
+
+  if [[ "$next_state" == "ready_for_review" ]]; then
+    run_reviewers "$job" "$status_file" "$id" "$attempt" "$worktree" "$base_ref" "$final_commit"
   fi
 
   update_status "$status_file" \

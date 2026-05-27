@@ -13,6 +13,7 @@ Responsibilities:
 - Maintain high-level project state in `.ai/supervisor/`.
 - Create small, reviewable jobs under `.ai/jobs/JNNNN/`.
 - Review Cursor worker reports, tests, diffs, and commit documentation.
+- Review read-only Cursor reviewer reports when the reviewer stage is enabled.
 - Accept or reject jobs.
 - Update `.ai/supervisor/ledger.md`.
 - Avoid loading huge logs unless necessary.
@@ -36,6 +37,14 @@ Responsibilities:
 - For each commit or attempt, record a documentation summary under `.ai/commit_docs/`.
 - Never mark its own work as accepted.
 - Never broaden scope without supervisor approval.
+
+### Cursor reviewers
+
+When enabled, two read-only Cursor reviewer passes run after a worker attempt:
+- Reviewer A checks scientific/numerical correctness, assumptions, tolerances, edge cases, and validation evidence.
+- Reviewer B checks build/code quality, Kokkos/MPI/OpenMP/SYCL portability, memory layout, tests, and maintainability.
+
+Reviewer reports are advisory inputs to Codex. Reviewers do not accept work, reject work, or modify files.
 
 ## Scientific Coding Rules
 

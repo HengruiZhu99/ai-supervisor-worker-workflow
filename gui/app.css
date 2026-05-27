@@ -586,8 +586,26 @@ textarea {
   min-height: 320px;
 }
 
+.reviewer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.reviewer-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.reviewer-box {
+  max-height: 360px;
+  min-height: 260px;
+}
+
 @media (max-width: 1080px) {
-  .hero-grid, .content-grid, .detail-grid, .review-layout { grid-template-columns: 1fr; }
+  .hero-grid, .content-grid, .detail-grid, .review-layout, .reviewer-grid { grid-template-columns: 1fr; }
   .topbar { align-items: flex-start; flex-direction: column; }
 }
 

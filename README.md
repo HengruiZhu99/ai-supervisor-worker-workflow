@@ -80,8 +80,10 @@ http://127.0.0.1:8765/
 
 The dashboard includes:
 - worker launch/stop controls with Cursor model, timeout, and force options
+- reviewer controls for two read-only Cursor reviewer passes after each worker attempt
 - supervisor launch/stop controls with Codex model, reasoning effort, poll interval, and verbose heartbeat options
 - job status and logs
+- reviewer report display for the latest reviewed or actively reviewing job
 - expandable milestone criteria
 - bounded live worker/supervisor loop log panes
 - project worktree and expandable file-tree views
@@ -97,6 +99,16 @@ To ask the supervisor loop to push the main branch after accepting a structural 
 ```bash
 SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE=1 ./scripts/supervisor_loop.sh
 ```
+
+The worker loop runs two read-only Cursor reviewers by default after the worker finishes and before the supervisor sees `ready_for_review`:
+
+```bash
+CURSOR_REVIEWER_A_MODEL=claude-opus-4-7-thinking-high \
+CURSOR_REVIEWER_B_MODEL=gpt-5.3-codex-high \
+./scripts/worker_loop.sh
+```
+
+Reviewer A is tuned for scientific/numerical review. Reviewer B is tuned for build, Kokkos/backend portability, tests, and maintainability. Set `CURSOR_REVIEWERS_ENABLED=0` to disable this stage.
 
 The log panes show the last 10000 lines by default. To change that display limit:
 
