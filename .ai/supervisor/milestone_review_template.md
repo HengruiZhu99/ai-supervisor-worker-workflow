@@ -27,10 +27,20 @@ Choose one:
 
 ## Recommended next milestone
 
-## Human decision
+## Human Review To-Do List
 
-Choose one:
-- approve next milestone
-- request changes
-- pause autonomous workflow
+- [ ] Milestone summary is accurate.
+- [ ] Accepted jobs and commits are reviewable.
+- [ ] Tests and validation are acceptable.
+- [ ] Scientific assumptions, risks, and limitations are acceptable.
+- [ ] Recommended next milestone is acceptable.
 
+## Human Review Instructions
+
+Run:
+
+```bash
+python3 scripts/human_milestone_review.py
+```
+
+Answer `yes` or `no` for every checklist item. If any item is `no`, enter comments when prompted. The script will still ask about the remaining items, then create one revision worker job covering all failed items.

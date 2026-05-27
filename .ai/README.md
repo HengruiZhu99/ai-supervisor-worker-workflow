@@ -104,7 +104,15 @@ When the current milestone is complete or blocked, the supervisor loop writes:
 .ai/supervisor/HUMAN_REVIEW_REQUIRED.md
 ```
 
-Review that milestone summary, decide whether to approve the next milestone, then remove or archive the gate file before restarting or continuing the supervisor loop.
+Review that milestone summary with the interactive checklist command:
+
+```bash
+python3 scripts/human_milestone_review.py
+```
+
+Answer `yes` or `no` for every review item. If an item fails, enter comments when prompted. The script will still cycle through the rest of the list, archive the gate, record the review, and create one revision worker job for all failed items.
+
+If every item passes, the script archives the gate and records approval. Restart or continue the supervisor loop afterward.
 
 Manual per-job review is still possible. Stop `scripts/supervisor_loop.sh` and ask Codex to review a `ready_for_review` job if you want to inspect a specific job yourself.
 
@@ -132,6 +140,6 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/human_milestone_review.py
 python3 scripts/summarize_jobs.py
 ```

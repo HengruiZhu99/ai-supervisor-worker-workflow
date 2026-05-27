@@ -50,6 +50,7 @@ files=(
   ".ai/supervisor/design_prompt.md"
   ".ai/supervisor/job_template.md"
   ".ai/supervisor/ledger.md"
+  ".ai/supervisor/human_reviews/.gitkeep"
   ".ai/supervisor/milestone_review_template.md"
   ".ai/supervisor/project_brief.md"
   ".ai/supervisor/review_checklist.md"
@@ -58,6 +59,7 @@ files=(
   ".ai/supervisor_runs/.gitkeep"
   "scripts/create_commit_doc.py"
   "scripts/create_job.py"
+  "scripts/human_milestone_review.py"
   "scripts/summarize_jobs.py"
   "scripts/supervisor_loop.sh"
   "scripts/update_job_status.py"
@@ -77,4 +79,3 @@ merge_gitignore
 chmod +x "$TARGET_DIR/scripts/worker_loop.sh" "$TARGET_DIR/scripts/supervisor_loop.sh"
 
 echo "AI workflow installation complete."
-

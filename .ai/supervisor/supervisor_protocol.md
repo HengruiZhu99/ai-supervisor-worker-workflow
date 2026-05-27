@@ -41,7 +41,7 @@ The default project workflow is milestone-gated autonomy:
 
 Codex must still keep jobs small and reviewable. Milestone autonomy removes per-job human approval, not per-job review.
 
-Codex should create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` and stop dispatching jobs when:
+Codex should create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` using `.ai/supervisor/milestone_review_template.md` and stop dispatching jobs when:
 
 - milestone acceptance criteria appear complete
 - the next job would start a new milestone
@@ -50,7 +50,13 @@ Codex should create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` and stop
 - tests expose a design-level issue rather than a local implementation bug
 - continuing would require broadening scope beyond the approved milestone
 
-The human can resume autonomous work by resolving the issue, updating the milestone plan if needed, and removing or archiving `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`.
+The human should process the milestone gate by running:
+
+```bash
+python3 scripts/human_milestone_review.py
+```
+
+The script asks for `yes` or `no` on every checklist item, collects comments for each failed item, records the review under `.ai/supervisor/human_reviews/`, archives the gate, and creates one revision job if any item fails.
 
 ## Waiting protocol
 
@@ -175,3 +181,5 @@ At a milestone review boundary, Codex should provide:
 - tests and validation results
 - scientific assumptions and unresolved risks
 - recommended next milestone plan
+- a `## Human Review To-Do List` section with `- [ ]` checklist items
+- instructions to run `python3 scripts/human_milestone_review.py`
