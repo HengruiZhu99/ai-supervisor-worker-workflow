@@ -7,7 +7,8 @@ cd "$ROOT"
 SUPERVISOR_POLL_SECONDS="${SUPERVISOR_POLL_SECONDS:-10}"
 SUPERVISOR_RUNS_DIR="${SUPERVISOR_RUNS_DIR:-.ai/supervisor_runs}"
 SUPERVISOR_VERBOSE="${SUPERVISOR_VERBOSE:-0}"
-CODEX_MODEL="${CODEX_MODEL:-}"
+CODEX_MODEL="${CODEX_MODEL:-gpt-5.5}"
+CODEX_REASONING_EFFORT="${CODEX_REASONING_EFFORT:-high}"
 CODEX_EXTRA_ARGS="${CODEX_EXTRA_ARGS:-}"
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 
@@ -101,6 +102,11 @@ run_codex_supervisor() {
     model_args=(-m "$CODEX_MODEL")
   fi
 
+  local config_args=()
+  if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
+    config_args=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
+  fi
+
   set +e
   {
     cat <<'PROMPT'
@@ -130,7 +136,7 @@ Rules:
 
 Return a concise summary of what you reviewed, accepted/rejected/dispatched, and whether the workflow is waiting for worker or human review.
 PROMPT
-  } | codex --ask-for-approval never --sandbox danger-full-access exec -C "$ROOT" "${model_args[@]}" $CODEX_EXTRA_ARGS - >"$log_file" 2>&1
+  } | codex --ask-for-approval never --sandbox danger-full-access exec -C "$ROOT" "${model_args[@]}" "${config_args[@]}" $CODEX_EXTRA_ARGS - >"$log_file" 2>&1
   local codex_exit=$?
   set -e
 

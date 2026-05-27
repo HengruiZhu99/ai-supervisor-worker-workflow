@@ -74,12 +74,12 @@ The supervisor loop invokes `codex exec` only when action is needed:
 
 It does not ask for human input after every small job. It reviews job reports, tests, diffs, and commit documentation; accepts or rejects jobs; updates the ledger; and dispatches the next small job while the current milestone remains approved.
 
-The supervisor loop uses your Codex CLI default model unless `CODEX_MODEL` is set. Cursor model ids and Codex model ids are not guaranteed to match.
+The supervisor loop defaults to the ChatGPT Codex naming convention for GPT-5.5 High: `CODEX_MODEL=gpt-5.5` with `CODEX_REASONING_EFFORT=high`. Cursor model ids and Codex model ids are not guaranteed to match; Cursor uses `gpt-5.5-high`, while Codex uses `gpt-5.5` plus high reasoning effort.
 
 To choose a Codex-supported model for the supervisor loop:
 
 ```bash
-CODEX_MODEL=<codex-model-id> ./scripts/supervisor_loop.sh
+CODEX_MODEL=gpt-5.5 CODEX_REASONING_EFFORT=high ./scripts/supervisor_loop.sh
 ```
 
 To print a heartbeat while the supervisor is waiting:

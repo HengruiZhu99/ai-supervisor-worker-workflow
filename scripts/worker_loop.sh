@@ -66,7 +66,7 @@ process_job() {
   fi
   CURRENT_LOCK="$lock_dir"
 
-  local id base_ref branch test_command attempt worktree
+  local id base_ref branch test_command attempt worktree current_branch
   id="$(json_field "$status_file" id)"
   base_ref="$(json_field "$status_file" base_ref)"
   branch="$(json_field "$status_file" branch)"
@@ -81,7 +81,19 @@ process_job() {
   fi
 
   mkdir -p .worktrees
-  if [[ ! -d "$worktree/.git" ]]; then
+  if git -C "$worktree" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    current_branch="$(git -C "$worktree" symbolic-ref --quiet --short HEAD || true)"
+    if [[ "$current_branch" != "$branch" ]]; then
+      update_status "$status_file" state=blocked worker_error="existing worktree $worktree is on branch $current_branch, expected $branch"
+      cleanup_current_lock
+      return 0
+    fi
+  else
+    if [[ -e "$worktree" ]]; then
+      update_status "$status_file" state=blocked worker_error="worktree path exists but is not a valid Git worktree: $worktree"
+      cleanup_current_lock
+      return 0
+    fi
     if git show-ref --verify --quiet "refs/heads/$branch"; then
       git worktree add "$worktree" "$branch"
     else
