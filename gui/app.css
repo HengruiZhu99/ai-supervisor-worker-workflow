@@ -254,6 +254,12 @@ textarea {
   gap: 10px;
 }
 
+.jobs-panel .jobs {
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
 .control-form {
   display: grid;
   gap: 10px;

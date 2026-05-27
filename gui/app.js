@@ -228,7 +228,8 @@ function renderHumanReview(supervisor) {
   `).join("") + '<div class="button-row"><button type="submit">Submit Human Review</button></div>';
 }
 
-function render(data) {
+function render(data, options = {}) {
+  const refreshStaticPanels = options.refreshStaticPanels ?? false;
   state.data = data;
   $("projectName").textContent = data.project.name;
   $("projectRoot").textContent = data.project.root;
@@ -266,19 +267,21 @@ function render(data) {
   renderProcesses("workerProcesses", [...data.processes.worker, ...data.processes.cursor]);
   renderProcesses("supervisorProcesses", [...data.processes.supervisor, ...data.processes.codex]);
   renderJobs(data.jobs);
-  renderMilestones(data.supervisor.milestones);
   renderWorktrees(data.worktrees);
-  renderTree(data.tree);
+  if (refreshStaticPanels) {
+    renderMilestones(data.supervisor.milestones);
+    renderTree(data.tree);
+  }
   renderHumanReview(data.supervisor);
 }
 
-async function refresh() {
+async function refresh(options = {}) {
   const response = await fetch("/api/state", { cache: "no-store" });
   if (!response.ok) throw new Error(`State request failed: ${response.status}`);
-  render(await response.json());
+  render(await response.json(), options);
 }
 
-$("refreshButton").addEventListener("click", () => refresh().catch(console.error));
+$("refreshButton").addEventListener("click", () => refresh({ refreshStaticPanels: true }).catch(console.error));
 $("workerForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
@@ -326,14 +329,14 @@ $("humanReviewForm").addEventListener("submit", async (event) => {
   try {
     const result = await postJson("/api/human-review", { decisions });
     alert(result.message || "Human review submitted.");
-    await refresh();
+    await refresh({ refreshStaticPanels: true });
   } catch (error) {
     alert(error.message);
   }
 });
-refresh().catch((error) => {
+refresh({ refreshStaticPanels: true }).catch((error) => {
   $("healthPill").textContent = "Error";
   $("healthPill").className = "health gate";
   $("supervisorLoopLog").textContent = error.stack || String(error);
 });
-state.timer = setInterval(() => refresh().catch(console.error), 5000);
+state.timer = setInterval(() => refresh({ refreshStaticPanels: false }).catch(console.error), 5000);
