@@ -1,6 +1,7 @@
 const state = {
   data: null,
   timer: null,
+  humanReviewSignature: "",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -194,6 +195,7 @@ function renderHumanReview(supervisor) {
     section.classList.add("hidden");
     form.innerHTML = "";
     gate.textContent = "";
+    state.humanReviewSignature = "";
     return;
   }
 
@@ -208,6 +210,12 @@ function renderHumanReview(supervisor) {
         "Scientific assumptions, risks, and limitations are acceptable.",
         "Recommended next milestone is acceptable.",
       ];
+  const signature = JSON.stringify({ gate: supervisor.human_gate || "", items });
+  if (signature === state.humanReviewSignature && form.children.length) {
+    return;
+  }
+
+  state.humanReviewSignature = signature;
   form.innerHTML = items.map((item, index) => `
     <div class="review-item" data-index="${index}">
       <div class="review-question">${escapeHtml(item)}</div>
@@ -321,7 +329,6 @@ $("humanReviewForm").addEventListener("submit", async (event) => {
     await refresh();
   } catch (error) {
     alert(error.message);
-    await refresh();
   }
 });
 refresh().catch((error) => {
