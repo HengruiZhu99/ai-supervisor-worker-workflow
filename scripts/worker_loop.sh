@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 CURSOR_TIMEOUT="${CURSOR_TIMEOUT:-3600}"
@@ -159,7 +160,7 @@ process_job() {
     run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" \
       2> >(tee "$cursor_err" >&2) \
       | tee "$cursor_stream" \
-      | python3 scripts/cursor_stream_to_text.py \
+      | python3 "$SCRIPT_DIR/cursor_stream_to_text.py" \
       | tee "$cursor_out"
   else
     run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" 2> >(tee "$cursor_err" >&2) | tee "$cursor_out"
