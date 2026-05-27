@@ -261,6 +261,8 @@ def active_job_summary(job_rows: list[dict]) -> dict | None:
         "branch": job.get("branch"),
         "path": job.get("_path"),
         "test_command": job.get("test_command", ""),
+        "timed_out": job.get("timed_out", False),
+        "worker_error": job.get("worker_error", ""),
     }
 
 
@@ -309,6 +311,8 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_
         summary = "Wait for Human Milestone Review."
     elif ready_job:
         summary = f"Reviewer is reviewing {ready_job.get('id', 'a job')}."
+    elif active and active.get("timed_out"):
+        summary = f"Worker timed out on {active.get('id', 'a job')}."
     elif active and active.get("state") in {"queued", "running", "rejected"}:
         summary = f"Worker is working on {active.get('id', 'a job')}."
     elif active and active.get("state") == "blocked":
@@ -321,6 +325,8 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_
     if active:
         if active.get("state") == "ready_for_review":
             worker_text = f"Cursor finished {active.get('id')} attempt {active.get('attempt')}; awaiting supervisor review."
+        elif active.get("timed_out"):
+            worker_text = f"Cursor timed out on {active.get('id')} attempt {active.get('attempt')}: {active.get('worker_error')}"
         elif active.get("state") == "blocked":
             worker_text = f"Worker blocked on {active.get('id')} attempt {active.get('attempt')}; supervisor review or feedback is needed."
         else:
@@ -761,6 +767,8 @@ class Handler(SimpleHTTPRequestHandler):
                     "CURSOR_MODEL": str(payload.get("model", "gpt-5.5-high")),
                     "CURSOR_TIMEOUT": str(payload.get("timeout", "3600")),
                     "CURSOR_AGENT_EXTRA_ARGS": extra_args,
+                    "WORKER_AUTO_RESUME_TIMEOUT": "1" if payload.get("auto_resume_timeout", False) else "0",
+                    "WORKER_MAX_TIMEOUT_RESUMES": str(payload.get("max_timeout_resumes", "2")),
                 },
             )
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)

@@ -71,9 +71,17 @@
                 Timeout seconds
                 <input name="timeout" type="number" min="60" step="60" value="3600" />
               </label>
+              <label>
+                Timeout resume attempts
+                <input name="max_timeout_resumes" type="number" min="1" step="1" value="2" />
+              </label>
               <label class="check-line">
                 <input name="force" type="checkbox" checked />
                 <span>Force unattended execution</span>
+              </label>
+              <label class="check-line">
+                <input name="auto_resume_timeout" type="checkbox" />
+                <span>Automatically resume after timeout</span>
               </label>
               <div class="button-row">
                 <button type="submit">Launch Worker</button>

@@ -7,6 +7,8 @@ cd "$ROOT"
 CURSOR_TIMEOUT="${CURSOR_TIMEOUT:-3600}"
 CURSOR_MODEL="${CURSOR_MODEL:-gpt-5.5-high}"
 CURSOR_AGENT_EXTRA_ARGS="${CURSOR_AGENT_EXTRA_ARGS:-}"
+WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-0}"
+WORKER_MAX_TIMEOUT_RESUMES="${WORKER_MAX_TIMEOUT_RESUMES:-1}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
 CURRENT_LOCK=""
 
@@ -129,10 +131,23 @@ process_job() {
   local cursor_out="$job/cursor_final.attempt-$attempt.md"
   local cursor_err="$job/cursor_stderr.attempt-$attempt.log"
   local worker_exit=0
+  local timed_out=false
+  local worker_error=""
   set +e
   run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" 2> >(tee "$cursor_err" >&2) | tee "$cursor_out"
   worker_exit=${PIPESTATUS[0]}
   set -e
+  if [[ "$worker_exit" -eq 124 ]]; then
+    timed_out=true
+    worker_error="cursor-agent timed out after ${CURSOR_TIMEOUT}s"
+    echo "$worker_error" | tee -a "$cursor_err" >&2
+  elif [[ "$worker_exit" -eq 137 ]]; then
+    timed_out=true
+    worker_error="cursor-agent was killed after timeout escalation after ${CURSOR_TIMEOUT}s"
+    echo "$worker_error" | tee -a "$cursor_err" >&2
+  elif [[ "$worker_exit" -ne 0 ]]; then
+    worker_error="cursor-agent exited with code $worker_exit"
+  fi
 
   local pre_commit_head post_cursor_head
   pre_commit_head="$(git -C "$worktree" rev-parse HEAD)"
@@ -176,6 +191,11 @@ process_job() {
     echo
     echo "## Worker exit"
     echo "$worker_exit"
+    if [[ -n "$worker_error" ]]; then
+      echo
+      echo "## Worker error"
+      echo "$worker_error"
+    fi
     echo
     echo "## Test exit"
     echo "$test_exit"
@@ -203,11 +223,18 @@ process_job() {
   if [[ "$worker_exit" -ne 0 ]]; then
     next_state=blocked
   fi
+  if [[ "$timed_out" == true && "$WORKER_AUTO_RESUME_TIMEOUT" == "1" && "$attempt" -lt "$WORKER_MAX_TIMEOUT_RESUMES" ]]; then
+    next_state=queued
+    echo "Requeueing $id after timeout attempt $attempt; max timeout resumes: $WORKER_MAX_TIMEOUT_RESUMES"
+  fi
 
   update_status "$status_file" \
     state="$next_state" \
     attempt="$attempt" \
     worker_exit="$worker_exit" \
+    timed_out="$timed_out" \
+    worker_error="$worker_error" \
+    auto_resume_timeout="$WORKER_AUTO_RESUME_TIMEOUT" \
     test_exit="$test_exit" \
     tests_passed="$tests_passed" \
     commit="$final_commit" \
