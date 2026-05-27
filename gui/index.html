@@ -50,6 +50,16 @@
               </div>
               <div class="progress-track"><div id="jobProgressBar" class="progress-bar"></div></div>
             </div>
+            <div class="activity-card">
+              <div class="activity-row">
+                <span class="activity-label">Worker</span>
+                <p id="workerActivity">Checking...</p>
+              </div>
+              <div class="activity-row">
+                <span class="activity-label">Supervisor</span>
+                <p id="supervisorActivity">Checking...</p>
+              </div>
+            </div>
           </article>
 
           <article class="panel process-card">
@@ -128,7 +138,7 @@
           </article>
 
           <article class="panel">
-            <div class="panel-title"><span>Stages</span><span class="muted">Roadmap</span></div>
+            <div class="panel-title"><span>Milestones</span><span class="muted"></span></div>
             <div id="milestones" class="milestones"></div>
           </article>
 
@@ -149,7 +159,7 @@
             <pre id="ledger" class="text-box"></pre>
           </article>
           <article class="panel">
-            <div class="panel-title"><span>Worker Loop Log</span><span id="workerLoopLogMeta" class="muted"></span></div>
+            <div class="panel-title"><span id="workerLogTitle">Cursor Worker Output</span><span id="workerLoopLogMeta" class="muted"></span></div>
             <pre id="workerLoopLog" class="text-box log-box"></pre>
           </article>
           <article class="panel">

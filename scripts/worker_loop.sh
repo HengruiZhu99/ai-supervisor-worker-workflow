@@ -130,8 +130,8 @@ process_job() {
   local cursor_err="$job/cursor_stderr.attempt-$attempt.log"
   local worker_exit=0
   set +e
-  run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" >"$cursor_out" 2>"$cursor_err"
-  worker_exit=$?
+  run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" 2> >(tee "$cursor_err" >&2) | tee "$cursor_out"
+  worker_exit=${PIPESTATUS[0]}
   set -e
 
   local pre_commit_head post_cursor_head

@@ -160,11 +160,29 @@ def jobs(root: Path) -> list[dict]:
         data["_report_tail"] = tail(job_dir / "report.md", 60)
         data["_test_tail"] = tail(job_dir / f"test.attempt-{attempt}.log", 60)
         data["_cursor_tail"] = tail(job_dir / f"cursor_final.attempt-{attempt}.md", 60)
+        data["_task_text"] = read_text(job_dir / "task.md", 40_000)
         out.append(data)
     return out
 
 
-def parse_roadmap(text: str) -> list[dict]:
+def criterion_is_active(item_text: str, active_contexts: list[str]) -> bool:
+    if not active_contexts:
+        return False
+    normalized_item = item_text.lower()
+    code_spans = re.findall(r"`([^`]+)`", item_text)
+    for context in active_contexts:
+        normalized_context = context.lower()
+        for span in code_spans:
+            if span.lower() in normalized_context:
+                return True
+        words = [word for word in re.findall(r"[a-zA-Z0-9_./+-]+", normalized_item) if len(word) >= 5]
+        if words and sum(1 for word in words if word in normalized_context) >= min(2, len(words)):
+            return True
+    return False
+
+
+def parse_roadmap(text: str, active_contexts: list[str] | None = None) -> list[dict]:
+    active_contexts = active_contexts or []
     milestones = []
     current: dict | None = None
     for line in text.splitlines():
@@ -175,16 +193,38 @@ def parse_roadmap(text: str) -> list[dict]:
             continue
         if current and re.match(r"^-\s+\[[ xX]\]", line.strip()):
             done = "[x]" in line.lower()
-            current["items"].append({"text": line.strip()[6:].strip(), "done": done})
+            item_text = line.strip()[6:].strip()
+            active = (not done) and criterion_is_active(item_text, active_contexts)
+            current["items"].append({"text": item_text, "done": done, "active": active})
             current["total"] += 1
             if done:
                 current["done"] += 1
+            if active:
+                current["active"] = current.get("active", 0) + 1
     if current:
         milestones.append(current)
     return milestones
 
 
-def supervisor_state(root: Path) -> dict:
+def active_job_contexts(job_rows: list[dict]) -> list[str]:
+    contexts = []
+    for job in job_rows:
+        if job.get("state") not in {"queued", "running", "rejected"}:
+            continue
+        contexts.append(
+            "\n".join(
+                [
+                    str(job.get("id", "")),
+                    str(job.get("title", "")),
+                    str(job.get("_task_text", "")),
+                ]
+            )
+        )
+    return contexts
+
+
+def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
+    job_rows = job_rows or []
     supervisor = root / ".ai" / "supervisor"
     roadmap = read_text(supervisor / "roadmap.md")
     ledger = read_text(supervisor / "ledger.md")
@@ -195,7 +235,7 @@ def supervisor_state(root: Path) -> dict:
     latest_log = run_logs[-1] if run_logs else None
     return {
         "roadmap": roadmap,
-        "milestones": parse_roadmap(roadmap),
+        "milestones": parse_roadmap(roadmap, active_job_contexts(job_rows)),
         "ledger": ledger,
         "project_brief": project_brief,
         "human_gate_exists": gate_path.exists(),
@@ -203,6 +243,90 @@ def supervisor_state(root: Path) -> dict:
         "human_gate_checklist": parse_gate_checklist(read_text(gate_path)) if gate_path.exists() else [],
         "latest_supervisor_log": str(latest_log.relative_to(root)) if latest_log else "",
         "latest_supervisor_tail": tail(latest_log, LOG_DISPLAY_LINES) if latest_log else "",
+    }
+
+
+def active_job_summary(job_rows: list[dict]) -> dict | None:
+    priority = {"running": 0, "queued": 1, "rejected": 2, "ready_for_review": 3, "blocked": 4}
+    candidates = [job for job in job_rows if job.get("state") in priority]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda job: priority.get(job.get("state"), 99))
+    job = candidates[0]
+    return {
+        "id": job.get("id"),
+        "title": job.get("title"),
+        "state": job.get("state"),
+        "attempt": job.get("attempt", 0),
+        "branch": job.get("branch"),
+        "path": job.get("_path"),
+        "test_command": job.get("test_command", ""),
+    }
+
+
+def worker_display_log(root: Path, job_rows: list[dict], fallback: dict) -> dict:
+    job = active_job_summary(job_rows)
+    if not job:
+        return {
+            "log_tail": fallback.get("log_tail", ""),
+            "log_file": fallback.get("log_file", ""),
+            "log_display_lines": fallback.get("log_display_lines", LOG_DISPLAY_LINES),
+            "log_label": "Worker Loop Log",
+        }
+
+    job_dir = root / ".ai" / "jobs" / str(job.get("id"))
+    attempt = job.get("attempt", 0)
+    cursor_out = job_dir / f"cursor_final.attempt-{attempt}.md"
+    cursor_err = job_dir / f"cursor_stderr.attempt-{attempt}.log"
+    cursor_tail = tail(cursor_out, LOG_DISPLAY_LINES)
+    stderr_tail = tail(cursor_err, LOG_DISPLAY_LINES)
+    if cursor_tail:
+        log_tail = cursor_tail
+        log_file_value = str(cursor_out.relative_to(root))
+    elif stderr_tail:
+        log_tail = stderr_tail
+        log_file_value = str(cursor_err.relative_to(root))
+    else:
+        log_tail = (
+            f"Cursor is running {job.get('id')} attempt {attempt}, but it has not emitted stdout/stderr yet.\n"
+            "Some cursor-agent versions only write final text when the agent finishes.\n\n"
+            f"Fallback worker loop log:\n{fallback.get('log_tail', '')}"
+        ).rstrip()
+        log_file_value = str(cursor_out.relative_to(root))
+    return {
+        "log_tail": log_tail,
+        "log_file": log_file_value,
+        "log_display_lines": LOG_DISPLAY_LINES,
+        "log_label": "Cursor Worker Output",
+    }
+
+
+def activity_state(job_rows: list[dict], processes: dict, controls: dict) -> dict:
+    active = active_job_summary(job_rows)
+    if active:
+        worker_text = (
+            f"Cursor is handling {active.get('id')} attempt {active.get('attempt')}: "
+            f"{active.get('title')} ({active.get('state')})."
+        )
+    elif controls.get("worker", {}).get("running"):
+        worker_text = "Worker loop is live and waiting for queued or rejected jobs."
+    else:
+        worker_text = "Worker loop is idle."
+
+    if active and active.get("state") in {"queued", "running", "rejected"}:
+        supervisor_text = f"Supervisor is waiting for worker state changes on {active.get('id')}."
+    elif any(job.get("state") == "ready_for_review" for job in job_rows):
+        supervisor_text = "Supervisor should review a job that is ready_for_review."
+    elif controls.get("supervisor", {}).get("running"):
+        supervisor_text = "Supervisor loop is live and watching job state."
+    else:
+        supervisor_text = "Supervisor loop is idle."
+
+    return {
+        "worker": worker_text,
+        "supervisor": supervisor_text,
+        "active_job": active,
+        "process_counts": {key: len(value) for key, value in processes.items()},
     }
 
 
@@ -359,6 +483,12 @@ def state(root: Path) -> dict:
     accepted = counts.get("accepted", 0)
     total = len(job_rows)
     progress = int((accepted / total) * 100) if total else 0
+    processes = process_blocks(root)
+    controls = {
+        "worker": control_info(root, "worker_loop"),
+        "supervisor": control_info(root, "supervisor_loop"),
+    }
+    controls["worker"].update(worker_display_log(root, job_rows, controls["worker"]))
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "project": {"root": str(root), "name": root.name},
@@ -366,13 +496,11 @@ def state(root: Path) -> dict:
         "jobs": job_rows,
         "job_counts": counts,
         "job_progress": progress,
-        "supervisor": supervisor_state(root),
+        "supervisor": supervisor_state(root, job_rows),
         "worktrees": worktrees(root),
-        "processes": process_blocks(root),
-        "controls": {
-            "worker": control_info(root, "worker_loop"),
-            "supervisor": control_info(root, "supervisor_loop"),
-        },
+        "processes": processes,
+        "controls": controls,
+        "activity": activity_state(job_rows, processes, controls),
         "tree": project_tree(root),
     }
 

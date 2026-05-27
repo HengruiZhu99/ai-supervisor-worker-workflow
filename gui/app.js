@@ -90,7 +90,7 @@ function renderJobs(jobs) {
 function renderMilestones(milestones) {
   const box = $("milestones");
   if (!milestones.length) {
-    box.innerHTML = '<div class="milestone">No roadmap milestones parsed.</div>';
+    box.innerHTML = '<div class="milestone">No milestones parsed.</div>';
     return;
   }
   box.innerHTML = milestones.map((m) => {
@@ -104,8 +104,8 @@ function renderMilestones(milestones) {
         <div class="mini-track"><div class="mini-bar" style="width:${pct}%"></div></div>
         <div class="criteria-list">
           ${m.items.map((item) => `
-            <div class="criterion ${item.done ? "done" : "open"}">
-              <span>${item.done ? "✓" : "○"}</span>
+            <div class="criterion ${item.done ? "done" : item.active ? "active" : "open"}">
+              <span>${item.done ? "✓" : item.active ? "●" : "○"}</span>
               <p>${escapeHtml(item.text)}</p>
             </div>
           `).join("")}
@@ -241,11 +241,14 @@ function render(data) {
   $("jobProgressText").textContent = `${data.job_progress}%`;
   $("jobProgressBar").style.width = `${data.job_progress}%`;
   $("jobCounts").textContent = Object.entries(data.job_counts).map(([key, value]) => `${key}: ${value}`).join(" · ");
+  $("workerActivity").textContent = data.activity?.worker || "Worker status unavailable.";
+  $("supervisorActivity").textContent = data.activity?.supervisor || "Supervisor status unavailable.";
   $("ledger").textContent = data.supervisor.ledger || "No ledger found.";
   $("latestLog").textContent = data.supervisor.latest_supervisor_log || "";
   $("supervisorLog").textContent = data.supervisor.latest_supervisor_tail || "No supervisor log found.";
   $("workerLoopLog").textContent = data.controls?.worker?.log_tail || "No worker loop log found.";
   $("supervisorLoopLog").textContent = data.controls?.supervisor?.log_tail || "No supervisor loop log found.";
+  $("workerLogTitle").textContent = data.controls?.worker?.log_label || "Cursor Worker Output";
   $("workerLoopLogMeta").textContent = data.controls?.worker?.log_file
     ? `${data.controls.worker.log_file} · last ${data.controls.worker.log_display_lines} lines`
     : "";

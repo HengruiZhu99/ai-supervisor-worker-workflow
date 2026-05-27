@@ -207,6 +207,42 @@ textarea {
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
 }
 
+.activity-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.activity-row {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.activity-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(49, 95, 159, 0.24);
+  border-radius: 999px;
+  background: #f0f5fc;
+  color: var(--accent-2);
+  font-size: 12px;
+  font-weight: 900;
+  padding: 4px 8px;
+}
+
+.activity-row p {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .process-list, .jobs, .milestones, .worktrees, .tree {
   display: grid;
   gap: 10px;
@@ -340,6 +376,10 @@ textarea {
 
 .criterion.done {
   color: var(--good);
+}
+
+.criterion.active {
+  color: var(--warn);
 }
 
 .criterion.open {
