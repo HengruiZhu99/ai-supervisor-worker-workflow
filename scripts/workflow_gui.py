@@ -279,6 +279,13 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
     runs_dir = root / ".ai" / "supervisor_runs"
     run_logs = sorted(runs_dir.glob("supervisor.*.log"))
     latest_log = run_logs[-1] if run_logs else None
+    review_records = sorted((supervisor / "human_reviews").glob("human_review_*.md"))
+    latest_review = review_records[-1] if review_records else None
+    latest_review_text = read_text(latest_review) if latest_review else ""
+    latest_review_result = ""
+    match = re.search(r"^- Result:\s+`([^`]+)`", latest_review_text, re.MULTILINE)
+    if match:
+        latest_review_result = match.group(1)
     return {
         "roadmap": roadmap,
         "milestones": parse_roadmap(
@@ -291,6 +298,8 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
         "human_gate_exists": gate_path.exists(),
         "human_gate": gate_text,
         "human_gate_checklist": parse_gate_checklist(gate_text) if gate_path.exists() else [],
+        "latest_human_review": str(latest_review.relative_to(root)) if latest_review else "",
+        "latest_human_review_result": latest_review_result,
         "latest_supervisor_log": str(latest_log.relative_to(root)) if latest_log else "",
         "latest_supervisor_tail": tail(latest_log, LOG_DISPLAY_LINES) if latest_log else "",
     }
@@ -353,12 +362,31 @@ def worker_display_log(root: Path, job_rows: list[dict], fallback: dict) -> dict
     }
 
 
-def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_gate_exists: bool) -> dict:
+def supervisor_preparing_human_review(supervisor: dict, job_rows: list[dict]) -> bool:
+    if supervisor.get("human_gate_exists"):
+        return False
+    if supervisor.get("latest_human_review_result") == "approved":
+        return False
+    if any(job.get("state") in {"queued", "running", "rejected", "ready_for_review", "blocked"} for job in job_rows):
+        return False
+    ledger = str(supervisor.get("ledger", "")).lower()
+    review_phrases = [
+        "pending human milestone review",
+        "pending renewed human milestone review",
+        "human review gate is open",
+        "reopened the m",
+    ]
+    return any(phrase in ledger for phrase in review_phrases)
+
+
+def activity_state(job_rows: list[dict], processes: dict, controls: dict, supervisor: dict) -> dict:
     active = active_job_summary(job_rows)
     ready_job = next((job for job in job_rows if job.get("state") == "ready_for_review"), None)
     codex_active = bool(processes.get("codex"))
     supervisor_running = bool(controls.get("supervisor", {}).get("running"))
     worker_running = bool(controls.get("worker", {}).get("running"))
+    human_gate_exists = bool(supervisor.get("human_gate_exists"))
+    preparing_human_review = codex_active and supervisor_preparing_human_review(supervisor, job_rows)
 
     if human_gate_exists:
         summary = "Wait for Human Milestone Review."
@@ -370,6 +398,8 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_
         summary = f"Worker is working on {active.get('id', 'a job')}."
     elif active and active.get("state") == "blocked":
         summary = f"Worker is blocked on {active.get('id', 'a job')}."
+    elif preparing_human_review:
+        summary = "Supervisor is preparing material for human review."
     elif codex_active:
         summary = "Supervisor is preparing the next worker job."
     elif worker_running or supervisor_running:
@@ -406,6 +436,8 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, human_
         supervisor_text = f"Supervisor is waiting for worker state changes on {active.get('id')}."
     elif any(job.get("state") == "ready_for_review" for job in job_rows):
         supervisor_text = "Supervisor should review a job that is ready_for_review."
+    elif preparing_human_review:
+        supervisor_text = "Supervisor is drafting the milestone review summary and checklist."
     elif codex_active:
         supervisor_text = "Supervisor is actively planning, reviewing, or dispatching work."
     elif supervisor_running:
@@ -603,7 +635,7 @@ def state(root: Path) -> dict:
         "worktrees": worktrees(root),
         "processes": processes,
         "controls": controls,
-        "activity": activity_state(job_rows, processes, controls, bool(supervisor.get("human_gate_exists"))),
+        "activity": activity_state(job_rows, processes, controls, supervisor),
         "tree": project_tree(root),
     }
 
