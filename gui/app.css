@@ -287,6 +287,9 @@ textarea {
   border-radius: 7px;
   padding: 10px;
   font-size: 12px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .process code, .job code, .tree code, .worktree code {
@@ -295,6 +298,7 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 
 .job {
