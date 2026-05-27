@@ -7,6 +7,8 @@ import argparse
 import json
 import os
 import re
+import shutil
+import signal
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -54,6 +56,65 @@ def tail(path: Path, lines: int = 80) -> str:
     if not text:
         return ""
     return "\n".join(text.splitlines()[-lines:])
+
+
+def runs_dir(root: Path) -> Path:
+    path = root / ".ai" / "supervisor_runs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def pid_file(root: Path, name: str) -> Path:
+    return runs_dir(root) / f"{name}.pid"
+
+
+def log_file(root: Path, name: str) -> Path:
+    return runs_dir(root) / f"{name}.log"
+
+
+def pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def read_pid(path: Path) -> int | None:
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid_running(pid) else None
+
+
+def control_info(root: Path, name: str) -> dict:
+    pid = read_pid(pid_file(root, name))
+    log = log_file(root, name)
+    return {
+        "pid": pid,
+        "running": pid is not None,
+        "pid_file": str(pid_file(root, name).relative_to(root)),
+        "log_file": str(log.relative_to(root)),
+        "log_tail": tail(log, 60),
+    }
+
+
+def parse_gate_checklist(gate_text: str) -> list[str]:
+    items = []
+    in_section = False
+    saw_section = False
+    for line in gate_text.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("## human review to-do list"):
+            in_section = True
+            saw_section = True
+            continue
+        if saw_section and stripped.startswith("## "):
+            in_section = False
+        if (in_section or not saw_section) and stripped.startswith("- [ ] "):
+            items.append(stripped[6:].strip())
+    return items
 
 
 def git_info(root: Path) -> dict:
@@ -122,6 +183,7 @@ def supervisor_state(root: Path) -> dict:
         "project_brief": project_brief,
         "human_gate_exists": gate_path.exists(),
         "human_gate": read_text(gate_path),
+        "human_gate_checklist": parse_gate_checklist(read_text(gate_path)) if gate_path.exists() else [],
         "latest_supervisor_log": str(latest_log.relative_to(root)) if latest_log else "",
         "latest_supervisor_tail": tail(latest_log, 80) if latest_log else "",
     }
@@ -232,7 +294,205 @@ def state(root: Path) -> dict:
         "supervisor": supervisor_state(root),
         "worktrees": worktrees(root),
         "processes": process_blocks(root),
+        "controls": {
+            "worker": control_info(root, "worker_loop"),
+            "supervisor": control_info(root, "supervisor_loop"),
+        },
         "tree": file_tree(root),
+    }
+
+
+def json_response(handler: SimpleHTTPRequestHandler, status: HTTPStatus, payload: dict) -> None:
+    body = json.dumps(payload, indent=2).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def read_request_json(handler: SimpleHTTPRequestHandler) -> dict:
+    length = int(handler.headers.get("Content-Length", "0"))
+    if length <= 0:
+        return {}
+    raw = handler.rfile.read(length)
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON body: {exc}") from exc
+
+
+def start_loop(root: Path, name: str, env_updates: dict[str, str]) -> dict:
+    existing = read_pid(pid_file(root, name))
+    if existing:
+        return {"ok": True, "message": f"{name} already running", "pid": existing}
+
+    script_name = "worker_loop.sh" if name == "worker_loop" else "supervisor_loop.sh"
+    script_path = root / "scripts" / script_name
+    if not script_path.exists():
+        return {"ok": False, "message": f"missing script: {script_path}"}
+
+    env = os.environ.copy()
+    env.update({key: value for key, value in env_updates.items() if value != ""})
+    log = log_file(root, name)
+    with log.open("ab") as handle:
+        handle.write(f"\n--- launched {datetime.now(timezone.utc).isoformat()} ---\n".encode("utf-8"))
+        proc = subprocess.Popen(
+            [str(script_path)],
+            cwd=str(root),
+            env=env,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    pid_file(root, name).write_text(str(proc.pid) + "\n", encoding="utf-8")
+    return {"ok": True, "message": f"started {name}", "pid": proc.pid}
+
+
+def stop_loop(root: Path, name: str) -> dict:
+    pid = read_pid(pid_file(root, name))
+    if not pid:
+        return {"ok": True, "message": f"{name} is not running"}
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError as exc:
+        return {"ok": False, "message": f"failed to stop {name}: {exc}"}
+    return {"ok": True, "message": f"sent SIGTERM to {name}", "pid": pid}
+
+
+def active_jobs(root: Path) -> list[str]:
+    active = []
+    for status_path in sorted((root / ".ai" / "jobs").glob("J*/status.json")):
+        data = read_json(status_path)
+        state_value = data.get("state", "")
+        if state_value in {"queued", "running", "rejected", "ready_for_review", "blocked"}:
+            active.append(f"{data.get('id', status_path.parent.name)}: {state_value}")
+    return active
+
+
+def write_human_review(root: Path, decisions: list[dict]) -> dict:
+    gate_path = root / ".ai" / "supervisor" / "HUMAN_REVIEW_REQUIRED.md"
+    if not gate_path.exists():
+        return {"ok": False, "message": "No human review gate exists."}
+
+    gate_text = read_text(gate_path)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    reviews_dir = root / ".ai" / "supervisor" / "human_reviews"
+    reviews_dir.mkdir(parents=True, exist_ok=True)
+    review_record = reviews_dir / f"human_review_{stamp}.md"
+    archived_gate = reviews_dir / f"HUMAN_REVIEW_REQUIRED_{stamp}.md"
+    failed = [item for item in decisions if not item.get("passed")]
+
+    lines = [
+        "# Human Milestone Review Record",
+        "",
+        f"- Reviewed at: `{stamp}`",
+        f"- Result: `{'changes_requested' if failed else 'approved'}`",
+        "",
+        "## Checklist Results",
+        "",
+    ]
+    for item in decisions:
+        mark = "x" if item.get("passed") else " "
+        label = str(item.get("item", "Unnamed item"))
+        lines.append(f"- [{mark}] {label}")
+        if not item.get("passed"):
+            comment = str(item.get("comment", "")).strip() or "No comment provided."
+            lines.append("")
+            lines.append("  Comment:")
+            for comment_line in comment.splitlines():
+                lines.append(f"  {comment_line}")
+            lines.append("")
+    lines.extend(["", "## Original Milestone Gate", "", gate_text])
+    review_record.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    shutil.move(str(gate_path), archived_gate)
+
+    ledger = root / ".ai" / "supervisor" / "ledger.md"
+    with ledger.open("a", encoding="utf-8") as handle:
+        handle.write("\n## Human milestone review update\n\n")
+        handle.write(f"- Review record: `{review_record.relative_to(root)}`.\n")
+
+    if not failed:
+        return {
+            "ok": True,
+            "message": "Human review approved. Gate archived.",
+            "review_record": str(review_record.relative_to(root)),
+            "archived_gate": str(archived_gate.relative_to(root)),
+        }
+
+    active = active_jobs(root)
+    if active:
+        return {
+            "ok": False,
+            "message": "Changes requested, but active jobs remain; no revision job created.",
+            "active_jobs": active,
+            "review_record": str(review_record.relative_to(root)),
+            "archived_gate": str(archived_gate.relative_to(root)),
+        }
+
+    task_path = reviews_dir / f"revision_task_{stamp}.md"
+    task_lines = [
+        "# Human Review Revision Job",
+        "",
+        "## Objective",
+        "",
+        "Address the human milestone review concerns listed below.",
+        "",
+        "## Scope",
+        "",
+        "Allowed:",
+        "- Make only the changes required to resolve the failed human review items.",
+        "- Update documentation, tests, or workflow records needed to make the milestone reviewable.",
+        "",
+        "Not allowed:",
+        "- Do not start the next milestone.",
+        "- Do not broaden scientific scope beyond the reviewed milestone.",
+        "",
+        "## Failed Human Review Items",
+        "",
+    ]
+    for index, item in enumerate(failed, 1):
+        task_lines.append(f"### {index}. {item.get('item', 'Unnamed item')}")
+        task_lines.append("")
+        task_lines.append(str(item.get("comment", "")).strip() or "No comment provided.")
+        task_lines.append("")
+    task_lines.extend(
+        [
+            "## Required Validation",
+            "",
+            "Run the validation command from the affected milestone or explain why it cannot run.",
+        ]
+    )
+    task_path.write_text("\n".join(task_lines).rstrip() + "\n", encoding="utf-8")
+    _, base_ref, _ = run(["git", "rev-parse", "HEAD"], root)
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/create_job.py",
+            "--title",
+            "Address human milestone review concerns",
+            "--base-ref",
+            base_ref or "HEAD",
+            "--test-command",
+            "python3 scripts/summarize_jobs.py",
+            "--task-file",
+            str(task_path),
+        ],
+        cwd=str(root),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        return {"ok": False, "message": result.stderr or result.stdout or "failed to create revision job"}
+    return {
+        "ok": True,
+        "message": "Changes requested. Revision job created.",
+        "job_path": result.stdout.strip(),
+        "review_record": str(review_record.relative_to(root)),
+        "archived_gate": str(archived_gate.relative_to(root)),
     }
 
 
@@ -256,6 +516,60 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        try:
+            payload = read_request_json(self)
+        except ValueError as exc:
+            json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "message": str(exc)})
+            return
+
+        if parsed.path == "/api/worker/start":
+            extra_args = payload.get("extra_args", "")
+            if payload.get("force") and "--force" not in extra_args:
+                extra_args = (extra_args + " --force").strip()
+            result = start_loop(
+                self.project_root,
+                "worker_loop",
+                {
+                    "CURSOR_MODEL": str(payload.get("model", "gpt-5.5-high")),
+                    "CURSOR_TIMEOUT": str(payload.get("timeout", "3600")),
+                    "CURSOR_AGENT_EXTRA_ARGS": extra_args,
+                },
+            )
+            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            return
+
+        if parsed.path == "/api/supervisor/start":
+            result = start_loop(
+                self.project_root,
+                "supervisor_loop",
+                {
+                    "CODEX_MODEL": str(payload.get("model", "gpt-5.5")),
+                    "CODEX_REASONING_EFFORT": str(payload.get("reasoning", "high")),
+                    "SUPERVISOR_POLL_SECONDS": str(payload.get("poll_seconds", "10")),
+                    "SUPERVISOR_VERBOSE": "1" if payload.get("verbose", True) else "0",
+                    "CODEX_EXTRA_ARGS": str(payload.get("extra_args", "")),
+                },
+            )
+            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            return
+
+        if parsed.path == "/api/worker/stop":
+            json_response(self, HTTPStatus.OK, stop_loop(self.project_root, "worker_loop"))
+            return
+
+        if parsed.path == "/api/supervisor/stop":
+            json_response(self, HTTPStatus.OK, stop_loop(self.project_root, "supervisor_loop"))
+            return
+
+        if parsed.path == "/api/human-review":
+            result = write_human_review(self.project_root, list(payload.get("decisions", [])))
+            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            return
+
+        json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "message": f"unknown endpoint: {parsed.path}"})
 
 
 def main() -> int:
@@ -284,4 +598,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

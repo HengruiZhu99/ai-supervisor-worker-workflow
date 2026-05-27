@@ -75,3 +75,11 @@ Then open:
 ```text
 http://127.0.0.1:8765/
 ```
+
+The dashboard includes:
+- worker launch/stop controls with Cursor model, timeout, and force options
+- supervisor launch/stop controls with Codex model, reasoning effort, poll interval, and verbose heartbeat options
+- job status and logs
+- expandable milestone criteria
+- project worktree and file-tree views
+- an interactive human milestone review checklist that can create a revision job from failed review items

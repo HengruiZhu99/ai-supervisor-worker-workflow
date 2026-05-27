@@ -108,6 +108,8 @@ Then visit:
 http://127.0.0.1:8765/
 ```
 
+The dashboard can launch and stop the worker and supervisor loops, show job/worktree/project status, expand milestone criteria, and process human milestone review checklists.
+
 ### Step 6
 
 When the current milestone is complete or blocked, the supervisor loop writes:

@@ -77,6 +77,21 @@ button {
 
 button:hover { border-color: var(--accent); color: var(--accent); }
 
+input, select, textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  padding: 8px 9px;
+}
+
+textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
 .health, .state-dot, .badge {
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -197,6 +212,33 @@ button:hover { border-color: var(--accent); color: var(--accent); }
   gap: 10px;
 }
 
+.control-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.control-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.check-line {
+  grid-template-columns: 16px 1fr;
+  align-items: center;
+}
+
+.check-line input { width: auto; }
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .process {
   border: 1px solid var(--line);
   background: var(--panel-soft);
@@ -250,9 +292,19 @@ button:hover { border-color: var(--accent); color: var(--accent); }
   padding: 12px;
 }
 
+.milestone summary {
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  list-style: none;
+}
+
+.milestone summary::-webkit-details-marker { display: none; }
+
 .milestone-title, .worktree-title {
   font-weight: 900;
-  margin-bottom: 8px;
 }
 
 .mini-track {
@@ -265,6 +317,91 @@ button:hover { border-color: var(--accent); color: var(--accent); }
 .mini-bar {
   height: 100%;
   background: var(--accent);
+}
+
+.criteria-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.criterion {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+  align-items: start;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.criterion p {
+  margin: 0;
+}
+
+.criterion.done {
+  color: var(--good);
+}
+
+.criterion.open {
+  color: var(--muted);
+}
+
+.human-review {
+  margin-bottom: 16px;
+}
+
+.hidden {
+  display: none;
+}
+
+.review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+  gap: 16px;
+}
+
+.gate-box {
+  margin: 0;
+  max-height: 520px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.review-form {
+  display: grid;
+  gap: 12px;
+}
+
+.review-item {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  padding: 12px;
+}
+
+.review-question {
+  font-weight: 900;
+  margin-bottom: 10px;
+}
+
+.review-choice {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.review-choice input {
+  width: auto;
+  margin-right: 5px;
 }
 
 .tree {
@@ -297,7 +434,7 @@ button:hover { border-color: var(--accent); color: var(--accent); }
 }
 
 @media (max-width: 1080px) {
-  .hero-grid, .content-grid, .detail-grid { grid-template-columns: 1fr; }
+  .hero-grid, .content-grid, .detail-grid, .review-layout { grid-template-columns: 1fr; }
   .topbar { align-items: flex-start; flex-direction: column; }
 }
 
@@ -307,4 +444,3 @@ button:hover { border-color: var(--accent); color: var(--accent); }
   .metric-row { grid-template-columns: 1fr; }
   .refresh { align-items: flex-start; flex-direction: column; }
 }
-

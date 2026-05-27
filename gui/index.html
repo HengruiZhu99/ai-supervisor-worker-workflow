@@ -54,13 +54,68 @@
 
           <article class="panel process-card">
             <div class="panel-title"><span>Worker</span><span id="workerState" class="state-dot">Idle</span></div>
+            <form id="workerForm" class="control-form">
+              <label>
+                Cursor model
+                <input name="model" value="gpt-5.5-high" />
+              </label>
+              <label>
+                Timeout seconds
+                <input name="timeout" type="number" min="60" step="60" value="3600" />
+              </label>
+              <label class="check-line">
+                <input name="force" type="checkbox" checked />
+                <span>Force unattended execution</span>
+              </label>
+              <div class="button-row">
+                <button type="submit">Launch Worker</button>
+                <button type="button" id="stopWorkerButton">Stop</button>
+              </div>
+            </form>
             <div id="workerProcesses" class="process-list"></div>
           </article>
 
           <article class="panel process-card">
             <div class="panel-title"><span>Supervisor</span><span id="supervisorState" class="state-dot">Idle</span></div>
+            <form id="supervisorForm" class="control-form">
+              <label>
+                Codex model
+                <input name="model" value="gpt-5.5" />
+              </label>
+              <label>
+                Reasoning effort
+                <select name="reasoning">
+                  <option value="high" selected>high</option>
+                  <option value="medium">medium</option>
+                  <option value="low">low</option>
+                </select>
+              </label>
+              <label>
+                Poll seconds
+                <input name="poll_seconds" type="number" min="2" step="1" value="10" />
+              </label>
+              <label class="check-line">
+                <input name="verbose" type="checkbox" checked />
+                <span>Print heartbeat</span>
+              </label>
+              <div class="button-row">
+                <button type="submit">Launch Supervisor</button>
+                <button type="button" id="stopSupervisorButton">Stop</button>
+              </div>
+            </form>
             <div id="supervisorProcesses" class="process-list"></div>
           </article>
+        </section>
+
+        <section id="humanReviewSection" class="panel human-review hidden">
+          <div class="panel-title">
+            <span>Human Milestone Review</span>
+            <span class="muted">Checklist gate</span>
+          </div>
+          <div class="review-layout">
+            <pre id="humanGate" class="gate-box"></pre>
+            <form id="humanReviewForm" class="review-form"></form>
+          </div>
         </section>
 
         <section class="content-grid">
@@ -103,4 +158,3 @@
     <script src="/app.js"></script>
   </body>
 </html>
-

@@ -37,6 +37,29 @@ function renderProcesses(id, processes) {
   `).join("");
 }
 
+async function postJson(path, payload = {}) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.message || `Request failed: ${response.status}`);
+  }
+  return data;
+}
+
+function formValues(form) {
+  const data = {};
+  for (const element of form.elements) {
+    if (!element.name) continue;
+    if (element.type === "checkbox") data[element.name] = element.checked;
+    else data[element.name] = element.value;
+  }
+  return data;
+}
+
 function renderJobs(jobs) {
   const box = $("jobs");
   if (!jobs.length) {
@@ -73,11 +96,21 @@ function renderMilestones(milestones) {
   box.innerHTML = milestones.map((m) => {
     const pct = m.total ? Math.round((m.done / m.total) * 100) : 0;
     return `
-      <div class="milestone">
-        <div class="milestone-title">${escapeHtml(m.title)}</div>
-        <div class="progress-label"><span>${m.done}/${m.total} criteria</span><strong>${pct}%</strong></div>
+      <details class="milestone">
+        <summary>
+          <span class="milestone-title">${escapeHtml(m.title)}</span>
+          <span class="muted">${m.done}/${m.total} fulfilled · ${pct}%</span>
+        </summary>
         <div class="mini-track"><div class="mini-bar" style="width:${pct}%"></div></div>
-      </div>
+        <div class="criteria-list">
+          ${m.items.map((item) => `
+            <div class="criterion ${item.done ? "done" : "open"}">
+              <span>${item.done ? "✓" : "○"}</span>
+              <p>${escapeHtml(item.text)}</p>
+            </div>
+          `).join("")}
+        </div>
+      </details>
     `;
   }).join("");
 }
@@ -115,6 +148,40 @@ function renderTree(tree) {
   }).join("");
 }
 
+function renderHumanReview(supervisor) {
+  const section = $("humanReviewSection");
+  const gate = $("humanGate");
+  const form = $("humanReviewForm");
+  if (!supervisor.human_gate_exists) {
+    section.classList.add("hidden");
+    form.innerHTML = "";
+    gate.textContent = "";
+    return;
+  }
+
+  section.classList.remove("hidden");
+  gate.textContent = supervisor.human_gate || "Human review required.";
+  const items = supervisor.human_gate_checklist.length
+    ? supervisor.human_gate_checklist
+    : [
+        "Milestone summary is accurate.",
+        "Accepted jobs and commits are reviewable.",
+        "Tests and validation are acceptable.",
+        "Scientific assumptions, risks, and limitations are acceptable.",
+        "Recommended next milestone is acceptable.",
+      ];
+  form.innerHTML = items.map((item, index) => `
+    <div class="review-item" data-index="${index}">
+      <div class="review-question">${escapeHtml(item)}</div>
+      <div class="review-choice">
+        <label><input type="radio" name="review-${index}" value="yes" checked /> Yes</label>
+        <label><input type="radio" name="review-${index}" value="no" /> No</label>
+      </div>
+      <textarea name="comment-${index}" placeholder="Comment if no"></textarea>
+    </div>
+  `).join("") + '<div class="button-row"><button type="submit">Submit Human Review</button></div>';
+}
+
 function render(data) {
   state.data = data;
   $("projectName").textContent = data.project.name;
@@ -146,6 +213,7 @@ function render(data) {
   renderMilestones(data.supervisor.milestones);
   renderWorktrees(data.worktrees);
   renderTree(data.tree);
+  renderHumanReview(data.supervisor);
 }
 
 async function refresh() {
@@ -155,10 +223,62 @@ async function refresh() {
 }
 
 $("refreshButton").addEventListener("click", () => refresh().catch(console.error));
+$("workerForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await postJson("/api/worker/start", formValues(event.currentTarget));
+    await refresh();
+  } catch (error) {
+    alert(error.message);
+  }
+});
+$("supervisorForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await postJson("/api/supervisor/start", formValues(event.currentTarget));
+    await refresh();
+  } catch (error) {
+    alert(error.message);
+  }
+});
+$("stopWorkerButton").addEventListener("click", async () => {
+  try {
+    await postJson("/api/worker/stop");
+    await refresh();
+  } catch (error) {
+    alert(error.message);
+  }
+});
+$("stopSupervisorButton").addEventListener("click", async () => {
+  try {
+    await postJson("/api/supervisor/stop");
+    await refresh();
+  } catch (error) {
+    alert(error.message);
+  }
+});
+$("humanReviewForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const items = [...event.currentTarget.querySelectorAll(".review-item")];
+  const decisions = items.map((item) => {
+    const index = item.dataset.index;
+    const label = item.querySelector(".review-question").textContent;
+    const choice = item.querySelector(`input[name="review-${index}"]:checked`).value;
+    const comment = item.querySelector(`textarea[name="comment-${index}"]`).value;
+    return { item: label, passed: choice === "yes", comment };
+  });
+  try {
+    const result = await postJson("/api/human-review", { decisions });
+    alert(result.message || "Human review submitted.");
+    await refresh();
+  } catch (error) {
+    alert(error.message);
+    await refresh();
+  }
+});
 refresh().catch((error) => {
   $("healthPill").textContent = "Error";
   $("healthPill").className = "health gate";
   $("supervisorLog").textContent = error.stack || String(error);
 });
 state.timer = setInterval(() => refresh().catch(console.error), 5000);
-
