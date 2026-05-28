@@ -19,6 +19,7 @@ Use when reviewing worker changes that implement or modify scientific, numerical
 - Check that scientific meaning was not silently changed to make tests pass.
 - Verify public APIs document inputs, outputs, units, assumptions, and tolerances.
 - Confirm commit documentation exists and matches the actual diff and test results.
+- Assess worker skill suggestions for actual reuse value and duplication against existing skills.
 
 ## Output Format
 
@@ -27,7 +28,8 @@ Return:
 2. Findings ordered by severity.
 3. Test assessment.
 4. Scientific assumptions or risks.
-5. Required feedback if rejected.
+5. Skill suggestion assessment.
+6. Required feedback if rejected.
 
 ## Common Failure Modes
 
@@ -36,4 +38,3 @@ Return:
 - Units or dimensions are implicit.
 - Worker implements future milestones without approval.
 - Commit documentation omits failing tests or known limitations.
-

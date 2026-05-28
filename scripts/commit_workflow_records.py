@@ -16,6 +16,7 @@ SUPERVISOR_PATHS = [
     ".ai/supervisor/roadmap.md",
     ".ai/supervisor/HUMAN_REVIEW_REQUIRED.md",
     ".ai/supervisor/human_reviews",
+    "skills",
 ]
 JOB_ID_RE = re.compile(r"(J\d{4,})")
 

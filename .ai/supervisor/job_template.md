@@ -44,4 +44,6 @@ Return:
 5. Scientific assumptions
 6. Known limitations
 7. Suggested follow-up
+8. Skill suggestions
 
+For skill suggestions, return `None` if no new skill is justified. Otherwise include proposed name, scope (`project-specific` or `general scientific workflow`), when to use it, duplication risk versus existing skills, and the minimum content needed.

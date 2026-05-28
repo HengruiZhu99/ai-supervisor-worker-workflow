@@ -37,6 +37,13 @@
 - [ ] Is the implementation simple enough?
 - [ ] Are performance-sensitive choices explained?
 
+## Skill stewardship
+
+- [ ] Did the worker include skill suggestions or explicitly say none?
+- [ ] Did reviewers assess the skill suggestions?
+- [ ] Are any suggested skills non-duplicative and useful enough to create?
+- [ ] Is each accepted skill classified correctly as project-specific or generally reusable?
+
 ## Decision
 
 Choose one:
@@ -44,4 +51,3 @@ Choose one:
 - [ ] Accept
 - [ ] Reject with feedback
 - [ ] Split into follow-up jobs
-

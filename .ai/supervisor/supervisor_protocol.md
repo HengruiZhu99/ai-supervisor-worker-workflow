@@ -80,6 +80,8 @@ If a job is `ready_for_review`, inspect:
 - `status.json`
 - `report.md`
 - reviewer reports under `reviews/`, when present
+- the worker's `Skill Suggestions` section, if present
+- reviewer assessments of skill suggestions, if present
 - `diffstat.attempt-N.txt`
 - `test.attempt-N.log`
 - `.ai/commit_docs/JNNNN_attempt-N_*.md`
@@ -108,6 +110,24 @@ Accept only if:
 - commit documentation exists
 - the worker report matches the actual diff and tests
 - reviewer concerns are resolved, converted into rejection feedback, or explicitly waived with rationale
+
+## Skill suggestion protocol
+
+Each worker report should include a `Skill Suggestions` section. `None` is a valid answer. Suggested skills should prevent repeated future work, encode a reusable workflow, or capture domain/project rules that would otherwise be rediscovered by later workers.
+
+When reviewing a job, the supervisor should:
+
+1. Read worker skill suggestions and reviewer skill-suggestion assessments.
+2. Run `python3 scripts/list_skills.py` to list existing project and workflow skills.
+3. Check for duplication by comparing name, trigger conditions, and proposed checklist content against existing `skills/*/SKILL.md` files.
+4. Reject or defer suggestions that are too narrow, already covered, or better handled as ordinary docs/tests.
+5. Decide location:
+   - project-specific skills belong in the project repository under `skills/<skill-name>/SKILL.md`.
+   - generally reusable scientific-coding workflow skills belong in the AI workflow repository under `external/ai-supervisor-worker-workflow/skills/<skill-name>/SKILL.md`.
+6. If creating a skill, keep it concise: YAML frontmatter with `name` and `description`, then when to use it, checklist, output format, and common failure modes.
+7. Record the decision in `.ai/supervisor/ledger.md`, including created path or rejection/defer rationale.
+
+For general workflow skills, update and commit the workflow submodule repository first, push it when a remote exists, then update the project submodule pointer in the project repository. If pushing is unavailable, leave the general skill as a proposal in the ledger and do not silently create an unpushed dependency.
 
 ## Reviewer protocol
 

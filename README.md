@@ -61,7 +61,7 @@ external/ai-supervisor-worker-workflow/install.sh .
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/human_milestone_review.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/human_milestone_review.py scripts/list_skills.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
 ```
 
 ## Dashboard
@@ -109,6 +109,14 @@ CURSOR_REVIEWER_B_MODEL=gpt-5.3-codex-high \
 ```
 
 Reviewer A is tuned for scientific/numerical review. Reviewer B is tuned for build, Kokkos/backend portability, tests, and maintainability. Set `CURSOR_REVIEWERS_ENABLED=0` to disable this stage.
+
+Worker reports should include a `Skill Suggestions` section. Reviewers assess those suggestions, and the supervisor checks them against existing skills with:
+
+```bash
+python3 scripts/list_skills.py
+```
+
+Project-specific skills belong in the project `skills/` directory. Generally reusable scientific-coding workflow skills belong in this workflow package's `skills/` directory.
 
 The log panes show the last 10000 lines by default. To change that display limit:
 

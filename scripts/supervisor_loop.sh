@@ -137,6 +137,9 @@ Rules:
 - A job in `reviewing` is still in the worker/reviewer pipeline. Do not review or modify it yet; wait for `ready_for_review`.
 - For each `ready_for_review` job, inspect the worker report plus reviewer reports under `.ai/jobs/JNNNN/reviews/` when present.
 - Treat reviewer reports as advisory but important. If a reviewer recommends revision, either reject with actionable feedback or explicitly document why the concern is waived.
+- Inspect the worker's Skill Suggestions section and the reviewers' skill-suggestion assessments. Run `python3 scripts/list_skills.py` before creating any new skill.
+- Create a new skill only when it avoids real future duplication and does not overlap existing skills. Project-specific skills go under the project `skills/`; generally reusable scientific-coding workflow skills go under `external/ai-supervisor-worker-workflow/skills/` and require committing/pushing the workflow package plus updating the submodule pointer when possible.
+- Record skill decisions in `.ai/supervisor/ledger.md`, including paths created or reasons for deferring/rejecting suggestions.
 - Accept or reject completed jobs based on report, tests, diffstat, selected patch context, and commit documentation.
 - For rejected jobs, write concise actionable `feedback.md` and set state to `rejected`.
 - For accepted jobs, integrate the accepted worker branch into the main project history using a reviewable merge or cherry-pick strategy, set state to `accepted`, update the ledger, and record assumptions/risks.

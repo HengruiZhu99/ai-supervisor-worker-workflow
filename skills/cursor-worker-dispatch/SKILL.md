@@ -18,6 +18,7 @@ Use when creating a new job under `.ai/jobs/JNNNN/` for Cursor to implement.
 - Define allowed and not allowed scope.
 - Specify required tests or validation commands.
 - Require a concise report.
+- Require a `Skill Suggestions` report section, with `None` if no new skill is justified.
 - Require meaningful commits and commit documentation.
 - Avoid asking the worker to read the entire design prompt unless necessary.
 
@@ -32,6 +33,7 @@ The job task should include:
 6. Git and commit requirements.
 7. Required validation.
 8. Worker report contract.
+9. Skill suggestion contract.
 
 ## Common Failure Modes
 
@@ -40,4 +42,3 @@ The job task should include:
 - Worker is given unrelated design details.
 - Test command is missing.
 - Scope permits unreviewable refactors.
-

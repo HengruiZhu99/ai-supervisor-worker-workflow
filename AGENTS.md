@@ -33,6 +33,7 @@ Responsibilities:
 - Work in an isolated Git worktree.
 - Run requested tests.
 - Write a concise report.
+- Include skill suggestions in the report, or explicitly say no new skill is justified.
 - Break changes into meaningful Git commits when possible.
 - For each commit or attempt, record a documentation summary under `.ai/commit_docs/`.
 - Never mark its own work as accepted.
@@ -45,6 +46,12 @@ When enabled, two read-only Cursor reviewer passes run after a worker attempt:
 - Reviewer B checks build/code quality, Kokkos/MPI/OpenMP/SYCL portability, memory layout, tests, and maintainability.
 
 Reviewer reports are advisory inputs to Codex. Reviewers do not accept work, reject work, or modify files.
+
+Reviewers should also assess any worker skill suggestions: whether they would avoid real duplication, whether they duplicate existing skills, and whether they should be project-specific or generally reusable.
+
+### Skill stewardship
+
+Codex owns skill creation decisions. Before creating a skill, Codex should list existing skills, compare triggers and checklists for overlap, and reject suggestions that are too narrow or already covered. Project-specific skills belong in this repository under `skills/`. Generally reusable scientific-coding workflow skills belong in the reusable workflow package under `external/ai-supervisor-worker-workflow/skills/` and should be committed and pushed there before updating the submodule pointer.
 
 ## Scientific Coding Rules
 

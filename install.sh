@@ -65,6 +65,7 @@ files=(
   "scripts/commit_workflow_records.py"
   "scripts/cursor_stream_to_text.py"
   "scripts/human_milestone_review.py"
+  "scripts/list_skills.py"
   "scripts/prune_accepted_job_refs.py"
   "scripts/summarize_jobs.py"
   "scripts/supervisor_loop.sh"
@@ -88,6 +89,7 @@ chmod +x \
   "$TARGET_DIR/scripts/worker_loop.sh" \
   "$TARGET_DIR/scripts/supervisor_loop.sh" \
   "$TARGET_DIR/scripts/human_milestone_review.py" \
+  "$TARGET_DIR/scripts/list_skills.py" \
   "$TARGET_DIR/scripts/workflow_gui.py"
 
 echo "AI workflow installation complete."

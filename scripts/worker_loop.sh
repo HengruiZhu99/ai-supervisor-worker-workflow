@@ -136,6 +136,7 @@ write_reviewer_prompt() {
     echo "- Patch: $ROOT/$job/diff.attempt-$attempt.patch"
     echo "- Test log: $ROOT/$job/test.attempt-$attempt.log"
     echo "- Commit docs: $ROOT/.ai/commit_docs/"
+    echo "- Existing skills: run 'python3 scripts/list_skills.py' in the worktree if needed"
     echo
     echo "Read the task, worker report, test log, diffstat, and selected patch/source sections. Check whether the worker stayed in scope and whether the evidence supports acceptance."
     echo
@@ -149,6 +150,7 @@ write_reviewer_prompt() {
     echo "5. Test and validation assessment"
     echo "6. Scope assessment"
     echo "7. Suggested supervisor decision rationale"
+    echo "8. Skill suggestion review: whether the worker's suggested skills are useful, duplicate existing skills, and should be project-specific, general workflow skills, deferred, or rejected. Run 'python3 scripts/list_skills.py' if needed."
   } >"$prompt_file"
 }
 
@@ -289,6 +291,9 @@ process_job() {
     echo "- Break changes into meaningful commits where the task naturally separates into pieces."
     echo "- If files are changed and no meaningful commits exist, leave changes staged or unstaged; the worker loop will create a fallback attempt commit."
     echo "- Return a concise report with summary, files changed, commits made, tests run and results, scientific assumptions, known limitations, and suggested follow-up."
+    echo "- Include a Skill Suggestions section. Say 'None' if no new skill is justified."
+    echo "- Before proposing a skill, consult existing skills with 'python3 scripts/list_skills.py' when available."
+    echo "- For each skill suggestion, state proposed name, scope (project-specific or general scientific-coding workflow), when to use it, duplication risk versus existing skills, and the minimal content it should contain."
     echo
     echo "## Task"
     cat "$job/task.md"

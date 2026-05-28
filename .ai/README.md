@@ -55,6 +55,12 @@ CURSOR_REVIEWER_B_MODEL=gpt-5.3-codex-high \
 
 Reviewer A focuses on scientific/numerical correctness. Reviewer B focuses on code quality, build behavior, Kokkos/backend portability, tests, and maintainability. Set `CURSOR_REVIEWERS_ENABLED=0` to skip reviewer passes.
 
+Worker reports should include a `Skill Suggestions` section. Reviewers assess those suggestions, and the supervisor checks existing skills before creating anything:
+
+```bash
+python3 scripts/list_skills.py
+```
+
 To see the model ids available to your Cursor account:
 
 ```bash
@@ -172,6 +178,6 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/human_milestone_review.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/human_milestone_review.py scripts/list_skills.py scripts/workflow_gui.py
 python3 scripts/summarize_jobs.py
 ```
