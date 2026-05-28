@@ -162,11 +162,21 @@ Keep `.ai` audit records reviewable but separate from implementation commits. Af
 
 ## Major structural change protocol
 
-At a human milestone gate, a reviewer may request a major structural change that supersedes the normal checklist review. Treat this as an architecture/roadmap revision, not as approval of the milestone and not as a normal failed checklist item. Archive the gate, record the request, and create exactly one structural revision job.
+At a human milestone gate, a reviewer may request a major structural change that supersedes the normal checklist review. Treat this as an architecture/roadmap revision, not as approval of the milestone and not as a normal failed checklist item. Archive the gate, record the request, and create `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` for the supervisor.
 
-That job should update roadmap, project brief, ledger, build/dependency policy, and future job sequencing before further implementation proceeds. It must also create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` with a summary of the revised milestones, what changed, why it changed, the proposed next milestone, and a `## Human Review To-Do List` checklist.
+Only the Codex supervisor may update `.ai/supervisor/roadmap.md`, `.ai/supervisor/project_brief.md`, `.ai/supervisor/ledger.md`, build/dependency policy, or future job sequencing in response to a structural change request. Do not dispatch a Cursor worker job to revise the roadmap or milestone plan. Workers may suggest plan changes in reports, but must not directly own supervisor planning files unless the human explicitly overrides this policy.
 
-After accepting and integrating a structural revision job, do not dispatch the next implementation job. Stop at the new human gate until the revised plan is approved. If the supervisor loop was launched with `SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE=1`, push the integrated structural revision and review gate to the configured remote; if push fails, record the failure in the ledger and keep the gate in place.
+When `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` exists, the supervisor should:
+- read the archived gate, human review record, and structural request;
+- update the roadmap, project brief, ledger, build/dependency policy, and future job sequencing itself;
+- create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` with a summary of the revised milestones, what changed, why it changed, the proposed next milestone, and a `## Human Review To-Do List` checklist;
+- archive or remove `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` only after the revised human gate exists;
+- commit workflow records;
+- stop without creating a worker job.
+
+If an older worker-created structural revision job exists, treat its report as advisory input only. Do not integrate worker-owned edits to roadmap, project brief, ledger, or future milestone sequencing merely because that job completed. The supervisor should make the final planning edits itself and may reject the worker job as superseded by the supervisor-owned structural protocol.
+
+After creating the structural revision human gate, do not dispatch the next implementation job. Stop at the new human gate until the revised plan is approved. If the supervisor loop was launched with `SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE=1`, push the supervisor-owned structural revision and review gate to the configured remote; if push fails, record the failure in the ledger and keep the gate in place.
 
 ## Rejection protocol
 
@@ -215,6 +225,8 @@ Use Codex mainly for:
 - review
 - acceptance/rejection
 - ledger maintenance
+
+Supervisor planning files are supervisor-owned. Cursor workers should not be assigned jobs whose objective is to edit `.ai/supervisor/roadmap.md`, `.ai/supervisor/project_brief.md`, `.ai/supervisor/ledger.md`, or milestone sequencing. If a worker sees that such a change is needed, it should report a suggestion for the supervisor instead of editing those files.
 
 ## Human review boundary
 

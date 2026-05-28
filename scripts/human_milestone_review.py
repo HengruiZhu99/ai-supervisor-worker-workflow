@@ -188,33 +188,36 @@ def create_revision_task(
     return task_path
 
 
-def create_structural_change_task(
+def create_structural_change_request(
     reviews_dir: Path,
     stamp: str,
     gate_path: Path,
     review_record: Path,
     comment: str,
 ) -> Path:
-    task_path = reviews_dir / f"structural_change_task_{stamp}.md"
+    request_path = Path(".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md")
     lines = [
-        "# Major Structural Change Revision Job",
+        "# Major Structural Change Request",
         "",
-        "## Objective",
+        "This request must be handled by the Codex supervisor, not by a Cursor worker.",
+        "",
+        "## Supervisor Objective",
         "",
         "Revise the project architecture plan, roadmap, milestone sequence, and workflow records to reflect the human-requested structural change below.",
         "",
-        "This is a planning and architecture revision job. Its main output is an updated milestone plan for human review before implementation continues.",
+        "This is a supervisor-owned planning and architecture revision. Its main output is an updated milestone plan for human review before implementation continues.",
         "",
         "## Scope",
         "",
         "Allowed:",
-        "- Update roadmap, project brief, ledger, build/dependency policy, and documentation needed to encode the structural decision.",
+        "- Supervisor may update roadmap, project brief, ledger, build/dependency policy, and documentation needed to encode the structural decision.",
         "- Create or revise future milestone and worker-job sequencing so implementation follows the new architecture.",
         "- Create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` with a concise summary of the updated milestones, what changed, why it changed, and a `## Human Review To-Do List` checklist.",
         "- Keep any existing accepted reference implementations as reference/test-oracle paths unless the human request explicitly says otherwise.",
         "",
         "Not allowed:",
-        "- Do not start broad scientific implementation work in this revision job.",
+        "- Do not dispatch a worker job to perform roadmap, project brief, ledger, or milestone-sequence edits.",
+        "- Do not start broad scientific implementation work in this supervisor revision.",
         "- Do not create the next implementation worker job.",
         "- Do not discard accepted work unless the structural change explicitly requires it.",
         "- Do not broaden beyond the requested architectural/roadmap correction.",
@@ -245,20 +248,20 @@ def create_structural_change_task(
         "",
         "Run documentation/workflow validation that is relevant to the edited files, and run `python3 scripts/summarize_jobs.py`.",
         "",
-        "## Worker Report Contract",
+        "## Completion Contract",
         "",
-        "Return:",
-        "1. Summary",
-        "2. Files changed",
-        "3. Commits made",
-        "4. Validation run and results",
-        "5. Architecture decisions recorded",
-        "6. Known limitations",
-        "7. Human review gate created or updated",
-        "8. Suggested next jobs",
+        "The supervisor should record:",
+        "1. Summary of roadmap/project-brief/ledger changes",
+        "2. Validation run and results",
+        "3. Human review gate path",
+        "4. Proposed next small worker jobs after human approval",
+        "5. Known limitations or decisions still requiring human review",
     ]
-    task_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    return task_path
+    text = "\n".join(lines).rstrip() + "\n"
+    request_path.write_text(text, encoding="utf-8")
+    archive_copy = reviews_dir / f"structural_change_request_{stamp}.md"
+    archive_copy.write_text(text, encoding="utf-8")
+    return request_path
 
 
 def create_job(title: str, base_ref: str, test_command: str, task_file: Path) -> str:
@@ -364,39 +367,17 @@ def main() -> int:
     shutil.move(str(gate_path), archived_gate)
 
     if structural_requested:
-        active = active_jobs()
-        if active:
-            append_ledger(
-                "- Human milestone review requested a major structural change, but no structural revision job was created because active jobs remain: "
-                + ", ".join(active)
-                + f". Record: `{review_record}`."
-            )
-            print("\nMajor structural change requested, but active jobs remain. No revision job created:")
-            for item in active:
-                print(f"- {item}")
-            print(f"Review record: {review_record}")
-            print(f"Archived gate: {archived_gate}")
-            return 1
-
-        base_result = run(["git", "rev-parse", "HEAD"])
-        base_ref = base_result.stdout.strip() if base_result.returncode == 0 else "HEAD"
-        task_file = create_structural_change_task(
+        request_path = create_structural_change_request(
             reviews_dir, stamp, archived_gate, review_record, structural_comment
         )
-        job_path = create_job(
-            "Address major structural change request",
-            base_ref,
-            "python3 scripts/summarize_jobs.py",
-            task_file,
-        )
         append_ledger(
-            f"- Human milestone review requested a major structural change. Record: `{review_record}`. Structural revision job created: `{job_path}`."
+            f"- Human milestone review requested a major structural change. Record: `{review_record}`. Supervisor structural request: `{request_path}`."
         )
         print("\nMajor structural change requested.")
         print(f"Review record: {review_record}")
         print(f"Archived gate: {archived_gate}")
-        print(f"Structural revision job created: {job_path}")
-        print("The structural revision job must update the milestones and open a follow-up human review gate before implementation resumes.")
+        print(f"Supervisor structural request: {request_path}")
+        print("Start or continue the supervisor loop. The supervisor must update the milestones itself and open a follow-up human review gate before implementation resumes.")
         print("\nWorkflow record commit:")
         print(commit_workflow_records("workflow: record major structural change request"))
         return 0

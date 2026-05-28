@@ -232,7 +232,7 @@ function renderHumanReview(supervisor) {
       <div class="review-question">Major Structural Change</div>
       <label class="check-line">
         <input id="structuralChangeRequested" type="checkbox" name="structural-change-requested" />
-        <span>Supersede checklist review and create a structural revision job</span>
+        <span>Supersede checklist review and ask the supervisor to revise the plan</span>
       </label>
       <textarea id="structuralChangeComment" name="structural-change-comment" placeholder="Architecture, dependency, roadmap, or milestone change request"></textarea>
     </div>

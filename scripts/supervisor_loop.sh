@@ -12,6 +12,7 @@ CODEX_REASONING_EFFORT="${CODEX_REASONING_EFFORT:-high}"
 CODEX_EXTRA_ARGS="${CODEX_EXTRA_ARGS:-}"
 SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE="${SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE:-0}"
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
+STRUCTURAL_REQUEST=".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -37,6 +38,11 @@ job_signature() {
     else
       echo "human_gate:absent"
     fi
+    if [[ -f "$STRUCTURAL_REQUEST" ]]; then
+      echo "structural_request:present:$(stat -c '%Y' "$STRUCTURAL_REQUEST" 2>/dev/null || true)"
+    else
+      echo "structural_request:absent"
+    fi
     find .ai/jobs -path '.ai/jobs/J*/status.json' -type f -printf '%p:%T@\n' 2>/dev/null | sort || true
   } | python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
 }
@@ -45,6 +51,9 @@ has_actionable_state() {
   python3 - <<'PY'
 import json
 from pathlib import Path
+
+if Path(".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md").exists():
+    raise SystemExit(0)
 
 jobs_dir = Path(".ai/jobs")
 states = []
@@ -150,10 +159,11 @@ Rules:
 - The human gate must include a milestone summary, a `## Human Review To-Do List` section with `- [ ]` checklist items, and instructions to run `python3 scripts/human_milestone_review.py`.
 - Do not create a new worker job after creating a human gate.
 - Keep human input at milestone boundaries, not individual jobs or commits.
-- If reviewing and accepting a job whose title or task is a major structural change revision, treat it as a planning milestone update, not normal implementation progress.
-- For an accepted major structural change revision job: integrate the accepted branch into the main worktree, update the job status and ledger, ensure `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` exists, and make that gate summarize the updated milestones, what changed, why it changed, the proposed next milestone, and the first few small worker jobs.
-- After an accepted major structural change revision job, do not dispatch the next implementation job. Stop at the new human review gate so the human can approve the revised plan.
-- If the runtime option `SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE` shown above is `1`, and after integrating the structural revision and creating the review gate the main branch has a configured remote, commit workflow records as needed and push the updated main branch. If push fails, record the failure in the ledger and leave the human gate in place.
+- Supervisor planning files are supervisor-owned. Do not create a Cursor worker job whose objective is to edit `.ai/supervisor/roadmap.md`, `.ai/supervisor/project_brief.md`, `.ai/supervisor/ledger.md`, build/dependency policy, or milestone sequencing.
+- If `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` exists, handle it yourself as supervisor: read it plus the referenced human review/gate records, update roadmap/project brief/ledger/policy/job sequencing as needed, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` summarizing the revised plan and to-do list, archive or remove `STRUCTURAL_CHANGE_REQUESTED.md`, commit workflow records, and stop without dispatching a worker job.
+- If an older worker-created major structural revision job is `ready_for_review`, treat the worker report as advisory only. Do not integrate worker-owned roadmap/project-brief/ledger edits. Prefer rejecting it as superseded by supervisor-owned structural planning, then perform the structural planning update yourself if the request remains unresolved.
+- After creating the structural revision human gate, do not dispatch the next implementation job. Stop at the new human review gate so the human can approve the revised plan.
+- If the runtime option `SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE` shown above is `1`, and after creating the structural revision review gate the main branch has a configured remote, commit workflow records as needed and push the updated main branch. If push fails, record the failure in the ledger and leave the human gate in place.
 - Use skills under `skills/` when relevant.
 
 Return a concise summary of what you reviewed, accepted/rejected/dispatched, and whether the workflow is waiting for worker or human review.

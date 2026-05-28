@@ -286,6 +286,7 @@ process_job() {
     echo
     echo "- Implement only this job."
     echo "- Do not broaden scope or perform unrelated refactors."
+    echo "- Do not edit supervisor-owned planning files such as .ai/supervisor/roadmap.md, project_brief.md, ledger.md, or milestone sequencing. If a task appears to require those edits, stop and report that the task must be handled by the Codex supervisor."
     echo "- Work in this Git worktree: $ROOT/$worktree"
     echo "- Run the requested tests."
     echo "- Break changes into meaningful commits where the task naturally separates into pieces."

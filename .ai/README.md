@@ -142,9 +142,9 @@ python3 scripts/human_milestone_review.py
 
 Answer `yes` or `no` for every review item. If an item fails, enter comments when prompted. The script will still cycle through the rest of the list, archive the gate, record the review, and create one revision worker job for all failed items.
 
-For major architecture, dependency, or roadmap changes, use the dashboard's Major Structural Change box or answer yes to the CLI structural-change prompt. That path supersedes the checklist outcome and creates a dedicated structural revision job instead of a normal checklist revision.
+For major architecture, dependency, or roadmap changes, use the dashboard's Major Structural Change box or answer yes to the CLI structural-change prompt. That path supersedes the checklist outcome and creates `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` for the Codex supervisor.
 
-The structural revision job updates the roadmap and related architecture records first, then creates a fresh `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` gate summarizing the revised milestones and proposed next worker jobs. The supervisor should stop there until the revised plan is approved.
+The supervisor owns structural planning. It updates the roadmap and related architecture records itself, then creates a fresh `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` gate summarizing the revised milestones and proposed next worker jobs. The supervisor should stop there until the revised plan is approved. Cursor workers may suggest roadmap changes in reports, but should not be assigned roadmap, project brief, ledger, or milestone-sequence edits.
 
 If every item passes, the script archives the gate, records approval, and prunes accepted job worktrees and local `ai/JNNNN` branches listed in the approved milestone review. `.ai/jobs/` and `.ai/commit_docs/` records are preserved. Active, rejected, blocked, and ready-for-review jobs are not pruned.
 

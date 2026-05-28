@@ -317,6 +317,8 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
     project_brief = read_text(supervisor / "project_brief.md")
     gate_path = supervisor / "HUMAN_REVIEW_REQUIRED.md"
     gate_text = read_text(gate_path)
+    structural_request_path = supervisor / "STRUCTURAL_CHANGE_REQUESTED.md"
+    structural_request_text = read_text(structural_request_path)
     runs_dir = root / ".ai" / "supervisor_runs"
     run_logs = sorted(runs_dir.glob("supervisor.*.log"))
     latest_log = run_logs[-1] if run_logs else None
@@ -339,6 +341,8 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
         "human_gate_exists": gate_path.exists(),
         "human_gate": gate_text,
         "human_gate_checklist": parse_gate_checklist(gate_text) if gate_path.exists() else [],
+        "structural_request_exists": structural_request_path.exists(),
+        "structural_request": structural_request_text,
         "latest_human_review": str(latest_review.relative_to(root)) if latest_review else "",
         "latest_human_review_result": latest_review_result,
         "latest_supervisor_log": str(latest_log.relative_to(root)) if latest_log else "",
@@ -439,10 +443,17 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
     supervisor_running = bool(controls.get("supervisor", {}).get("running"))
     worker_running = bool(controls.get("worker", {}).get("running"))
     human_gate_exists = bool(supervisor.get("human_gate_exists"))
+    structural_request_exists = bool(supervisor.get("structural_request_exists"))
     preparing_human_review = codex_active and supervisor_preparing_human_review(supervisor, job_rows)
 
     if human_gate_exists:
         summary = "Wait for Human Milestone Review."
+    elif structural_request_exists:
+        summary = (
+            "Supervisor is preparing a structural plan revision."
+            if codex_active
+            else "Structural plan revision is waiting for the supervisor."
+        )
     elif ready_job:
         summary = (
             f"Supervisor is reviewing {ready_job.get('id', 'a job')}."
@@ -493,7 +504,9 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
     else:
         worker_text = "Worker loop is idle."
 
-    if active and active.get("state") in {"queued", "running", "reviewing", "rejected"}:
+    if structural_request_exists:
+        supervisor_text = "Supervisor must revise roadmap/project brief/ledger itself and open a follow-up human review gate."
+    elif active and active.get("state") in {"queued", "running", "reviewing", "rejected"}:
         supervisor_text = f"Supervisor is waiting for worker state changes on {active.get('id')}."
     elif any(job.get("state") == "ready_for_review" for job in job_rows):
         supervisor_text = "Supervisor should review a job that is ready_for_review."
@@ -870,33 +883,37 @@ def commit_workflow_records(root: Path, message: str) -> tuple[bool, str]:
     return result.returncode == 0, output or "No workflow record changes to commit."
 
 
-def create_structural_change_task(
+def create_structural_change_request(
+    root: Path,
     reviews_dir: Path,
     stamp: str,
     archived_gate: Path,
     review_record: Path,
     comment: str,
 ) -> Path:
-    task_path = reviews_dir / f"structural_change_task_{stamp}.md"
+    request_path = root / ".ai" / "supervisor" / "STRUCTURAL_CHANGE_REQUESTED.md"
     task_lines = [
-        "# Major Structural Change Revision Job",
+        "# Major Structural Change Request",
         "",
-        "## Objective",
+        "This request must be handled by the Codex supervisor, not by a Cursor worker.",
+        "",
+        "## Supervisor Objective",
         "",
         "Revise the project architecture plan, roadmap, milestone sequence, and workflow records to reflect the human-requested structural change below.",
         "",
-        "This is a planning and architecture revision job. Its main output is an updated milestone plan for human review before implementation continues.",
+        "This is a supervisor-owned planning and architecture revision. Its main output is an updated milestone plan for human review before implementation continues.",
         "",
         "## Scope",
         "",
         "Allowed:",
-        "- Update roadmap, project brief, ledger, build/dependency policy, and documentation needed to encode the structural decision.",
+        "- Supervisor may update roadmap, project brief, ledger, build/dependency policy, and documentation needed to encode the structural decision.",
         "- Create or revise future milestone and worker-job sequencing so implementation follows the new architecture.",
         "- Create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` with a concise summary of the updated milestones, what changed, why it changed, and a `## Human Review To-Do List` checklist.",
         "- Keep accepted reference implementations as reference/test-oracle paths unless the human request explicitly says otherwise.",
         "",
         "Not allowed:",
-        "- Do not start broad scientific implementation work in this revision job.",
+        "- Do not dispatch a worker job to perform roadmap, project brief, ledger, or milestone-sequence edits.",
+        "- Do not start broad scientific implementation work in this supervisor revision.",
         "- Do not create the next implementation worker job.",
         "- Do not discard accepted work unless the structural change explicitly requires it.",
         "- Do not broaden beyond the requested architectural/roadmap correction.",
@@ -927,20 +944,20 @@ def create_structural_change_task(
         "",
         "Run documentation/workflow validation that is relevant to the edited files, and run `python3 scripts/summarize_jobs.py`.",
         "",
-        "## Worker Report Contract",
+        "## Completion Contract",
         "",
-        "Return:",
-        "1. Summary",
-        "2. Files changed",
-        "3. Commits made",
-        "4. Validation run and results",
-        "5. Architecture decisions recorded",
-        "6. Known limitations",
-        "7. Human review gate created or updated",
-        "8. Suggested next jobs",
+        "The supervisor should record:",
+        "1. Summary of roadmap/project-brief/ledger changes",
+        "2. Validation run and results",
+        "3. Human review gate path",
+        "4. Proposed next small worker jobs after human approval",
+        "5. Known limitations or decisions still requiring human review",
     ]
-    task_path.write_text("\n".join(task_lines).rstrip() + "\n", encoding="utf-8")
-    return task_path
+    text = "\n".join(task_lines).rstrip() + "\n"
+    request_path.write_text(text, encoding="utf-8")
+    archive_copy = reviews_dir / f"structural_change_request_{stamp}.md"
+    archive_copy.write_text(text, encoding="utf-8")
+    return request_path
 
 
 def write_human_review(root: Path, decisions: list[dict], structural_change: dict | None = None) -> dict:
@@ -997,47 +1014,16 @@ def write_human_review(root: Path, decisions: list[dict], structural_change: dic
         handle.write(f"- Review record: `{review_record.relative_to(root)}`.\n")
 
     if structural_requested:
-        active = active_jobs(root)
-        if active:
-            return {
-                "ok": False,
-                "message": "Major structural change requested, but active jobs remain; no structural revision job created.",
-                "active_jobs": active,
-                "review_record": str(review_record.relative_to(root)),
-                "archived_gate": str(archived_gate.relative_to(root)),
-            }
-        task_path = create_structural_change_task(
-            reviews_dir, stamp, archived_gate, review_record, structural_comment
+        request_path = create_structural_change_request(
+            root, reviews_dir, stamp, archived_gate, review_record, structural_comment
         )
-        _, base_ref, _ = run(["git", "rev-parse", "HEAD"], root)
-        result = subprocess.run(
-            [
-                "python3",
-                "scripts/create_job.py",
-                "--title",
-                "Address major structural change request",
-                "--base-ref",
-                base_ref or "HEAD",
-                "--test-command",
-                "python3 scripts/summarize_jobs.py",
-                "--task-file",
-                str(task_path),
-            ],
-            cwd=str(root),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-        if result.returncode != 0:
-            return {"ok": False, "message": result.stderr or result.stdout or "failed to create structural revision job"}
         with ledger.open("a", encoding="utf-8") as handle:
-            handle.write(f"- Major structural change requested. Revision job: `{result.stdout.strip()}`.\n")
+            handle.write(f"- Major structural change requested. Supervisor structural request: `{request_path.relative_to(root)}`.\n")
         commit_ok, commit_output = commit_workflow_records(root, "workflow: record major structural change request")
         return {
             "ok": True,
-            "message": "Major structural change requested. Structural planning revision job created; it must update the milestones and open a follow-up human review gate before implementation resumes.",
-            "job_path": result.stdout.strip(),
+            "message": "Major structural change requested. The supervisor must update the milestones itself and open a follow-up human review gate before implementation resumes.",
+            "request_path": str(request_path.relative_to(root)),
             "review_record": str(review_record.relative_to(root)),
             "archived_gate": str(archived_gate.relative_to(root)),
             "commit_ok": commit_ok,
