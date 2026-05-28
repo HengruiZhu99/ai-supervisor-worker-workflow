@@ -144,7 +144,7 @@ Then visit:
 http://127.0.0.1:8765/
 ```
 
-The dashboard can launch and stop the worker and supervisor loops, show job/worktree/project status, expand milestone criteria, process human milestone review checklists, and ask the supervisor read-only questions before submitting a milestone review. After a successful dashboard human-review submission, it automatically starts the supervisor and worker loops if either is offline.
+The dashboard can launch and stop the worker and supervisor loops, show job/worktree/project status, expand milestone criteria, process human milestone review checklists, and ask the supervisor read-only questions before submitting a milestone review. After a successful human-review submission through the dashboard or `scripts/human_milestone_review.py`, the workflow automatically starts the supervisor and worker loops if either is offline.
 
 Loops launched from the dashboard are wrapped with a small crash relaunch guard. The default is three process-level restarts; adjust with `AI_WORKFLOW_LOOP_MAX_RESTARTS` and `AI_WORKFLOW_LOOP_RESTART_DELAY`.
 

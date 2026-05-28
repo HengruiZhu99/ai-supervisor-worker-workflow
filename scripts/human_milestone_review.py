@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -315,6 +316,102 @@ def commit_workflow_records(message: str) -> str:
     return output or "No workflow record changes to commit."
 
 
+def pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()[2]
+    except OSError:
+        return False
+    return state != "Z"
+
+
+def read_pid(path: Path) -> int | None:
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid_running(pid) else None
+
+
+def default_loop_env(name: str) -> dict[str, str]:
+    if name == "worker_loop":
+        return {
+            "CURSOR_MODEL": os.environ.get("CURSOR_MODEL", "gpt-5.5-high"),
+            "CURSOR_TIMEOUT": os.environ.get("CURSOR_TIMEOUT", "3600"),
+            "CURSOR_REVIEWERS_ENABLED": os.environ.get("CURSOR_REVIEWERS_ENABLED", "1"),
+            "CURSOR_REVIEW_TIMEOUT": os.environ.get("CURSOR_REVIEW_TIMEOUT", "2400"),
+            "CURSOR_REVIEWER_A_MODEL": os.environ.get("CURSOR_REVIEWER_A_MODEL", "claude-opus-4-7-thinking-high"),
+            "CURSOR_REVIEWER_B_MODEL": os.environ.get("CURSOR_REVIEWER_B_MODEL", "gpt-5.3-codex-high"),
+            "WORKER_AUTO_RELAUNCH_FAILURE": "1",
+        }
+    return {
+        "CODEX_MODEL": os.environ.get("CODEX_MODEL", "gpt-5.5"),
+        "CODEX_REASONING_EFFORT": os.environ.get("CODEX_REASONING_EFFORT", "high"),
+        "SUPERVISOR_POLL_SECONDS": os.environ.get("SUPERVISOR_POLL_SECONDS", "10"),
+        "SUPERVISOR_VERBOSE": os.environ.get("SUPERVISOR_VERBOSE", "1"),
+        "SUPERVISOR_AUTO_RELAUNCH_FAILURE": "1",
+    }
+
+
+def start_loop(name: str) -> str:
+    runs_dir = Path(".ai/supervisor_runs")
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    pid_path = runs_dir / f"{name}.pid"
+    existing = read_pid(pid_path)
+    if existing:
+        return f"{name} already running with pid {existing}"
+
+    script_name = "worker_loop.sh" if name == "worker_loop" else "supervisor_loop.sh"
+    script_path = Path("scripts") / script_name
+    if not script_path.exists():
+        return f"{name} not started: missing {script_path}"
+
+    env = os.environ.copy()
+    env.update(default_loop_env(name))
+    max_restarts = env.get("AI_WORKFLOW_LOOP_MAX_RESTARTS", "3")
+    restart_delay = env.get("AI_WORKFLOW_LOOP_RESTART_DELAY", "5")
+    wrapper = f"""
+set -u
+trap 'exit 0' TERM INT
+attempt=0
+while :; do
+  "{script_path}"
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    exit 0
+  fi
+  if [ "$attempt" -ge "{max_restarts}" ]; then
+    echo "{name} exited with status $status after $attempt restart(s)" >&2
+    exit "$status"
+  fi
+  attempt=$((attempt + 1))
+  echo "{name} exited with status $status; relaunching ($attempt/{max_restarts}) after {restart_delay}s" >&2
+  sleep "{restart_delay}"
+done
+"""
+    log_path = runs_dir / f"{name}.log"
+    with log_path.open("ab") as handle:
+        handle.write(f"\n--- launched {datetime.now(timezone.utc).isoformat()} ---\n".encode("utf-8"))
+        proc = subprocess.Popen(
+            ["bash", "-lc", wrapper],
+            env=env,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    pid_path.write_text(str(proc.pid) + "\n", encoding="utf-8")
+    return f"{name} started with pid {proc.pid}"
+
+
+def auto_start_loops() -> str:
+    supervisor = start_loop("supervisor_loop")
+    worker = start_loop("worker_loop")
+    return f"{supervisor}\n{worker}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--gate", default=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md")
@@ -377,9 +474,10 @@ def main() -> int:
         print(f"Review record: {review_record}")
         print(f"Archived gate: {archived_gate}")
         print(f"Supervisor structural request: {request_path}")
-        print("Start or continue the supervisor loop. The supervisor must update the milestones itself and open a follow-up human review gate before implementation resumes.")
         print("\nWorkflow record commit:")
         print(commit_workflow_records("workflow: record major structural change request"))
+        print("\nAuto-start loops:")
+        print(auto_start_loops())
         return 0
 
     failed = [item for item in decisions if not item["passed"]]
@@ -396,6 +494,8 @@ def main() -> int:
         print(prune_output)
         print("\nWorkflow record commit:")
         print(commit_workflow_records("workflow: record human milestone approval"))
+        print("\nAuto-start loops:")
+        print(auto_start_loops())
         return 0
 
     active = active_jobs()
@@ -426,6 +526,8 @@ def main() -> int:
     print(f"Revision job created: {job_path}")
     print("\nWorkflow record commit:")
     print(commit_workflow_records("workflow: record human milestone review"))
+    print("\nAuto-start loops:")
+    print(auto_start_loops())
     return 0
 
 
