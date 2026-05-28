@@ -631,6 +631,17 @@ def argv_has_script(argv: list[str], script_name: str) -> bool:
     return any(Path(arg).name == script_name for arg in argv)
 
 
+def is_cursor_agent_process(argv: list[str]) -> bool:
+    if not argv:
+        return False
+    executable = Path(argv[0]).name
+    if executable == "cursor-agent":
+        return True
+    if executable in {"node", "index.js"} and any("cursor-agent" in arg for arg in argv[:3]):
+        return True
+    return False
+
+
 def process_blocks(root: Path) -> dict:
     blocks = {"worker": [], "supervisor": [], "cursor": [], "codex": []}
     proc_root = Path("/proc")
@@ -663,7 +674,7 @@ def process_blocks(root: Path) -> dict:
             blocks["worker"].append(item)
         elif argv_has_script(argv, "supervisor_loop.sh"):
             blocks["supervisor"].append(item)
-        elif "cursor-agent" in cmdline:
+        elif is_cursor_agent_process(argv):
             blocks["cursor"].append(item)
         elif "codex" in cmdline and " exec " in f" {cmdline} ":
             blocks["codex"].append(item)
