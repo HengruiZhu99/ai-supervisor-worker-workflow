@@ -23,10 +23,10 @@ def changed_files(path: Path) -> set[str]:
 
 
 def extract_coverage_block(text: str) -> str:
-    fenced = re.search(r"```(?:yaml|yml)\s*\n(.*?diff_coverage:.*?)```", text, re.S | re.I)
-    if fenced:
-        return fenced.group(1)
-    marker = text.find("diff_coverage:")
+    fenced_blocks = re.findall(r"```(?:yaml|yml)\s*\n(.*?diff_coverage:.*?)```", text, re.S | re.I)
+    if fenced_blocks:
+        return fenced_blocks[-1]
+    marker = text.rfind("diff_coverage:")
     return text[marker:] if marker >= 0 else ""
 
 
