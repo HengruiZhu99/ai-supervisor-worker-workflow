@@ -138,7 +138,10 @@ write_reviewer_prompt() {
     echo "- Commit docs: $ROOT/.ai/commit_docs/"
     echo "- Existing skills: run 'python3 scripts/list_skills.py' in the worktree if needed"
     echo
-    echo "Read the task, worker report, test log, diffstat, and selected patch/source sections. Check whether the worker stayed in scope and whether the evidence supports acceptance."
+    echo "Read the actual diff comprehensively, not just the worker report. Start from the diffstat, then inspect every changed file in the patch and/or worktree."
+    echo "Use commands such as 'git diff --name-only $base_ref..$final_commit', 'git diff $base_ref..$final_commit -- <path>', and direct source reads from the worktree."
+    echo "If the diff is too large to review comprehensively within this reviewer pass, recommend revise/split; do not recommend acceptance for partially reviewed work."
+    echo "Cross-check the worker report, test log, commit docs, and actual code. The actual diff and worktree are the source of truth."
     echo
     echo "## Output Format"
     echo
@@ -147,10 +150,11 @@ write_reviewer_prompt() {
     echo "2. Blocking concerns"
     echo "3. Nonblocking concerns"
     echo "4. Evidence reviewed"
-    echo "5. Test and validation assessment"
-    echo "6. Scope assessment"
-    echo "7. Suggested supervisor decision rationale"
-    echo "8. Skill suggestion review: whether the worker's suggested skills are useful, duplicate existing skills, and should be project-specific, general workflow skills, deferred, or rejected. Run 'python3 scripts/list_skills.py' if needed."
+    echo "5. Diff coverage: list changed files reviewed, state whether the full diff was reviewed, and list any unreviewed paths. If any path was not reviewed, recommendation must not be accept."
+    echo "6. Test and validation assessment"
+    echo "7. Scope assessment"
+    echo "8. Suggested supervisor decision rationale"
+    echo "9. Skill suggestion review: whether the worker's suggested skills are useful, duplicate existing skills, and should be project-specific, general workflow skills, deferred, or rejected. Run 'python3 scripts/list_skills.py' if needed."
   } >"$prompt_file"
 }
 

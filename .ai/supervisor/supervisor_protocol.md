@@ -85,7 +85,7 @@ If a job is `ready_for_review`, inspect:
 - `diffstat.attempt-N.txt`
 - `test.attempt-N.log`
 - `.ai/commit_docs/JNNNN_attempt-N_*.md`
-- selected patch sections only if needed
+- `diff.attempt-N.patch`
 - the job branch named in `status.json`
 - the isolated worktree `.worktrees/JNNNN/`
 
@@ -94,11 +94,16 @@ Worker implementation files are not expected to exist in the main worktree befor
 ```bash
 git -C .worktrees/JNNNN status --short
 git -C .worktrees/JNNNN show --stat --oneline HEAD
+git -C .worktrees/JNNNN diff --name-only BASE_REF..HEAD
 git -C .worktrees/JNNNN diff BASE_REF..HEAD -- path
 sed -n '1,160p' .worktrees/JNNNN/path/to/file
 ```
 
 Do not reject or fail review just because a worker-created file is absent from the main worktree before the job is accepted.
+
+Reviewer reports must not be based only on the worker report. Each reviewer should inspect the actual diff comprehensively: every changed file should either be reviewed directly from the patch/worktree or explicitly listed as unreviewed. If a reviewer cannot review the full diff because it is too large, noisy, generated, or unclear, the recommendation should be revise/split or needs-supervisor-judgment, not accept.
+
+The supervisor should check reviewer diff coverage before accepting. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
 
 Accept only if:
 - scope is correct
@@ -110,6 +115,7 @@ Accept only if:
 - commit documentation exists
 - the worker report matches the actual diff and tests
 - reviewer concerns are resolved, converted into rejection feedback, or explicitly waived with rationale
+- reviewer reports include comprehensive actual-diff coverage or the supervisor has documented an equivalent comprehensive review
 
 ## Skill suggestion protocol
 

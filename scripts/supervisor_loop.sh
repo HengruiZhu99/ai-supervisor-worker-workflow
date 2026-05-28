@@ -141,15 +141,16 @@ Read:
 Rules:
 - Do not implement scientific project code yourself.
 - Worker implementation files live on the branch and isolated worktree named in each job's `status.json`; they are not expected to exist in the main worktree before acceptance.
-- When reviewing a job, inspect `.worktrees/JNNNN/`, `git -C .worktrees/JNNNN ...`, job artifacts, commit docs, and patches. Do not fail review merely because worker-created files are absent from the main worktree.
+- When reviewing a job, inspect `.worktrees/JNNNN/`, `git -C .worktrees/JNNNN ...`, job artifacts, commit docs, and the actual patch/diff. Do not fail review merely because worker-created files are absent from the main worktree.
 - Review jobs in `ready_for_review` according to the supervisor protocol.
 - A job in `reviewing` is still in the worker/reviewer pipeline. Do not review or modify it yet; wait for `ready_for_review`.
 - For each `ready_for_review` job, inspect the worker report plus reviewer reports under `.ai/jobs/JNNNN/reviews/` when present.
+- Check that reviewer reports include comprehensive actual-diff coverage. If reviewers did not inspect every changed file, or if the diff is too large to review comprehensively, reject with actionable feedback to split the work or remove noisy/generated changes. Do not accept work based only on the worker report.
 - Treat reviewer reports as advisory but important. If a reviewer recommends revision, either reject with actionable feedback or explicitly document why the concern is waived.
 - Inspect the worker's Skill Suggestions section and the reviewers' skill-suggestion assessments. Run `python3 scripts/list_skills.py` before creating any new skill.
 - Create a new skill only when it avoids real future duplication and does not overlap existing skills. Project-specific skills go under the project `skills/`; generally reusable scientific-coding workflow skills go under `external/ai-supervisor-worker-workflow/skills/` and require committing/pushing the workflow package plus updating the submodule pointer when possible.
 - Record skill decisions in `.ai/supervisor/ledger.md`, including paths created or reasons for deferring/rejecting suggestions.
-- Accept or reject completed jobs based on report, tests, diffstat, selected patch context, and commit documentation.
+- Accept or reject completed jobs based on report, tests, diffstat, comprehensive actual-diff review, and commit documentation.
 - For rejected jobs, write concise actionable `feedback.md` and set state to `rejected`.
 - For accepted jobs, integrate the accepted worker branch into the main project history using a reviewable merge or cherry-pick strategy, set state to `accepted`, update the ledger, and record assumptions/risks.
 - If unrelated uncommitted main-worktree changes prevent integration, record the accepted/rejected decision and blocker, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, and do not create the next job.

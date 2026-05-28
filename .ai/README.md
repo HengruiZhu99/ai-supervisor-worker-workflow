@@ -55,6 +55,8 @@ CURSOR_REVIEWER_B_MODEL=gpt-5.3-codex-high \
 
 Reviewer A focuses on scientific/numerical correctness. Reviewer B focuses on code quality, build behavior, Kokkos/backend portability, tests, and maintainability. Set `CURSOR_REVIEWERS_ENABLED=0` to skip reviewer passes.
 
+Reviewers are expected to inspect the actual diff comprehensively. Their reports should include a diff-coverage statement listing changed files reviewed and any paths not reviewed. If a diff is too large to review end to end, reviewers should recommend splitting the job rather than accepting it.
+
 Worker reports should include a `Skill Suggestions` section. Reviewers assess those suggestions, and the supervisor checks existing skills before creating anything:
 
 ```bash

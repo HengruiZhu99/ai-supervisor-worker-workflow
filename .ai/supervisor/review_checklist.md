@@ -5,6 +5,14 @@
 - [ ] Did the worker do exactly the assigned job?
 - [ ] Did the worker avoid unrelated refactors?
 - [ ] Did the worker avoid implementing future milestones prematurely?
+- [ ] Is the diff small enough to review comprehensively?
+
+## Diff review coverage
+
+- [ ] Did each reviewer inspect the actual diff/worktree rather than relying on the worker report?
+- [ ] Did reviewer reports list the changed files they reviewed?
+- [ ] Were all changed files reviewed, or were unreviewed paths explicitly listed?
+- [ ] If the full diff was not reviewable, was the job rejected or split instead of accepted?
 
 ## Scientific correctness
 

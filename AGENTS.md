@@ -48,6 +48,8 @@ When enabled, two read-only Cursor reviewer passes run after a worker attempt:
 
 Reviewer reports are advisory inputs to Codex. Reviewers do not accept work, reject work, or modify files.
 
+Reviewers should inspect the actual diff comprehensively, not rely on the worker report. Their report should list the changed files reviewed and explicitly state whether the full diff was covered. If the full diff is too large to inspect end to end, reviewers should recommend splitting or revision rather than acceptance.
+
 Reviewers should also assess any worker skill suggestions: whether they would avoid real duplication, whether they duplicate existing skills, and whether they should be project-specific or generally reusable.
 
 ### Skill stewardship
