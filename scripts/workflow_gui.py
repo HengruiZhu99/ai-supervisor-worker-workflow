@@ -1066,7 +1066,6 @@ Hard constraints:
     timeout_seconds = max(30, env_int("AI_WORKFLOW_CHAT_TIMEOUT", 300))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = runs_dir(root) / f"human_review_chat_{stamp}.log"
-    output_path = runs_dir(root) / f"human_review_chat_{stamp}.answer.md"
     args = [
         "codex",
         "--ask-for-approval",
@@ -1106,7 +1105,6 @@ Hard constraints:
         }
 
     answer = result.stdout.strip()
-    output_path.write_text(answer + ("\n" if answer else ""), encoding="utf-8")
     log_path.write_text(
         "\n".join(
             [
@@ -1146,7 +1144,6 @@ Hard constraints:
         "model": model,
         "reasoning_effort": effort,
         "log_file": str(log_path.relative_to(root)),
-        "answer_file": str(output_path.relative_to(root)),
     }
 
 
