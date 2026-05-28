@@ -73,6 +73,15 @@ The worker loop handles waiting and execution.
 
 In automated milestone mode, the supervisor automation script may sleep while waiting for worker state changes. It should invoke Codex only when a job is `ready_for_review`, when no active job exists and no human gate is present, or when recovering from an interrupted supervisor run.
 
+The worker loop must pause globally while `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` or `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` exists. Do not process queued or rejected jobs until the human gate or structural request is resolved.
+
+Terminal job states:
+- `accepted`: reviewed and integrated or otherwise accepted by the supervisor.
+- `superseded`: no longer relevant because a newer plan or structural decision replaced it.
+- `cancelled`: stopped by explicit supervisor or human decision.
+
+The worker loop must not retry terminal states. Use `rejected` only when actionable feedback should be retried by the worker.
+
 ## Review protocol
 
 If a job is `ready_for_review`, inspect:
@@ -83,6 +92,7 @@ If a job is `ready_for_review`, inspect:
 - the worker's `Skill Suggestions` section, if present
 - reviewer assessments of skill suggestions, if present
 - `diffstat.attempt-N.txt`
+- `changed_files.attempt-N.txt`
 - `test.attempt-N.log`
 - `.ai/commit_docs/JNNNN_attempt-N_*.md`
 - `diff.attempt-N.patch`
@@ -94,16 +104,28 @@ Worker implementation files are not expected to exist in the main worktree befor
 ```bash
 git -C .worktrees/JNNNN status --short
 git -C .worktrees/JNNNN show --stat --oneline HEAD
-git -C .worktrees/JNNNN diff --name-only BASE_REF..HEAD
-git -C .worktrees/JNNNN diff BASE_REF..HEAD -- path
+git -C .worktrees/JNNNN diff --name-only BASE_SHA..HEAD
+git -C .worktrees/JNNNN diff BASE_SHA..HEAD -- path
 sed -n '1,160p' .worktrees/JNNNN/path/to/file
 ```
+
+Use `base_sha` from `status.json`, not a moving ref such as `HEAD`, when comparing worker changes. `base_ref` is human-readable context; `base_sha` is the immutable review boundary.
 
 Do not reject or fail review just because a worker-created file is absent from the main worktree before the job is accepted.
 
 Reviewer reports must not be based only on the worker report. Each reviewer should inspect the actual diff comprehensively: every changed file should either be reviewed directly from the patch/worktree or explicitly listed as unreviewed. If a reviewer cannot review the full diff because it is too large, noisy, generated, or unclear, the recommendation should be revise/split or needs-supervisor-judgment, not accept.
 
-The supervisor should check reviewer diff coverage before accepting. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
+Reviewer reports must include a fenced YAML block:
+
+```yaml
+diff_coverage:
+  full_diff_reviewed: true
+  files_reviewed:
+    - path/from/changed_files
+  unreviewed_files: []
+```
+
+The supervisor should check reviewer diff coverage before accepting. The worker loop runs `scripts/check_reviewer_coverage.py` against `changed_files.attempt-N.txt`; if the reviewer stage fails, jobs enter `review_failed` or `review_timeout` instead of `ready_for_review`. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
 
 Accept only if:
 - scope is correct
@@ -144,6 +166,8 @@ When enabled, the worker loop runs two read-only Cursor reviewers after the work
 
 Reviewer outputs are stored in `.ai/jobs/JNNNN/reviews/`. A job in `reviewing` is not ready for supervisor action. The supervisor should wait until the job returns to `ready_for_review`, then inspect the worker report and both reviewer reports before accepting or rejecting.
 
+If a reviewer times out or exits nonzero, the worker loop may retry the reviewer according to its configured relaunch limit. If failures remain, the job state becomes `review_timeout` or `review_failed`. The supervisor should inspect reviewer logs and decide whether to rerun reviewers, reject with worker feedback, mark the job terminal, or open a human gate.
+
 ## Acceptance protocol
 
 If accepted:
@@ -164,7 +188,7 @@ After a human milestone review is approved, run the accepted-job pruning helper 
 
 ## Workflow record commit protocol
 
-Keep `.ai` audit records reviewable but separate from implementation commits. After accepting, rejecting, dispatching, or opening/archiving a human milestone gate, commit workflow records with `python3 scripts/commit_workflow_records.py --message "workflow: record supervisor state"` or a more specific workflow message. The helper stages only `.ai` job records, commit documentation, ledger, roadmap, and human-review records.
+Keep `.ai` audit records reviewable but separate from implementation commits. After accepting, rejecting, dispatching, or opening/archiving a human milestone gate, commit workflow records with `python3 scripts/commit_workflow_records.py --message "workflow: record supervisor state"` or a more specific workflow message. The helper stages `.ai` job records, commit documentation, `.ai/supervisor/*.md` supervisor records, human-review records, reusable skills, and selected workflow docs. It excludes `.ai/supervisor/design_prompt.md` unless called with `--include-design-prompt`.
 
 ## Major structural change protocol
 
@@ -191,6 +215,8 @@ If rejected:
 - update job status to `rejected`
 - explain exactly what must change
 - avoid rewriting the entire task unless necessary
+
+If the job should not be retried, set it to `superseded` or `cancelled` instead of `rejected`.
 
 ## Memory policy
 

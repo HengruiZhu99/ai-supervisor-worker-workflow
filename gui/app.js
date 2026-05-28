@@ -12,6 +12,8 @@ function badgeClass(status) {
   if (value.includes("ready")) return "ready";
   if (value.includes("running") || value.includes("queued")) return "running";
   if (value.includes("accepted")) return "accepted";
+  if (value.includes("superseded") || value.includes("cancelled")) return "terminal";
+  if (value.includes("failed") || value.includes("timeout")) return "blocked";
   if (value.includes("rejected")) return "rejected";
   if (value.includes("blocked")) return "blocked";
   return "";
@@ -22,6 +24,8 @@ function jobDisplayStatus(job, data) {
   const codexActive = Boolean(data?.processes?.codex?.length);
   if (status === "ready_for_review" && codexActive) return "reviewing";
   if (status === "ready_for_review") return "ready for review";
+  if (status === "review_failed") return "review failed";
+  if (status === "review_timeout") return "review timeout";
   return status.replaceAll("_", " ");
 }
 
@@ -91,8 +95,10 @@ function renderJobs(jobs, data) {
           <span>Tests ${job.tests_passed === true ? "passed" : job.tests_passed === false ? "failed" : "unknown"}</span>
           <span>Reviewer A ${job.reviewer_a_exit === 0 ? "done" : job.reviewer_a_exit !== undefined ? `exit ${escapeHtml(job.reviewer_a_exit)}` : "pending"}</span>
           <span>Reviewer B ${job.reviewer_b_exit === 0 ? "done" : job.reviewer_b_exit !== undefined ? `exit ${escapeHtml(job.reviewer_b_exit)}` : "pending"}</span>
+          ${job.reviewers_complete === false ? "<span>Reviewers incomplete</span>" : ""}
           <span>${escapeHtml(job.updated_at || "")}</span>
         </div>
+        ${job.base_sha ? `<div class="job-meta"><span>Base ${escapeHtml(String(job.base_sha).slice(0, 12))}</span><span>Workflow ${escapeHtml(job.workflow_commit || "-")}</span></div>` : ""}
         <code>${escapeHtml(job._path || "")}</code>
       </article>
     `;
@@ -278,10 +284,20 @@ function render(data, options = {}) {
   $("supervisorLoopLog").textContent = data.controls?.supervisor?.log_tail || "No supervisor loop log found.";
   $("workerLogTitle").textContent = data.controls?.worker?.log_label || "Cursor Worker Output";
   $("workerLoopLogMeta").textContent = data.controls?.worker?.log_file
-    ? `${data.controls.worker.log_file} · last ${data.controls.worker.log_display_lines} lines`
+    ? [
+        data.controls.worker.log_file,
+        `last ${data.controls.worker.log_display_lines} lines`,
+        data.controls.worker.workflow_commit ? `workflow ${data.controls.worker.workflow_commit}` : "",
+        data.controls.worker.version_warning || "",
+      ].filter(Boolean).join(" · ")
     : "";
   $("supervisorLoopLogMeta").textContent = data.controls?.supervisor?.log_file
-    ? `${data.controls.supervisor.log_file} · last ${data.controls.supervisor.log_display_lines} lines`
+    ? [
+        data.controls.supervisor.log_file,
+        `last ${data.controls.supervisor.log_display_lines} lines`,
+        data.controls.supervisor.workflow_commit ? `workflow ${data.controls.supervisor.workflow_commit}` : "",
+        data.controls.supervisor.version_warning || "",
+      ].filter(Boolean).join(" · ")
     : "";
 
   renderProcesses("workerProcesses", [...data.processes.worker, ...data.processes.cursor]);

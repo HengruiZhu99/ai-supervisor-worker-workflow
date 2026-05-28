@@ -22,6 +22,7 @@ Not allowed:
 - At minimum, create one commit for the attempt if files are changed.
 - Do not mix unrelated refactors with implementation.
 - Generate commit documentation under `.ai/commit_docs/`.
+- The worker loop records `base_sha`; all review diffs use `base_sha..HEAD`.
 
 ## Files likely relevant
 

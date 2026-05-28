@@ -85,7 +85,7 @@ def active_jobs() -> list[str]:
             active.append(f"{status_path.parent.name}: invalid status")
             continue
         state = data.get("state", "")
-        if state in {"queued", "running", "rejected", "ready_for_review", "blocked"}:
+        if state in {"queued", "running", "reviewing", "rejected", "ready_for_review", "blocked", "review_failed", "review_timeout"}:
             active.append(f"{data.get('id', status_path.parent.name)}: {state}")
     return active
 

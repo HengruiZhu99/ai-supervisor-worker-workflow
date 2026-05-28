@@ -23,6 +23,17 @@ from urllib.parse import urlparse
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 GUI_ROOT = PACKAGE_ROOT / "gui"
 DEFAULT_LOG_DISPLAY_LINES = 10_000
+ACTIVE_JOB_STATES = {
+    "queued",
+    "running",
+    "reviewing",
+    "rejected",
+    "ready_for_review",
+    "blocked",
+    "review_failed",
+    "review_timeout",
+}
+TERMINAL_JOB_STATES = {"accepted", "cancelled", "superseded"}
 
 
 def env_int(name: str, default: int) -> int:
@@ -89,6 +100,16 @@ def log_file(root: Path, name: str) -> Path:
     return runs_dir(root) / f"{name}.log"
 
 
+def workflow_package_commit() -> str:
+    code, out, _ = run(["git", "rev-parse", "--short", "HEAD"], PACKAGE_ROOT)
+    return out if code == 0 and out else "unknown"
+
+
+def logged_workflow_commit(log_tail: str) -> str:
+    matches = re.findall(r"workflow_commit=([0-9a-fA-F]+|unknown)", log_tail)
+    return matches[-1] if matches else ""
+
+
 def pid_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -112,13 +133,22 @@ def read_pid(path: Path) -> int | None:
 def control_info(root: Path, name: str) -> dict:
     pid = read_pid(pid_file(root, name))
     log = log_file(root, name)
+    log_tail = tail(log, LOG_DISPLAY_LINES)
+    expected_commit = workflow_package_commit()
+    running_commit = logged_workflow_commit(log_tail)
+    version_warning = ""
+    if pid is not None and expected_commit != "unknown" and running_commit and running_commit != expected_commit:
+        version_warning = "running loop uses older workflow version; restart recommended"
     return {
         "pid": pid,
         "running": pid is not None,
         "pid_file": str(pid_file(root, name).relative_to(root)),
         "log_file": str(log.relative_to(root)),
-        "log_tail": tail(log, LOG_DISPLAY_LINES),
+        "log_tail": log_tail,
         "log_display_lines": LOG_DISPLAY_LINES,
+        "workflow_commit": running_commit,
+        "expected_workflow_commit": expected_commit,
+        "version_warning": version_warning,
     }
 
 
@@ -174,7 +204,15 @@ def jobs(root: Path) -> list[dict]:
 
 
 def reviewer_state(root: Path, job_rows: list[dict]) -> dict:
-    priority = {"reviewing": 0, "ready_for_review": 1, "accepted": 2, "rejected": 3, "blocked": 4}
+    priority = {
+        "reviewing": 0,
+        "review_failed": 1,
+        "review_timeout": 2,
+        "ready_for_review": 3,
+        "accepted": 4,
+        "rejected": 5,
+        "blocked": 6,
+    }
     candidates = [
         job for job in job_rows
         if job.get("_reviewer_a_tail") or job.get("_reviewer_b_tail") or job.get("state") == "reviewing"
@@ -295,7 +333,7 @@ def parse_roadmap(
 def active_job_contexts(job_rows: list[dict]) -> list[str]:
     contexts = []
     for job in job_rows:
-        if job.get("state") not in {"queued", "running", "reviewing", "rejected", "ready_for_review", "blocked"}:
+        if job.get("state") not in ACTIVE_JOB_STATES:
             continue
         contexts.append(
             "\n".join(
@@ -351,7 +389,16 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
 
 
 def active_job_summary(job_rows: list[dict]) -> dict | None:
-    priority = {"running": 0, "reviewing": 1, "queued": 2, "rejected": 3, "ready_for_review": 4, "blocked": 5}
+    priority = {
+        "running": 0,
+        "reviewing": 1,
+        "queued": 2,
+        "rejected": 3,
+        "ready_for_review": 4,
+        "review_failed": 5,
+        "review_timeout": 6,
+        "blocked": 7,
+    }
     candidates = [job for job in job_rows if job.get("state") in priority]
     if not candidates:
         return None
@@ -424,7 +471,7 @@ def supervisor_preparing_human_review(supervisor: dict, job_rows: list[dict]) ->
         return False
     if supervisor.get("latest_human_review_result") == "approved":
         return False
-    if any(job.get("state") in {"queued", "running", "reviewing", "rejected", "ready_for_review", "blocked"} for job in job_rows):
+    if any(job.get("state") in ACTIVE_JOB_STATES for job in job_rows):
         return False
     ledger = str(supervisor.get("ledger", "")).lower()
     review_phrases = [
@@ -439,6 +486,7 @@ def supervisor_preparing_human_review(supervisor: dict, job_rows: list[dict]) ->
 def activity_state(job_rows: list[dict], processes: dict, controls: dict, supervisor: dict) -> dict:
     active = active_job_summary(job_rows)
     ready_job = next((job for job in job_rows if job.get("state") == "ready_for_review"), None)
+    review_failed_job = next((job for job in job_rows if job.get("state") in {"review_failed", "review_timeout"}), None)
     codex_active = bool(processes.get("codex"))
     supervisor_running = bool(controls.get("supervisor", {}).get("running"))
     worker_running = bool(controls.get("worker", {}).get("running"))
@@ -460,6 +508,8 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
             if codex_active
             else f"{ready_job.get('id', 'A job')} is ready for supervisor review."
         )
+    elif review_failed_job:
+        summary = f"Reviewer stage failed on {review_failed_job.get('id', 'a job')}; supervisor action is needed."
     elif active and active.get("state") == "reviewing":
         summary = f"Cursor reviewers are reviewing {active.get('id', 'a job')}."
     elif active and active.get("timed_out"):
@@ -492,6 +542,8 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
             worker_text = f"Cursor reviewers are reviewing {active.get('id')} attempt {active.get('attempt')}."
         elif active.get("timed_out"):
             worker_text = f"Cursor timed out on {active.get('id')} attempt {active.get('attempt')}: {active.get('worker_error')}"
+        elif active.get("state") in {"review_failed", "review_timeout"}:
+            worker_text = f"Reviewer stage failed on {active.get('id')} attempt {active.get('attempt')}; see reviewer logs and status fields."
         elif active.get("state") == "blocked":
             worker_text = f"Worker blocked on {active.get('id')} attempt {active.get('attempt')}; supervisor review or feedback is needed."
         else:
@@ -510,6 +562,8 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
         supervisor_text = f"Supervisor is waiting for worker state changes on {active.get('id')}."
     elif any(job.get("state") == "ready_for_review" for job in job_rows):
         supervisor_text = "Supervisor should review a job that is ready_for_review."
+    elif any(job.get("state") in {"review_failed", "review_timeout"} for job in job_rows):
+        supervisor_text = "Supervisor should inspect reviewer failure artifacts and decide whether to retry, reject, or open a gate."
     elif preparing_human_review:
         supervisor_text = "Supervisor is preparing the milestone review summary and checklist."
     elif codex_active:
@@ -641,7 +695,7 @@ def open_project_file(root: Path, relative_path: str) -> dict:
 
 
 def argv_has_script(argv: list[str], script_name: str) -> bool:
-    return any(Path(arg).name == script_name for arg in argv)
+    return any(Path(arg).name == script_name or script_name in arg for arg in argv)
 
 
 def is_cursor_agent_process(argv: list[str]) -> bool:
@@ -760,10 +814,31 @@ def start_loop(root: Path, name: str, env_updates: dict[str, str]) -> dict:
     env = os.environ.copy()
     env.update({key: value for key, value in env_updates.items() if value != ""})
     log = log_file(root, name)
+    max_restarts = str(env.get("AI_WORKFLOW_LOOP_MAX_RESTARTS", "3"))
+    restart_delay = str(env.get("AI_WORKFLOW_LOOP_RESTART_DELAY", "5"))
+    wrapper = f"""
+set -u
+trap 'exit 0' TERM INT
+attempt=0
+while :; do
+  "{script_path}"
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    exit 0
+  fi
+  if [ "$attempt" -ge "{max_restarts}" ]; then
+    echo "{name} exited with status $status after $attempt restart(s)" >&2
+    exit "$status"
+  fi
+  attempt=$((attempt + 1))
+  echo "{name} exited with status $status; relaunching ($attempt/{max_restarts}) after {restart_delay}s" >&2
+  sleep "{restart_delay}"
+done
+"""
     with log.open("ab") as handle:
         handle.write(f"\n--- launched {datetime.now(timezone.utc).isoformat()} ---\n".encode("utf-8"))
         proc = subprocess.Popen(
-            [str(script_path)],
+            ["bash", "-lc", wrapper],
             cwd=str(root),
             env=env,
             stdout=handle,
@@ -846,7 +921,7 @@ def active_jobs(root: Path) -> list[str]:
     for status_path in sorted((root / ".ai" / "jobs").glob("J*/status.json")):
         data = read_json(status_path)
         state_value = data.get("state", "")
-        if state_value in {"queued", "running", "reviewing", "rejected", "ready_for_review", "blocked"}:
+        if state_value in ACTIVE_JOB_STATES:
             active.append(f"{data.get('id', status_path.parent.name)}: {state_value}")
     return active
 
@@ -1170,6 +1245,9 @@ class Handler(SimpleHTTPRequestHandler):
                     "CURSOR_REVIEW_TIMEOUT": str(payload.get("review_timeout", "2400")),
                     "CURSOR_REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "claude-opus-4-7-thinking-high")),
                     "CURSOR_REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.3-codex-high")),
+                    "CURSOR_REVIEWER_MAX_RELAUNCHES": str(payload.get("reviewer_max_relaunches", "1")),
+                    "WORKER_AUTO_RELAUNCH_FAILURE": "1",
+                    "WORKER_MAX_FAILURE_RESUMES": str(payload.get("max_failure_resumes", "2")),
                     "WORKER_AUTO_RESUME_TIMEOUT": "1" if payload.get("auto_resume_timeout", False) else "0",
                     "WORKER_MAX_TIMEOUT_RESUMES": str(payload.get("max_timeout_resumes", "2")),
                 },
@@ -1187,6 +1265,8 @@ class Handler(SimpleHTTPRequestHandler):
                     "SUPERVISOR_POLL_SECONDS": str(payload.get("poll_seconds", "10")),
                     "SUPERVISOR_VERBOSE": "1" if payload.get("verbose", True) else "0",
                     "CODEX_EXTRA_ARGS": str(payload.get("extra_args", "")),
+                    "SUPERVISOR_AUTO_RELAUNCH_FAILURE": "1",
+                    "SUPERVISOR_MAX_FAILURE_RELAUNCHES": str(payload.get("max_failure_relaunches", "1")),
                 },
             )
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)

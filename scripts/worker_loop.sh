@@ -15,10 +15,15 @@ CURSOR_REVIEW_TIMEOUT="${CURSOR_REVIEW_TIMEOUT:-2400}"
 CURSOR_REVIEWER_A_MODEL="${CURSOR_REVIEWER_A_MODEL:-claude-opus-4-7-thinking-high}"
 CURSOR_REVIEWER_B_MODEL="${CURSOR_REVIEWER_B_MODEL:-gpt-5.3-codex-high}"
 CURSOR_REVIEWER_EXTRA_ARGS="${CURSOR_REVIEWER_EXTRA_ARGS:-}"
+CURSOR_REVIEWER_MAX_RELAUNCHES="${CURSOR_REVIEWER_MAX_RELAUNCHES:-1}"
 WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-0}"
 WORKER_MAX_TIMEOUT_RESUMES="${WORKER_MAX_TIMEOUT_RESUMES:-1}"
+WORKER_AUTO_RELAUNCH_FAILURE="${WORKER_AUTO_RELAUNCH_FAILURE:-1}"
+WORKER_MAX_FAILURE_RESUMES="${WORKER_MAX_FAILURE_RESUMES:-2}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
 CURRENT_LOCK=""
+HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
+STRUCTURAL_REQUEST=".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"
 
 cleanup_current_lock() {
   if [[ -n "${CURRENT_LOCK:-}" ]]; then
@@ -51,6 +56,9 @@ require_command() {
 for cmd in git jq python3 timeout cursor-agent; do
   require_command "$cmd"
 done
+
+workflow_commit="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+echo "workflow_commit=$workflow_commit"
 
 run_cursor_agent() {
   local worktree="$1"
@@ -106,7 +114,7 @@ write_reviewer_prompt() {
   local id="$3"
   local attempt="$4"
   local worktree="$5"
-  local base_ref="$6"
+  local base_sha="$6"
   local final_commit="$7"
   local prompt_file="$8"
   local focus
@@ -128,20 +136,30 @@ write_reviewer_prompt() {
     echo "## Review Context"
     echo
     echo "- Worktree: $ROOT/$worktree"
-    echo "- Base ref: $base_ref"
+    echo "- Base SHA: $base_sha"
     echo "- Final worker commit: $final_commit"
     echo "- Task: $ROOT/$job/task.md"
     echo "- Worker report: $ROOT/$job/report.md"
     echo "- Diffstat: $ROOT/$job/diffstat.attempt-$attempt.txt"
+    echo "- Changed files: $ROOT/$job/changed_files.attempt-$attempt.txt"
     echo "- Patch: $ROOT/$job/diff.attempt-$attempt.patch"
     echo "- Test log: $ROOT/$job/test.attempt-$attempt.log"
     echo "- Commit docs: $ROOT/.ai/commit_docs/"
     echo "- Existing skills: run 'python3 scripts/list_skills.py' in the worktree if needed"
     echo
     echo "Read the actual diff comprehensively, not just the worker report. Start from the diffstat, then inspect every changed file in the patch and/or worktree."
-    echo "Use commands such as 'git diff --name-only $base_ref..$final_commit', 'git diff $base_ref..$final_commit -- <path>', and direct source reads from the worktree."
+    echo "Use commands such as 'git diff --name-only $base_sha..$final_commit', 'git diff $base_sha..$final_commit -- <path>', and direct source reads from the worktree."
     echo "If the diff is too large to review comprehensively within this reviewer pass, recommend revise/split; do not recommend acceptance for partially reviewed work."
     echo "Cross-check the worker report, test log, commit docs, and actual code. The actual diff and worktree are the source of truth."
+    echo
+    echo "Include this machine-checkable fenced YAML block exactly once:"
+    echo '```yaml'
+    echo "diff_coverage:"
+    echo "  full_diff_reviewed: true"
+    echo "  files_reviewed:"
+    echo "    - path/from/changed_files"
+    echo "  unreviewed_files: []"
+    echo '```'
     echo
     echo "## Output Format"
     echo
@@ -165,7 +183,7 @@ run_one_reviewer() {
   local id="$4"
   local attempt="$5"
   local worktree="$6"
-  local base_ref="$7"
+  local base_sha="$7"
   local final_commit="$8"
   local reviews_dir="$job/reviews"
 
@@ -177,7 +195,7 @@ run_one_reviewer() {
   local review_stream="$reviews_dir/$role.stream.attempt-$attempt.jsonl"
   local reviewer_exit=0
 
-  write_reviewer_prompt "$role" "$job" "$id" "$attempt" "$worktree" "$base_ref" "$final_commit" "$prompt_file"
+  write_reviewer_prompt "$role" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" "$prompt_file"
 
   set +e
   if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" ]]; then
@@ -207,7 +225,7 @@ run_reviewers() {
   local id="$3"
   local attempt="$4"
   local worktree="$5"
-  local base_ref="$6"
+  local base_sha="$6"
   local final_commit="$7"
   local reviewer_a_exit=0
   local reviewer_b_exit=0
@@ -223,15 +241,44 @@ run_reviewers() {
     reviewer_a_model="$CURSOR_REVIEWER_A_MODEL" \
     reviewer_b_model="$CURSOR_REVIEWER_B_MODEL"
 
-  run_one_reviewer "reviewer-a" "$CURSOR_REVIEWER_A_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_ref" "$final_commit" || reviewer_a_exit=$?
-  run_one_reviewer "reviewer-b" "$CURSOR_REVIEWER_B_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_ref" "$final_commit" || reviewer_b_exit=$?
+  local try
+  for ((try = 0; try <= CURSOR_REVIEWER_MAX_RELAUNCHES; try++)); do
+    reviewer_a_exit=0
+    run_one_reviewer "reviewer-a" "$CURSOR_REVIEWER_A_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_a_exit=$?
+    [[ "$reviewer_a_exit" -eq 0 ]] && break
+    if [[ "$try" -lt "$CURSOR_REVIEWER_MAX_RELAUNCHES" ]]; then
+      echo "Relaunching reviewer-a after exit $reviewer_a_exit (retry $((try + 1))/${CURSOR_REVIEWER_MAX_RELAUNCHES})"
+    fi
+  done
+  for ((try = 0; try <= CURSOR_REVIEWER_MAX_RELAUNCHES; try++)); do
+    reviewer_b_exit=0
+    run_one_reviewer "reviewer-b" "$CURSOR_REVIEWER_B_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_b_exit=$?
+    [[ "$reviewer_b_exit" -eq 0 ]] && break
+    if [[ "$try" -lt "$CURSOR_REVIEWER_MAX_RELAUNCHES" ]]; then
+      echo "Relaunching reviewer-b after exit $reviewer_b_exit (retry $((try + 1))/${CURSOR_REVIEWER_MAX_RELAUNCHES})"
+    fi
+  done
+
+  local coverage_exit=0
+  python3 scripts/check_reviewer_coverage.py "$job/changed_files.attempt-$attempt.txt" \
+    "$job/reviews/reviewer-a.attempt-$attempt.md" \
+    "$job/reviews/reviewer-b.attempt-$attempt.md" \
+    >"$job/reviews/coverage.attempt-$attempt.txt" 2>&1 || coverage_exit=$?
 
   update_status "$status_file" \
     reviewer_a_exit="$reviewer_a_exit" \
     reviewer_b_exit="$reviewer_b_exit" \
+    reviewer_coverage_exit="$coverage_exit" \
+    reviewers_complete="$([[ "$reviewer_a_exit" -eq 0 && "$reviewer_b_exit" -eq 0 && "$coverage_exit" -eq 0 ]] && echo true || echo false)" \
     reviewer_a_report="$job/reviews/reviewer-a.attempt-$attempt.md" \
     reviewer_b_report="$job/reviews/reviewer-b.attempt-$attempt.md"
 
+  if [[ "$reviewer_a_exit" -eq 124 || "$reviewer_b_exit" -eq 124 ]]; then
+    return 124
+  fi
+  if [[ "$reviewer_a_exit" -ne 0 || "$reviewer_b_exit" -ne 0 || "$coverage_exit" -ne 0 ]]; then
+    return 1
+  fi
   return 0
 }
 
@@ -245,9 +292,10 @@ process_job() {
   fi
   CURRENT_LOCK="$lock_dir"
 
-  local id base_ref branch test_command attempt worktree current_branch
+  local id base_ref base_sha branch test_command attempt worktree current_branch
   id="$(json_field "$status_file" id)"
   base_ref="$(json_field "$status_file" base_ref)"
+  base_sha="$(json_field "$status_file" base_sha)"
   branch="$(json_field "$status_file" branch)"
   test_command="$(json_field "$status_file" test_command)"
   attempt="$(jq -r '(.attempt // 0) + 1' "$status_file")"
@@ -257,6 +305,14 @@ process_job() {
     update_status "$status_file" state=blocked worker_error="missing id, base_ref, or branch"
     cleanup_current_lock
     return 0
+  fi
+  if [[ -z "$base_sha" ]]; then
+    if ! base_sha="$(git rev-parse --verify "${base_ref}^{commit}")"; then
+      update_status "$status_file" state=blocked worker_error="failed to resolve base_ref $base_ref"
+      cleanup_current_lock
+      return 0
+    fi
+    update_status "$status_file" base_sha="$base_sha"
   fi
 
   mkdir -p .worktrees
@@ -276,11 +332,11 @@ process_job() {
     if git show-ref --verify --quiet "refs/heads/$branch"; then
       git worktree add "$worktree" "$branch"
     else
-      git worktree add -b "$branch" "$worktree" "$base_ref"
+      git worktree add -b "$branch" "$worktree" "$base_sha"
     fi
   fi
 
-  update_status "$status_file" state=running attempt="$attempt" branch="$branch"
+  update_status "$status_file" state=running attempt="$attempt" branch="$branch" base_sha="$base_sha" workflow_commit="$workflow_commit"
 
   local prompt_file="$job/worker_prompt.attempt-$attempt.md"
   {
@@ -292,6 +348,7 @@ process_job() {
     echo "- Do not broaden scope or perform unrelated refactors."
     echo "- Do not edit supervisor-owned planning files such as .ai/supervisor/roadmap.md, project_brief.md, ledger.md, or milestone sequencing. If a task appears to require those edits, stop and report that the task must be handled by the Codex supervisor."
     echo "- Work in this Git worktree: $ROOT/$worktree"
+    echo "- Base commit SHA for this attempt: $base_sha"
     echo "- Run the requested tests."
     echo "- Break changes into meaningful commits where the task naturally separates into pieces."
     echo "- If files are changed and no meaningful commits exist, leave changes staged or unstaged; the worker loop will create a fallback attempt commit."
@@ -369,9 +426,18 @@ process_job() {
 
   local final_commit
   final_commit="$(git -C "$worktree" rev-parse HEAD)"
+  local post_test_status="$job/post_test_status.attempt-$attempt.txt"
+  git -C "$worktree" status --porcelain >"$post_test_status"
+  local post_test_dirty=false
+  local post_test_dirty_error=""
+  if [[ -s "$post_test_status" ]]; then
+    post_test_dirty=true
+    post_test_dirty_error="worktree has uncommitted changes after tests; see $post_test_status"
+  fi
 
-  git -C "$worktree" diff --stat "$base_ref..HEAD" >"$job/diffstat.attempt-$attempt.txt" || true
-  git -C "$worktree" diff "$base_ref..HEAD" >"$job/diff.attempt-$attempt.patch" || true
+  git -C "$worktree" diff --name-status "$base_sha..HEAD" >"$job/changed_files.attempt-$attempt.txt" || true
+  git -C "$worktree" diff --stat "$base_sha..HEAD" >"$job/diffstat.attempt-$attempt.txt" || true
+  git -C "$worktree" diff "$base_sha..HEAD" >"$job/diff.attempt-$attempt.patch" || true
 
   {
     echo "# Worker Report: $id Attempt $attempt"
@@ -392,12 +458,24 @@ process_job() {
     echo
     echo "## Final commit"
     echo "$final_commit"
+    echo
+    echo "## Base commit"
+    echo "$base_sha"
+    echo
+    echo "## Changed files"
+    cat "$job/changed_files.attempt-$attempt.txt"
+    if [[ "$post_test_dirty" == true ]]; then
+      echo
+      echo "## Post-test dirty worktree"
+      echo "$post_test_dirty_error"
+    fi
   } >"$job/report.md"
 
   python3 scripts/create_commit_doc.py \
     --job-id "$id" \
     --attempt "$attempt" \
     --branch "$branch" \
+    --base-sha "$base_sha" \
     --commit "$final_commit" \
     --test-command "$test_command" \
     --test-exit "$test_exit" \
@@ -413,24 +491,43 @@ process_job() {
   if [[ "$worker_exit" -ne 0 ]]; then
     next_state=blocked
   fi
+  if [[ "$post_test_dirty" == true ]]; then
+    next_state=blocked
+    worker_error="${worker_error:+$worker_error; }$post_test_dirty_error"
+  fi
+  if [[ "$worker_exit" -ne 0 && "$timed_out" != true && "$post_test_dirty" != true && "$WORKER_AUTO_RELAUNCH_FAILURE" == "1" && "$attempt" -lt "$WORKER_MAX_FAILURE_RESUMES" ]]; then
+    next_state=queued
+    echo "Requeueing $id after worker failure attempt $attempt; max failure resumes: $WORKER_MAX_FAILURE_RESUMES"
+  fi
   if [[ "$timed_out" == true && "$WORKER_AUTO_RESUME_TIMEOUT" == "1" && "$attempt" -lt "$WORKER_MAX_TIMEOUT_RESUMES" ]]; then
     next_state=queued
     echo "Requeueing $id after timeout attempt $attempt; max timeout resumes: $WORKER_MAX_TIMEOUT_RESUMES"
   fi
 
   if [[ "$next_state" == "ready_for_review" ]]; then
-    run_reviewers "$job" "$status_file" "$id" "$attempt" "$worktree" "$base_ref" "$final_commit"
+    local reviewer_status=0
+    run_reviewers "$job" "$status_file" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_status=$?
+    if [[ "$reviewer_status" -eq 124 ]]; then
+      next_state=review_timeout
+    elif [[ "$reviewer_status" -ne 0 ]]; then
+      next_state=review_failed
+    fi
   fi
 
   update_status "$status_file" \
     state="$next_state" \
     attempt="$attempt" \
+    base_sha="$base_sha" \
+    workflow_commit="$workflow_commit" \
     worker_exit="$worker_exit" \
     timed_out="$timed_out" \
     worker_error="$worker_error" \
     auto_resume_timeout="$WORKER_AUTO_RESUME_TIMEOUT" \
     test_exit="$test_exit" \
     tests_passed="$tests_passed" \
+    post_test_dirty="$post_test_dirty" \
+    post_test_status="$post_test_status" \
+    changed_files="$job/changed_files.attempt-$attempt.txt" \
     commit="$final_commit" \
     report="$job/report.md"
 
@@ -438,6 +535,11 @@ process_job() {
 }
 
 while true; do
+  if [[ -f "$HUMAN_GATE" || -f "$STRUCTURAL_REQUEST" ]]; then
+    sleep "$POLL_SECONDS"
+    continue
+  fi
+
   found=0
   shopt -s nullglob
   for status_file in .ai/jobs/J*/status.json; do

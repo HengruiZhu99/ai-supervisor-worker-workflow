@@ -50,6 +50,16 @@ Reviewer reports are advisory inputs to Codex. Reviewers do not accept work, rej
 
 Reviewers should inspect the actual diff comprehensively, not rely on the worker report. Their report should list the changed files reviewed and explicitly state whether the full diff was covered. If the full diff is too large to inspect end to end, reviewers should recommend splitting or revision rather than acceptance.
 
+Reviewer reports must include one machine-checkable coverage block:
+
+```yaml
+diff_coverage:
+  full_diff_reviewed: true
+  files_reviewed:
+    - path/from/changed_files
+  unreviewed_files: []
+```
+
 Reviewers should also assess any worker skill suggestions: whether they would avoid real duplication, whether they duplicate existing skills, and whether they should be project-specific or generally reusable.
 
 ### Skill stewardship
@@ -78,6 +88,8 @@ Codex owns skill creation decisions. Before creating a skill, Codex should list 
   - bug fix
 - Each commit should have a meaningful commit message.
 - Each accepted job should have a short reviewable history.
+- Worker jobs store both `base_ref` and immutable `base_sha`; diffs and reviews should use `base_sha..HEAD`.
+- Use `superseded` or `cancelled` for terminal jobs that must not be retried. Use `rejected` only when the worker should retry with feedback.
 - Each worker attempt should produce a commit documentation file under `.ai/commit_docs/`.
 - Human reviewers do not need to inspect every worker commit during milestone-gated autonomous mode; Codex reviews commit documentation per job and presents a milestone summary for human review.
 - Commit documentation should include:

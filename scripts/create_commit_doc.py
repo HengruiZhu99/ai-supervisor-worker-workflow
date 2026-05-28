@@ -64,6 +64,7 @@ def main() -> int:
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--attempt", required=True, type=int)
     parser.add_argument("--branch", required=True)
+    parser.add_argument("--base-sha", default="")
     parser.add_argument("--commit", required=True)
     parser.add_argument("--test-command", required=True)
     parser.add_argument("--test-exit", required=True, type=int)
@@ -76,6 +77,10 @@ def main() -> int:
     _, commit_date = run_git(["show", "-s", "--format=%cI", commit])
     _, files_changed = run_git(["diff-tree", "--no-commit-id", "--name-only", "-r", commit])
     _, diff_stat = run_git(["show", "--stat", "--oneline", "--no-renames", commit])
+    commit_range = f"{args.base_sha}..{commit}" if args.base_sha else commit
+    _, attempt_commits = run_git(["log", "--oneline", "--decorate", commit_range])
+    _, attempt_files = run_git(["diff", "--name-status", commit_range])
+    _, attempt_stat = run_git(["diff", "--stat", commit_range])
 
     summary = read_text(args.summary_file)
     limitations = extract_section(summary, ("known limitations", "follow-up", "follow up"))
@@ -99,6 +104,10 @@ def main() -> int:
 
 {args.branch}
 
+## Attempt commit range
+
+{commit_range}
+
 ## Commit hash
 
 {commit}
@@ -117,10 +126,28 @@ def main() -> int:
 {files_changed or "Unknown"}
 ```
 
+## Attempt commits
+
+```text
+{attempt_commits or "Unknown"}
+```
+
+## Attempt files changed
+
+```text
+{attempt_files or "Unknown"}
+```
+
 ## Diff stat
 
 ```text
 {diff_stat or "Unknown"}
+```
+
+## Attempt diff stat
+
+```text
+{attempt_stat or "Unknown"}
 ```
 
 ## Test command
@@ -158,4 +185,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

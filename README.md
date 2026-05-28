@@ -61,7 +61,7 @@ external/ai-supervisor-worker-workflow/install.sh .
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/human_milestone_review.py scripts/list_skills.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/human_milestone_review.py scripts/list_skills.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
 ```
 
 ## Dashboard
@@ -90,7 +90,9 @@ The dashboard includes:
 - click-to-open files through the system default opener on Ubuntu
 - an interactive human milestone review checklist that can create a revision job from failed review items
 
-If the human review marks a major structural change, the workflow creates a planning revision job instead of continuing implementation. That job must update the milestone plan and create a fresh `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` gate summarizing what changed and what the next small worker jobs should be. The supervisor stops at that second gate until the revised plan is approved.
+Loops launched from the dashboard are wrapped with a small crash relaunch guard. The default is three process-level restarts; adjust with `AI_WORKFLOW_LOOP_MAX_RESTARTS` and `AI_WORKFLOW_LOOP_RESTART_DELAY`.
+
+If the human review marks a major structural change, implementation pauses and `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` is created. The Codex supervisor, not a worker job, updates the milestone plan and creates a fresh `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` gate summarizing what changed and what the next small worker jobs should be. The supervisor stops at that second gate until the revised plan is approved.
 
 When a human milestone review is approved, the workflow removes accepted job worktrees and local `ai/JNNNN` branches listed in that approved review record. Job records, logs, reports, patches, and commit documentation under `.ai/` are preserved. Active, rejected, blocked, and ready-for-review jobs are not pruned.
 
@@ -109,6 +111,8 @@ CURSOR_REVIEWER_B_MODEL=gpt-5.3-codex-high \
 ```
 
 Reviewer A is tuned for scientific/numerical review. Reviewer B is tuned for build, Kokkos/backend portability, tests, and maintainability. Set `CURSOR_REVIEWERS_ENABLED=0` to disable this stage.
+
+Reviewer reports include a machine-checkable `diff_coverage` YAML block. The worker loop writes `changed_files.attempt-N.txt` from `base_sha..HEAD` and runs `scripts/check_reviewer_coverage.py`; reviewer failure leaves the job in `review_failed` or `review_timeout` for supervisor action.
 
 Worker reports should include a `Skill Suggestions` section. Reviewers assess those suggestions, and the supervisor checks them against existing skills with:
 

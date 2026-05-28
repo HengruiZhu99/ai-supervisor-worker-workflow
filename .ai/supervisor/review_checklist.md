@@ -10,7 +10,10 @@
 ## Diff review coverage
 
 - [ ] Did each reviewer inspect the actual diff/worktree rather than relying on the worker report?
+- [ ] Did reviewers use the immutable `base_sha..HEAD` diff range?
 - [ ] Did reviewer reports list the changed files they reviewed?
+- [ ] Did reviewer reports include the required `diff_coverage` YAML block?
+- [ ] Does `scripts/check_reviewer_coverage.py` pass against `changed_files.attempt-N.txt`?
 - [ ] Were all changed files reviewed, or were unreviewed paths explicitly listed?
 - [ ] If the full diff was not reviewable, was the job rejected or split instead of accepted?
 
@@ -26,6 +29,7 @@
 
 - [ ] Did the requested tests run?
 - [ ] Did tests pass?
+- [ ] Did tests leave the worker worktree clean after completion?
 - [ ] Are new tests included for new behavior?
 - [ ] Are stochastic tests deterministic?
 - [ ] Are convergence tests included where relevant?

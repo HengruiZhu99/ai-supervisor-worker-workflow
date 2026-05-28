@@ -37,9 +37,12 @@ Each documentation file should include:
 - Job id
 - Attempt number
 - Branch
+- Immutable base SHA
 - Commit hash
 - Commit subject
 - Files changed
+- All commits in the attempt
+- Attempt changed files from `base_sha..HEAD`
 - Diff stat
 - Test command
 - Test exit code
@@ -53,6 +56,7 @@ Each documentation file should include:
 The supervisor should check:
 - Whether the commit history is logically split.
 - Whether commit documentation exists.
+- Whether all commits in the attempt are represented in the commit documentation.
 - Whether tests were run.
 - Whether the summary matches the actual diff.
 - Whether the implementation stayed in scope.

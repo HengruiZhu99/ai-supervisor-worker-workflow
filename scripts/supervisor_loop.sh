@@ -10,6 +10,8 @@ SUPERVISOR_VERBOSE="${SUPERVISOR_VERBOSE:-0}"
 CODEX_MODEL="${CODEX_MODEL:-gpt-5.5}"
 CODEX_REASONING_EFFORT="${CODEX_REASONING_EFFORT:-high}"
 CODEX_EXTRA_ARGS="${CODEX_EXTRA_ARGS:-}"
+SUPERVISOR_AUTO_RELAUNCH_FAILURE="${SUPERVISOR_AUTO_RELAUNCH_FAILURE:-1}"
+SUPERVISOR_MAX_FAILURE_RELAUNCHES="${SUPERVISOR_MAX_FAILURE_RELAUNCHES:-1}"
 SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE="${SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE:-0}"
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 STRUCTURAL_REQUEST=".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"
@@ -26,6 +28,10 @@ for cmd in git codex python3; do
 done
 
 mkdir -p "$SUPERVISOR_RUNS_DIR"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+workflow_commit="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+echo "workflow_commit=$workflow_commit"
+supervisor_failure_relaunches=0
 
 commit_workflow_records() {
   python3 scripts/commit_workflow_records.py --message "workflow: record supervisor state" || true
@@ -65,7 +71,7 @@ for status_path in sorted(jobs_dir.glob("J*/status.json")):
 
 if not states:
     raise SystemExit(0)
-if any(state in {"ready_for_review", "blocked", "invalid"} for state in states):
+if any(state in {"ready_for_review", "blocked", "review_failed", "review_timeout", "invalid"} for state in states):
     raise SystemExit(0)
 if not any(state in {"queued", "running", "reviewing", "rejected"} for state in states):
     raise SystemExit(0)
@@ -124,6 +130,7 @@ run_codex_supervisor() {
   set +e
   {
     echo "Runtime option: SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE=$SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE"
+    echo "workflow_commit=$workflow_commit"
     echo
     cat <<'PROMPT'
 You are Codex running as the autonomous milestone-gated supervisor for this repository.
@@ -142,16 +149,19 @@ Rules:
 - Do not implement scientific project code yourself.
 - Worker implementation files live on the branch and isolated worktree named in each job's `status.json`; they are not expected to exist in the main worktree before acceptance.
 - When reviewing a job, inspect `.worktrees/JNNNN/`, `git -C .worktrees/JNNNN ...`, job artifacts, commit docs, and the actual patch/diff. Do not fail review merely because worker-created files are absent from the main worktree.
+- Use immutable `base_sha` from `status.json` for all worker diff comparisons, for example `git -C .worktrees/JNNNN diff base_sha..HEAD`. Treat `base_ref` as human-readable context only.
 - Review jobs in `ready_for_review` according to the supervisor protocol.
+- Treat jobs in `review_failed` or `review_timeout` as needing supervisor action; either rerun reviewers, reject with feedback, or open a human gate.
 - A job in `reviewing` is still in the worker/reviewer pipeline. Do not review or modify it yet; wait for `ready_for_review`.
 - For each `ready_for_review` job, inspect the worker report plus reviewer reports under `.ai/jobs/JNNNN/reviews/` when present.
-- Check that reviewer reports include comprehensive actual-diff coverage. If reviewers did not inspect every changed file, or if the diff is too large to review comprehensively, reject with actionable feedback to split the work or remove noisy/generated changes. Do not accept work based only on the worker report.
+- Check `changed_files.attempt-N.txt` and reviewer `diff_coverage` YAML blocks. If reviewers did not inspect every changed file, or if the diff is too large to review comprehensively, reject with actionable feedback to split the work or remove noisy/generated changes. Do not accept work based only on the worker report.
 - Treat reviewer reports as advisory but important. If a reviewer recommends revision, either reject with actionable feedback or explicitly document why the concern is waived.
 - Inspect the worker's Skill Suggestions section and the reviewers' skill-suggestion assessments. Run `python3 scripts/list_skills.py` before creating any new skill.
 - Create a new skill only when it avoids real future duplication and does not overlap existing skills. Project-specific skills go under the project `skills/`; generally reusable scientific-coding workflow skills go under `external/ai-supervisor-worker-workflow/skills/` and require committing/pushing the workflow package plus updating the submodule pointer when possible.
 - Record skill decisions in `.ai/supervisor/ledger.md`, including paths created or reasons for deferring/rejecting suggestions.
 - Accept or reject completed jobs based on report, tests, diffstat, comprehensive actual-diff review, and commit documentation.
-- For rejected jobs, write concise actionable `feedback.md` and set state to `rejected`.
+- For ordinary revision requests, write concise actionable `feedback.md` and set state to `rejected` so the worker loop retries it.
+- For terminal outcomes that must not be retried, set state to `superseded` or `cancelled`; do not use `rejected`.
 - For accepted jobs, integrate the accepted worker branch into the main project history using a reviewable merge or cherry-pick strategy, set state to `accepted`, update the ledger, and record assumptions/risks.
 - If unrelated uncommitted main-worktree changes prevent integration, record the accepted/rejected decision and blocker, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, and do not create the next job.
 - If the current milestone still has approved work remaining and no job is queued/running/rejected, create exactly one next small worker job.
@@ -175,6 +185,12 @@ PROMPT
 
   cat "$log_file"
   if [[ "$codex_exit" -ne 0 ]]; then
+    if [[ "$SUPERVISOR_AUTO_RELAUNCH_FAILURE" == "1" && "$supervisor_failure_relaunches" -lt "$SUPERVISOR_MAX_FAILURE_RELAUNCHES" ]]; then
+      supervisor_failure_relaunches=$((supervisor_failure_relaunches + 1))
+      echo "Relaunching Codex supervisor after exit $codex_exit (retry $supervisor_failure_relaunches/$SUPERVISOR_MAX_FAILURE_RELAUNCHES)"
+      run_codex_supervisor
+      return $?
+    fi
     {
       echo "# Human Milestone Review"
       echo

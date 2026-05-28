@@ -44,6 +44,20 @@ def next_job_id(jobs_dir: Path) -> str:
     return f"J{candidate:04d}"
 
 
+def resolve_ref(ref: str, root: Path) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"failed to resolve base ref {ref!r}: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--title", required=True)
@@ -53,6 +67,7 @@ def main() -> int:
     args = parser.parse_args()
 
     root = git_root()
+    base_sha = resolve_ref(args.base_ref, root)
     task_source = Path(args.task_file)
     if not task_source.exists():
         raise SystemExit(f"task file does not exist: {task_source}")
@@ -72,6 +87,7 @@ def main() -> int:
         "state": "queued",
         "attempt": 0,
         "base_ref": args.base_ref,
+        "base_sha": base_sha,
         "branch": f"ai/{job_id}",
         "test_command": args.test_command,
         "created_at": now,
@@ -87,4 +103,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

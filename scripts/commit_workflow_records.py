@@ -12,12 +12,8 @@ from pathlib import Path
 
 DEFAULT_MESSAGE = "workflow: record ai workflow state"
 SUPERVISOR_PATHS = [
-    ".ai/supervisor/ledger.md",
-    ".ai/supervisor/project_brief.md",
-    ".ai/supervisor/roadmap.md",
-    ".ai/supervisor/HUMAN_REVIEW_REQUIRED.md",
-    ".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md",
     ".ai/supervisor/human_reviews",
+    "docs/build.md",
     "skills",
 ]
 JOB_ID_RE = re.compile(r"(J\d{4,})")
@@ -58,11 +54,25 @@ def commit_doc_paths(root: Path, stable_jobs: set[str]) -> list[str]:
     return paths
 
 
-def existing_pathspecs(root: Path) -> list[str]:
+def supervisor_markdown_paths(root: Path, include_design_prompt: bool) -> list[str]:
+    paths = []
+    supervisor_dir = root / ".ai" / "supervisor"
+    for path in sorted(supervisor_dir.glob("*.md")):
+        if path.name == "design_prompt.md" and not include_design_prompt:
+            continue
+        paths.append(str(path.relative_to(root)))
+    for path in [".ai/supervisor/HUMAN_REVIEW_REQUIRED.md", ".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"]:
+        if path not in paths:
+            paths.append(path)
+    return paths
+
+
+def existing_pathspecs(root: Path, include_design_prompt: bool) -> list[str]:
     pathspecs = []
     for job_id in sorted(stable_job_ids(root)):
         pathspecs.append(f".ai/jobs/{job_id}")
     pathspecs.extend(commit_doc_paths(root, stable_job_ids(root)))
+    pathspecs.extend(supervisor_markdown_paths(root, include_design_prompt))
     pathspecs.extend(SUPERVISOR_PATHS)
 
     existing = []
@@ -86,10 +96,11 @@ def main() -> int:
     parser.add_argument("--message", default=DEFAULT_MESSAGE)
     parser.add_argument("--allow-empty", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--include-design-prompt", action="store_true")
     args = parser.parse_args()
 
     root = git_root()
-    pathspecs = existing_pathspecs(root)
+    pathspecs = existing_pathspecs(root, args.include_design_prompt)
     if not pathspecs:
         print("No workflow record paths exist.")
         return 0

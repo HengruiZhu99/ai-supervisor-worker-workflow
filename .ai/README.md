@@ -57,6 +57,18 @@ Reviewer A focuses on scientific/numerical correctness. Reviewer B focuses on co
 
 Reviewers are expected to inspect the actual diff comprehensively. Their reports should include a diff-coverage statement listing changed files reviewed and any paths not reviewed. If a diff is too large to review end to end, reviewers should recommend splitting the job rather than accepting it.
 
+Each reviewer report must include:
+
+```yaml
+diff_coverage:
+  full_diff_reviewed: true
+  files_reviewed:
+    - path/from/changed_files
+  unreviewed_files: []
+```
+
+The worker loop writes `changed_files.attempt-N.txt` from the immutable `base_sha..HEAD` range and checks reviewer coverage before a job becomes ready for supervisor review.
+
 Worker reports should include a `Skill Suggestions` section. Reviewers assess those suggestions, and the supervisor checks existing skills before creating anything:
 
 ```bash
@@ -75,6 +87,8 @@ If your local Cursor Agent requires extra flags for unattended command execution
 CURSOR_MODEL=gpt-5.5-high CURSOR_AGENT_EXTRA_ARGS="--force" ./scripts/worker_loop.sh
 ```
 
+Nonzero Cursor worker exits are requeued once by default when the failure is not a timeout and tests did not create dirty files. Adjust with `WORKER_AUTO_RELAUNCH_FAILURE` and `WORKER_MAX_FAILURE_RESUMES`. Reviewer exits are retried with `CURSOR_REVIEWER_MAX_RELAUNCHES`.
+
 ### Step 4
 
 Run the autonomous Codex supervisor loop in another terminal or tmux pane:
@@ -92,6 +106,8 @@ The supervisor loop invokes `codex exec` only when action is needed:
 
 It does not ask for human input after every small job. It reviews job reports, tests, diffs, and commit documentation; accepts or rejects jobs; updates the ledger; and dispatches the next small job while the current milestone remains approved.
 
+Jobs store both `base_ref` and immutable `base_sha`. Reviewers and the supervisor should compare `base_sha..HEAD`, because branch names and `HEAD` can move as workflow records are committed.
+
 The supervisor loop defaults to the ChatGPT Codex naming convention for GPT-5.5 High: `CODEX_MODEL=gpt-5.5` with `CODEX_REASONING_EFFORT=high`. Cursor model ids and Codex model ids are not guaranteed to match; Cursor uses `gpt-5.5-high`, while Codex uses `gpt-5.5` plus high reasoning effort.
 
 To choose a Codex-supported model for the supervisor loop:
@@ -105,6 +121,8 @@ To print a heartbeat while the supervisor is waiting:
 ```bash
 SUPERVISOR_VERBOSE=1 SUPERVISOR_POLL_SECONDS=60 ./scripts/supervisor_loop.sh
 ```
+
+The supervisor retries a crashed `codex exec` once by default. Adjust with `SUPERVISOR_AUTO_RELAUNCH_FAILURE` and `SUPERVISOR_MAX_FAILURE_RELAUNCHES`.
 
 ### Step 5
 
@@ -128,6 +146,8 @@ http://127.0.0.1:8765/
 
 The dashboard can launch and stop the worker and supervisor loops, show job/worktree/project status, expand milestone criteria, and process human milestone review checklists.
 
+Loops launched from the dashboard are wrapped with a small crash relaunch guard. The default is three process-level restarts; adjust with `AI_WORKFLOW_LOOP_MAX_RESTARTS` and `AI_WORKFLOW_LOOP_RESTART_DELAY`.
+
 ### Step 6
 
 When the current milestone is complete or blocked, the supervisor loop writes:
@@ -150,6 +170,8 @@ The supervisor owns structural planning. It updates the roadmap and related arch
 
 If every item passes, the script archives the gate, records approval, and prunes accepted job worktrees and local `ai/JNNNN` branches listed in the approved milestone review. `.ai/jobs/` and `.ai/commit_docs/` records are preserved. Active, rejected, blocked, and ready-for-review jobs are not pruned.
 
+While `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` or `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` exists, the worker loop pauses globally and will not process queued or rejected jobs.
+
 The same approval and pruning behavior is available through the dashboard human review panel.
 
 Manual per-job review is still possible. Stop `scripts/supervisor_loop.sh` and ask Codex to review a `ready_for_review` job if you want to inspect a specific job yourself. If reviewer reports exist under `.ai/jobs/JNNNN/reviews/`, include them in the review.
@@ -169,7 +191,10 @@ Each file records:
 - job id
 - attempt
 - commit hash
+- attempt commit range
+- all commits in the attempt
 - diff stat
+- changed files
 - test result
 - summary
 - known limitations
@@ -180,6 +205,6 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/human_milestone_review.py scripts/list_skills.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/human_milestone_review.py scripts/list_skills.py scripts/workflow_gui.py
 python3 scripts/summarize_jobs.py
 ```
