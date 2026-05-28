@@ -487,6 +487,13 @@ $("clearSupervisorChatButton").addEventListener("click", () => {
   $("supervisorChatMeta").dataset.last = "Read-only guidance";
   renderSupervisorChat();
 });
+$("supervisorChatInput").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
+    return;
+  }
+  event.preventDefault();
+  $("supervisorChatForm").requestSubmit();
+});
 refresh({ refreshStaticPanels: true }).catch((error) => {
   $("healthPill").textContent = "Error";
   $("healthPill").className = "health gate";
