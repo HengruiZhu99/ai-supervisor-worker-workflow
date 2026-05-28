@@ -849,6 +849,50 @@ done
     return {"ok": True, "message": f"started {name}", "pid": proc.pid}
 
 
+def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
+    payload = payload or {}
+    extra_args = str(payload.get("extra_args", ""))
+    if payload.get("force") and "--force" not in extra_args:
+        extra_args = (extra_args + " --force").strip()
+    return {
+        "CURSOR_MODEL": str(payload.get("model", "gpt-5.5-high")),
+        "CURSOR_TIMEOUT": str(payload.get("timeout", "3600")),
+        "CURSOR_AGENT_EXTRA_ARGS": extra_args,
+        "CURSOR_REVIEWERS_ENABLED": "1" if payload.get("reviewers_enabled", True) else "0",
+        "CURSOR_REVIEW_TIMEOUT": str(payload.get("review_timeout", "2400")),
+        "CURSOR_REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "claude-opus-4-7-thinking-high")),
+        "CURSOR_REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.3-codex-high")),
+        "CURSOR_REVIEWER_MAX_RELAUNCHES": str(payload.get("reviewer_max_relaunches", "1")),
+        "WORKER_AUTO_RELAUNCH_FAILURE": "1",
+        "WORKER_MAX_FAILURE_RESUMES": str(payload.get("max_failure_resumes", "2")),
+        "WORKER_AUTO_RESUME_TIMEOUT": "1" if payload.get("auto_resume_timeout", False) else "0",
+        "WORKER_MAX_TIMEOUT_RESUMES": str(payload.get("max_timeout_resumes", "2")),
+    }
+
+
+def supervisor_loop_env(payload: dict | None = None) -> dict[str, str]:
+    payload = payload or {}
+    return {
+        "CODEX_MODEL": str(payload.get("model", "gpt-5.5")),
+        "CODEX_REASONING_EFFORT": str(payload.get("reasoning", "high")),
+        "SUPERVISOR_POLL_SECONDS": str(payload.get("poll_seconds", "10")),
+        "SUPERVISOR_VERBOSE": "1" if payload.get("verbose", True) else "0",
+        "CODEX_EXTRA_ARGS": str(payload.get("extra_args", "")),
+        "SUPERVISOR_AUTO_RELAUNCH_FAILURE": "1",
+        "SUPERVISOR_MAX_FAILURE_RELAUNCHES": str(payload.get("max_failure_relaunches", "1")),
+    }
+
+
+def auto_start_loops_after_human_review(root: Path) -> dict:
+    supervisor = start_loop(root, "supervisor_loop", supervisor_loop_env())
+    worker = start_loop(root, "worker_loop", worker_loop_env())
+    return {
+        "ok": bool(supervisor.get("ok")) and bool(worker.get("ok")),
+        "supervisor": supervisor,
+        "worker": worker,
+    }
+
+
 def stop_loop(root: Path, name: str) -> dict:
     process_key = "worker" if name == "worker_loop" else "supervisor"
     targets: set[int] = set()
@@ -1420,44 +1464,12 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/worker/start":
-            extra_args = payload.get("extra_args", "")
-            if payload.get("force") and "--force" not in extra_args:
-                extra_args = (extra_args + " --force").strip()
-            result = start_loop(
-                self.project_root,
-                "worker_loop",
-                {
-                    "CURSOR_MODEL": str(payload.get("model", "gpt-5.5-high")),
-                    "CURSOR_TIMEOUT": str(payload.get("timeout", "3600")),
-                    "CURSOR_AGENT_EXTRA_ARGS": extra_args,
-                    "CURSOR_REVIEWERS_ENABLED": "1" if payload.get("reviewers_enabled", True) else "0",
-                    "CURSOR_REVIEW_TIMEOUT": str(payload.get("review_timeout", "2400")),
-                    "CURSOR_REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "claude-opus-4-7-thinking-high")),
-                    "CURSOR_REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.3-codex-high")),
-                    "CURSOR_REVIEWER_MAX_RELAUNCHES": str(payload.get("reviewer_max_relaunches", "1")),
-                    "WORKER_AUTO_RELAUNCH_FAILURE": "1",
-                    "WORKER_MAX_FAILURE_RESUMES": str(payload.get("max_failure_resumes", "2")),
-                    "WORKER_AUTO_RESUME_TIMEOUT": "1" if payload.get("auto_resume_timeout", False) else "0",
-                    "WORKER_MAX_TIMEOUT_RESUMES": str(payload.get("max_timeout_resumes", "2")),
-                },
-            )
+            result = start_loop(self.project_root, "worker_loop", worker_loop_env(payload))
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return
 
         if parsed.path == "/api/supervisor/start":
-            result = start_loop(
-                self.project_root,
-                "supervisor_loop",
-                {
-                    "CODEX_MODEL": str(payload.get("model", "gpt-5.5")),
-                    "CODEX_REASONING_EFFORT": str(payload.get("reasoning", "high")),
-                    "SUPERVISOR_POLL_SECONDS": str(payload.get("poll_seconds", "10")),
-                    "SUPERVISOR_VERBOSE": "1" if payload.get("verbose", True) else "0",
-                    "CODEX_EXTRA_ARGS": str(payload.get("extra_args", "")),
-                    "SUPERVISOR_AUTO_RELAUNCH_FAILURE": "1",
-                    "SUPERVISOR_MAX_FAILURE_RELAUNCHES": str(payload.get("max_failure_relaunches", "1")),
-                },
-            )
+            result = start_loop(self.project_root, "supervisor_loop", supervisor_loop_env(payload))
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return
 
@@ -1475,6 +1487,12 @@ class Handler(SimpleHTTPRequestHandler):
                 list(payload.get("decisions", [])),
                 payload.get("structural_change") if isinstance(payload.get("structural_change"), dict) else None,
             )
+            if result.get("ok"):
+                result["auto_start"] = auto_start_loops_after_human_review(self.project_root)
+                if result["auto_start"].get("ok"):
+                    result["message"] = f"{result.get('message', 'Human review submitted.')} Supervisor and worker loops are running."
+                else:
+                    result["message"] = f"{result.get('message', 'Human review submitted.')} Auto-start attempted; inspect auto_start details."
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return
 
