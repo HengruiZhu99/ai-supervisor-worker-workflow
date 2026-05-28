@@ -2,6 +2,9 @@ const state = {
   data: null,
   timer: null,
   humanReviewSignature: "",
+  supervisorChatSignature: "",
+  supervisorChatHistory: [],
+  supervisorChatBusy: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -72,6 +75,48 @@ function formValues(form) {
     else data[element.name] = element.value;
   }
   return data;
+}
+
+function collectHumanReviewDraft() {
+  const form = $("humanReviewForm");
+  if (!form || !form.children.length) return {};
+  const items = [...form.querySelectorAll(".review-item")];
+  const structuralRequested = $("structuralChangeRequested")?.checked || false;
+  const structuralComment = $("structuralChangeComment")?.value || "";
+  const decisions = items.filter((item) => item.dataset.index !== undefined).map((item) => {
+    const index = item.dataset.index;
+    const checked = item.querySelector(`input[name="review-${index}"]:checked`);
+    const label = item.querySelector(".review-question")?.textContent || "";
+    const comment = item.querySelector(`textarea[name="comment-${index}"]`)?.value || "";
+    return { item: label, passed: checked?.value !== "no", comment };
+  });
+  return {
+    decisions,
+    structural_change: {
+      requested: structuralRequested,
+      comment: structuralComment,
+    },
+  };
+}
+
+function renderSupervisorChat() {
+  const log = $("supervisorChatLog");
+  const meta = $("supervisorChatMeta");
+  if (!log) return;
+  if (!state.supervisorChatHistory.length) {
+    log.innerHTML = '<div class="chat-empty">Ask a question about the milestone review before submitting it.</div>';
+  } else {
+    log.innerHTML = state.supervisorChatHistory.map((message) => `
+      <div class="chat-message ${message.role === "user" ? "user" : "assistant"}">
+        <span class="role">${message.role === "user" ? "You" : "Supervisor"}</span>
+        ${escapeHtml(message.content || "")}
+      </div>
+    `).join("");
+    log.scrollTop = log.scrollHeight;
+  }
+  if (meta) {
+    meta.textContent = state.supervisorChatBusy ? "Asking..." : (meta.dataset.last || "Read-only guidance");
+  }
 }
 
 function renderJobs(jobs, data) {
@@ -213,6 +258,11 @@ function renderHumanReview(supervisor) {
     form.innerHTML = "";
     gate.textContent = "";
     state.humanReviewSignature = "";
+    state.supervisorChatSignature = "";
+    state.supervisorChatHistory = [];
+    $("supervisorChatInput").value = "";
+    $("supervisorChatMeta").dataset.last = "Read-only guidance";
+    renderSupervisorChat();
     return;
   }
 
@@ -228,6 +278,13 @@ function renderHumanReview(supervisor) {
         "Recommended next milestone is acceptable.",
       ];
   const signature = JSON.stringify({ gate: supervisor.human_gate || "", items });
+  if (signature !== state.supervisorChatSignature) {
+    state.supervisorChatSignature = signature;
+    state.supervisorChatHistory = [];
+    $("supervisorChatInput").value = "";
+    $("supervisorChatMeta").dataset.last = "Read-only guidance";
+    renderSupervisorChat();
+  }
   if (signature === state.humanReviewSignature && form.children.length) {
     return;
   }
@@ -391,6 +448,44 @@ $("humanReviewForm").addEventListener("submit", async (event) => {
   } catch (error) {
     alert(error.message);
   }
+});
+$("supervisorChatForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = $("supervisorChatInput");
+  const message = input.value.trim();
+  if (!message || state.supervisorChatBusy) return;
+
+  state.supervisorChatHistory.push({ role: "user", content: message });
+  input.value = "";
+  state.supervisorChatBusy = true;
+  renderSupervisorChat();
+
+  try {
+    const result = await postJson("/api/supervisor-chat", {
+      message,
+      history: state.supervisorChatHistory.slice(-12),
+      draft_review: collectHumanReviewDraft(),
+    });
+    state.supervisorChatHistory.push({
+      role: "assistant",
+      content: result.answer || "(No answer returned.)",
+    });
+    $("supervisorChatMeta").dataset.last = result.model ? `Supervisor ${result.model}` : "Read-only guidance";
+  } catch (error) {
+    state.supervisorChatHistory.push({
+      role: "assistant",
+      content: `Supervisor chat failed: ${error.message}`,
+    });
+    $("supervisorChatMeta").dataset.last = "Read-only guidance";
+  } finally {
+    state.supervisorChatBusy = false;
+    renderSupervisorChat();
+  }
+});
+$("clearSupervisorChatButton").addEventListener("click", () => {
+  state.supervisorChatHistory = [];
+  $("supervisorChatMeta").dataset.last = "Read-only guidance";
+  renderSupervisorChat();
 });
 refresh({ refreshStaticPanels: true }).catch((error) => {
   $("healthPill").textContent = "Error";

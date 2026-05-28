@@ -144,7 +144,7 @@ Then visit:
 http://127.0.0.1:8765/
 ```
 
-The dashboard can launch and stop the worker and supervisor loops, show job/worktree/project status, expand milestone criteria, and process human milestone review checklists.
+The dashboard can launch and stop the worker and supervisor loops, show job/worktree/project status, expand milestone criteria, process human milestone review checklists, and ask the supervisor read-only questions before submitting a milestone review.
 
 Loops launched from the dashboard are wrapped with a small crash relaunch guard. The default is three process-level restarts; adjust with `AI_WORKFLOW_LOOP_MAX_RESTARTS` and `AI_WORKFLOW_LOOP_RESTART_DELAY`.
 

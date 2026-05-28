@@ -89,6 +89,7 @@ The dashboard includes:
 - project worktree and expandable file-tree views
 - click-to-open files through the system default opener on Ubuntu
 - an interactive human milestone review checklist that can create a revision job from failed review items
+- a read-only "Ask Supervisor" chat inside the human milestone review panel for questions before submitting the checklist
 
 Loops launched from the dashboard are wrapped with a small crash relaunch guard. The default is three process-level restarts; adjust with `AI_WORKFLOW_LOOP_MAX_RESTARTS` and `AI_WORKFLOW_LOOP_RESTART_DELAY`.
 

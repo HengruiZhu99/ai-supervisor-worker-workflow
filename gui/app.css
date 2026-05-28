@@ -432,9 +432,15 @@ textarea {
   gap: 16px;
 }
 
+.review-left {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
 .gate-box {
   margin: 0;
-  max-height: 520px;
+  max-height: 360px;
   overflow: auto;
   white-space: pre-wrap;
   border: 1px solid var(--line);
@@ -443,6 +449,78 @@ textarea {
   padding: 12px;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.supervisor-chat {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  padding: 12px;
+  min-height: 250px;
+  display: grid;
+  grid-template-rows: auto minmax(120px, 1fr) auto;
+  gap: 10px;
+}
+
+.chat-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.chat-log {
+  overflow: auto;
+  max-height: 360px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.chat-message {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  padding: 10px;
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.chat-empty {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 10px;
+}
+
+.chat-message.user {
+  border-color: rgba(49, 95, 159, 0.22);
+  background: #f0f5fc;
+}
+
+.chat-message.assistant {
+  border-color: rgba(36, 114, 79, 0.18);
+  background: #eef8f2;
+}
+
+.chat-message .role {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.chat-form {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-form textarea {
+  min-height: 80px;
 }
 
 .review-form {

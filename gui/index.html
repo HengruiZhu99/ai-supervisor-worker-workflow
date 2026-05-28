@@ -145,7 +145,23 @@
             <span class="muted">Checklist gate</span>
           </div>
           <div class="review-layout">
-            <pre id="humanGate" class="gate-box"></pre>
+            <div class="review-left">
+              <pre id="humanGate" class="gate-box"></pre>
+              <div class="supervisor-chat">
+                <div class="chat-head">
+                  <span>Ask Supervisor</span>
+                  <span id="supervisorChatMeta" class="muted">Read-only guidance</span>
+                </div>
+                <div id="supervisorChatLog" class="chat-log"></div>
+                <form id="supervisorChatForm" class="chat-form">
+                  <textarea id="supervisorChatInput" name="message" placeholder="Ask about this milestone review before submitting"></textarea>
+                  <div class="button-row">
+                    <button type="submit">Ask Supervisor</button>
+                    <button type="button" id="clearSupervisorChatButton">Clear</button>
+                  </div>
+                </form>
+              </div>
+            </div>
             <form id="humanReviewForm" class="review-form"></form>
           </div>
         </section>

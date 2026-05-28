@@ -958,6 +958,198 @@ def commit_workflow_records(root: Path, message: str) -> tuple[bool, str]:
     return result.returncode == 0, output or "No workflow record changes to commit."
 
 
+def compact_history(history: object, limit: int = 12) -> str:
+    if not isinstance(history, list):
+        return "No prior chat in this dashboard session."
+    lines = []
+    for item in history[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role", "unknown"))[:40]
+        content = str(item.get("content", "")).strip()
+        if content:
+            lines.append(f"{role}: {content}")
+    return "\n\n".join(lines) if lines else "No prior chat in this dashboard session."
+
+
+def draft_review_text(draft_review: object) -> str:
+    if not isinstance(draft_review, dict):
+        return "No draft review choices are visible yet."
+    lines = []
+    structural = draft_review.get("structural_change")
+    if isinstance(structural, dict):
+        lines.extend(
+            [
+                "Structural change requested: "
+                + ("yes" if structural.get("requested") else "no"),
+                "Structural change comment:",
+                str(structural.get("comment", "")).strip() or "(empty)",
+                "",
+            ]
+        )
+    decisions = draft_review.get("decisions")
+    if isinstance(decisions, list) and decisions:
+        lines.append("Draft checklist answers:")
+        for item in decisions:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("item", "Unnamed item"))
+            passed = "yes" if item.get("passed") else "no"
+            comment = str(item.get("comment", "")).strip()
+            lines.append(f"- {label}: {passed}")
+            if comment:
+                lines.append(f"  Comment: {comment}")
+    return "\n".join(lines).strip() or "No draft review choices are visible yet."
+
+
+def supervisor_chat(root: Path, message: str, history: object, draft_review: object) -> dict:
+    gate_path = root / ".ai" / "supervisor" / "HUMAN_REVIEW_REQUIRED.md"
+    if not gate_path.exists():
+        return {"ok": False, "message": "No human milestone review gate exists."}
+    message = message.strip()
+    if not message:
+        return {"ok": False, "message": "Enter a question for the supervisor."}
+    if not shutil.which("codex"):
+        return {"ok": False, "message": "codex executable was not found in PATH."}
+
+    code, jobs_summary, jobs_err = run(["python3", "scripts/summarize_jobs.py"], root)
+    if code != 0:
+        jobs_summary = jobs_err or jobs_summary or "Unable to summarize jobs."
+
+    context_files = [
+        ("AGENTS.md", read_text(root / "AGENTS.md", 40_000)),
+        (".ai/supervisor/supervisor_protocol.md", read_text(root / ".ai" / "supervisor" / "supervisor_protocol.md", 40_000)),
+        (".ai/supervisor/project_brief.md", read_text(root / ".ai" / "supervisor" / "project_brief.md", 50_000)),
+        (".ai/supervisor/roadmap.md", read_text(root / ".ai" / "supervisor" / "roadmap.md", 50_000)),
+        (".ai/supervisor/ledger.md", read_text(root / ".ai" / "supervisor" / "ledger.md", 60_000)),
+        (".ai/supervisor/HUMAN_REVIEW_REQUIRED.md", read_text(gate_path, 60_000)),
+    ]
+    context = "\n\n".join(f"## {name}\n\n{text or '(missing or empty)'}" for name, text in context_files)
+    prompt = f"""You are the Codex supervisor for this scientific coding project.
+
+The human is in the dashboard human milestone review panel and wants read-only guidance before submitting the review.
+
+Hard constraints:
+- Answer the human's question only.
+- Do not edit files.
+- Do not dispatch jobs.
+- Do not accept or reject work.
+- Do not update the ledger, roadmap, project brief, or any workflow state.
+- Do not ask the worker or reviewers to do anything.
+- Keep the answer concise and actionable.
+- If the human asks what yes/no means for a checklist item, explain the consequence and what evidence to inspect.
+- If the human asks for a recommendation, state the recommendation and the reason from the provided records.
+
+# Current human question
+
+{message}
+
+# Current draft review answers/comments
+
+{draft_review_text(draft_review)}
+
+# Recent dashboard chat history
+
+{compact_history(history)}
+
+# Compact job table
+
+{jobs_summary}
+
+# Workflow and milestone context
+
+{context}
+"""
+
+    model = os.environ.get("AI_WORKFLOW_CHAT_MODEL") or os.environ.get("CODEX_MODEL") or "gpt-5.5"
+    effort = os.environ.get("AI_WORKFLOW_CHAT_REASONING_EFFORT") or os.environ.get("CODEX_REASONING_EFFORT") or "high"
+    timeout_seconds = max(30, env_int("AI_WORKFLOW_CHAT_TIMEOUT", 300))
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    log_path = runs_dir(root) / f"human_review_chat_{stamp}.log"
+    output_path = runs_dir(root) / f"human_review_chat_{stamp}.answer.md"
+    args = [
+        "codex",
+        "--ask-for-approval",
+        "never",
+        "--sandbox",
+        "read-only",
+        "exec",
+        "-C",
+        str(root),
+        "-m",
+        model,
+        "-c",
+        f'model_reasoning_effort="{effort}"',
+        "-",
+    ]
+    try:
+        result = subprocess.run(
+            args,
+            input=prompt,
+            cwd=str(root),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        log_path.write_text(
+            f"# Human Review Supervisor Chat\n\nTimed out after {timeout_seconds}s.\n\n## Prompt\n\n{prompt}\n\n## Partial stdout\n\n{exc.stdout or ''}\n\n## Partial stderr\n\n{exc.stderr or ''}\n",
+            encoding="utf-8",
+        )
+        return {
+            "ok": False,
+            "message": f"Supervisor chat timed out after {timeout_seconds}s.",
+            "log_file": str(log_path.relative_to(root)),
+            "model": model,
+        }
+
+    answer = result.stdout.strip()
+    output_path.write_text(answer + ("\n" if answer else ""), encoding="utf-8")
+    log_path.write_text(
+        "\n".join(
+            [
+                "# Human Review Supervisor Chat",
+                "",
+                f"- Model: `{model}`",
+                f"- Reasoning effort: `{effort}`",
+                f"- Exit code: `{result.returncode}`",
+                "",
+                "## Prompt",
+                "",
+                prompt,
+                "",
+                "## Stdout",
+                "",
+                answer,
+                "",
+                "## Stderr",
+                "",
+                result.stderr.strip(),
+            ]
+        ).rstrip() + "\n",
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        return {
+            "ok": False,
+            "message": (result.stderr.strip() or answer or f"Supervisor chat failed with exit code {result.returncode}")[-2000:],
+            "answer": answer,
+            "exit_code": result.returncode,
+            "log_file": str(log_path.relative_to(root)),
+            "model": model,
+        }
+    return {
+        "ok": True,
+        "answer": answer or "(The supervisor returned no text.)",
+        "model": model,
+        "reasoning_effort": effort,
+        "log_file": str(log_path.relative_to(root)),
+        "answer_file": str(output_path.relative_to(root)),
+    }
+
+
 def create_structural_change_request(
     root: Path,
     reviews_dir: Path,
@@ -1285,6 +1477,16 @@ class Handler(SimpleHTTPRequestHandler):
                 self.project_root,
                 list(payload.get("decisions", [])),
                 payload.get("structural_change") if isinstance(payload.get("structural_change"), dict) else None,
+            )
+            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            return
+
+        if parsed.path == "/api/supervisor-chat":
+            result = supervisor_chat(
+                self.project_root,
+                str(payload.get("message", "")),
+                payload.get("history", []),
+                payload.get("draft_review", {}),
             )
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return
