@@ -60,6 +60,8 @@ files=(
   "gui/app.css"
   "gui/app.js"
   "gui/index.html"
+  "scripts/_workflow_wrapper.py"
+  "scripts/_workflow_wrapper.sh"
   "scripts/create_commit_doc.py"
   "scripts/create_job.py"
   "scripts/commit_workflow_records.py"
@@ -86,6 +88,8 @@ done
 
 merge_gitignore
 chmod +x \
+  "$TARGET_DIR/scripts/_workflow_wrapper.sh" \
+  "$TARGET_DIR/scripts/_workflow_wrapper.py" \
   "$TARGET_DIR/scripts/commit_workflow_records.py" \
   "$TARGET_DIR/scripts/check_reviewer_coverage.py" \
   "$TARGET_DIR/scripts/worker_loop.sh" \
