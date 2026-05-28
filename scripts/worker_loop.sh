@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKFLOW_PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export AI_WORKFLOW_PACKAGE_ROOT="${AI_WORKFLOW_PACKAGE_ROOT:-$WORKFLOW_PACKAGE_ROOT}"
 cd "$ROOT"
 
 CURSOR_TIMEOUT="${CURSOR_TIMEOUT:-3600}"
@@ -117,6 +119,7 @@ write_reviewer_prompt() {
   local base_sha="$6"
   local final_commit="$7"
   local prompt_file="$8"
+  local changed_files_file="$job/changed_files.attempt-$attempt.txt"
   local focus
 
   if [[ "$role" == "reviewer-a" ]]; then
@@ -141,11 +144,19 @@ write_reviewer_prompt() {
     echo "- Task: $ROOT/$job/task.md"
     echo "- Worker report: $ROOT/$job/report.md"
     echo "- Diffstat: $ROOT/$job/diffstat.attempt-$attempt.txt"
-    echo "- Changed files: $ROOT/$job/changed_files.attempt-$attempt.txt"
+    echo "- Changed files: $ROOT/$changed_files_file"
     echo "- Patch: $ROOT/$job/diff.attempt-$attempt.patch"
     echo "- Test log: $ROOT/$job/test.attempt-$attempt.log"
     echo "- Commit docs: $ROOT/.ai/commit_docs/"
-    echo "- Existing skills: run 'python3 scripts/list_skills.py' in the worktree if needed"
+    echo "- Existing skills: run 'python3 scripts/list_skills.py' in the worktree if needed. The environment variable AI_WORKFLOW_PACKAGE_ROOT is set to $AI_WORKFLOW_PACKAGE_ROOT."
+    echo
+    echo "## Changed Files To Cover"
+    echo
+    if [[ -s "$changed_files_file" ]]; then
+      sed 's/^/- /' "$changed_files_file"
+    else
+      echo "- No changed files were recorded."
+    fi
     echo
     echo "Read the actual diff comprehensively, not just the worker report. Start from the diffstat, then inspect every changed file in the patch and/or worktree."
     echo "Use commands such as 'git diff --name-only $base_sha..$final_commit', 'git diff $base_sha..$final_commit -- <path>', and direct source reads from the worktree."
@@ -156,8 +167,16 @@ write_reviewer_prompt() {
     echo '```yaml'
     echo "diff_coverage:"
     echo "  full_diff_reviewed: true"
-    echo "  files_reviewed:"
-    echo "    - path/from/changed_files"
+    if [[ -s "$changed_files_file" ]]; then
+      echo "  files_reviewed:"
+      awk '
+        NF == 0 { next }
+        $1 ~ /^R/ && NF >= 3 { print "    - " $3; next }
+        NF >= 2 { print "    - " $2 }
+      ' "$changed_files_file"
+    else
+      echo "  files_reviewed: []"
+    fi
     echo "  unreviewed_files: []"
     echo '```'
     echo
