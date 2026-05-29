@@ -45,7 +45,7 @@ The worker loop defaults to GPT-5.5 High through Cursor's model id:
 CURSOR_MODEL=gpt-5.5-high ./scripts/worker_loop.sh
 ```
 
-By default, the worker loop also runs two read-only Cursor reviewers after a successful worker attempt and before the supervisor sees the job as ready for review:
+By default, the worker loop also runs two read-only Cursor reviewers in parallel after a successful worker attempt and before the supervisor sees the job as ready for review:
 
 ```bash
 CURSOR_REVIEWER_A_MODEL=claude-opus-4-7-thinking-high \

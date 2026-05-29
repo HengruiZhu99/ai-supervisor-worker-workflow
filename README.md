@@ -109,7 +109,7 @@ To ask the supervisor loop to push the main branch after accepting a structural 
 SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE=1 ./scripts/supervisor_loop.sh
 ```
 
-The worker loop runs two read-only Cursor reviewers by default after the worker finishes and before the supervisor sees `ready_for_review`:
+The worker loop runs two read-only Cursor reviewers in parallel by default after the worker finishes and before the supervisor sees `ready_for_review`:
 
 ```bash
 CURSOR_REVIEWER_A_MODEL=claude-opus-4-7-thinking-high \

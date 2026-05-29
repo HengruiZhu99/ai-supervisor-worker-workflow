@@ -260,6 +260,32 @@ run_one_reviewer() {
   return "$reviewer_exit"
 }
 
+run_reviewer_with_retries() {
+  local role="$1"
+  local model="$2"
+  local job="$3"
+  local id="$4"
+  local attempt="$5"
+  local worktree="$6"
+  local base_sha="$7"
+  local final_commit="$8"
+  local exit_file="$9"
+  local try reviewer_exit
+
+  reviewer_exit=0
+  for ((try = 0; try <= CURSOR_REVIEWER_MAX_RELAUNCHES; try++)); do
+    reviewer_exit=0
+    run_one_reviewer "$role" "$model" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_exit=$?
+    [[ "$reviewer_exit" -eq 0 ]] && break
+    if [[ "$try" -lt "$CURSOR_REVIEWER_MAX_RELAUNCHES" ]]; then
+      echo "Relaunching $role after exit $reviewer_exit (retry $((try + 1))/${CURSOR_REVIEWER_MAX_RELAUNCHES})"
+    fi
+  done
+
+  printf '%s\n' "$reviewer_exit" >"$exit_file"
+  return 0
+}
+
 run_reviewers() {
   local job="$1"
   local status_file="$2"
@@ -279,26 +305,30 @@ run_reviewers() {
   update_status "$status_file" \
     state=reviewing \
     reviewers_enabled=true \
+    reviewers_parallel=true \
     reviewer_a_model="$CURSOR_REVIEWER_A_MODEL" \
     reviewer_b_model="$CURSOR_REVIEWER_B_MODEL"
 
-  local try
-  for ((try = 0; try <= CURSOR_REVIEWER_MAX_RELAUNCHES; try++)); do
-    reviewer_a_exit=0
-    run_one_reviewer "reviewer-a" "$CURSOR_REVIEWER_A_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_a_exit=$?
-    [[ "$reviewer_a_exit" -eq 0 ]] && break
-    if [[ "$try" -lt "$CURSOR_REVIEWER_MAX_RELAUNCHES" ]]; then
-      echo "Relaunching reviewer-a after exit $reviewer_a_exit (retry $((try + 1))/${CURSOR_REVIEWER_MAX_RELAUNCHES})"
-    fi
-  done
-  for ((try = 0; try <= CURSOR_REVIEWER_MAX_RELAUNCHES; try++)); do
-    reviewer_b_exit=0
-    run_one_reviewer "reviewer-b" "$CURSOR_REVIEWER_B_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_b_exit=$?
-    [[ "$reviewer_b_exit" -eq 0 ]] && break
-    if [[ "$try" -lt "$CURSOR_REVIEWER_MAX_RELAUNCHES" ]]; then
-      echo "Relaunching reviewer-b after exit $reviewer_b_exit (retry $((try + 1))/${CURSOR_REVIEWER_MAX_RELAUNCHES})"
-    fi
-  done
+  local reviews_dir="$job/reviews"
+  local reviewer_a_exit_file="$reviews_dir/reviewer-a.exit.attempt-$attempt.txt"
+  local reviewer_b_exit_file="$reviews_dir/reviewer-b.exit.attempt-$attempt.txt"
+  local reviewer_a_pid reviewer_b_pid
+  mkdir -p "$reviews_dir"
+  rm -f "$reviewer_a_exit_file" "$reviewer_b_exit_file"
+
+  echo "Launching reviewer-a and reviewer-b in parallel for $id attempt $attempt"
+  run_reviewer_with_retries \
+    "reviewer-a" "$CURSOR_REVIEWER_A_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" "$reviewer_a_exit_file" &
+  reviewer_a_pid=$!
+  run_reviewer_with_retries \
+    "reviewer-b" "$CURSOR_REVIEWER_B_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" "$reviewer_b_exit_file" &
+  reviewer_b_pid=$!
+
+  wait "$reviewer_a_pid" || true
+  wait "$reviewer_b_pid" || true
+
+  reviewer_a_exit="$(cat "$reviewer_a_exit_file" 2>/dev/null || echo 1)"
+  reviewer_b_exit="$(cat "$reviewer_b_exit_file" 2>/dev/null || echo 1)"
 
   local coverage_exit=0
   python3 scripts/check_reviewer_coverage.py "$job/changed_files.attempt-$attempt.txt" \
