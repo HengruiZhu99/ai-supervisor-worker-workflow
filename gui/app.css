@@ -268,6 +268,7 @@ textarea {
   display: flex;
   flex-direction: column;
   min-height: 360px;
+  max-height: clamp(420px, 62vh, 760px);
 }
 
 .jobs-panel .panel-title {
@@ -277,10 +278,11 @@ textarea {
 .jobs-panel .jobs {
   flex: 1 1 auto;
   min-height: 0;
-  max-height: none;
+  max-height: 100%;
   overflow: auto;
   padding-right: 4px;
   align-content: start;
+  overscroll-behavior: contain;
 }
 
 .control-form {
@@ -718,6 +720,7 @@ textarea {
 @media (max-width: 1080px) {
   .hero-grid, .content-grid, .detail-grid, .review-layout, .reviewer-grid, .chat-options { grid-template-columns: 1fr; }
   .topbar { align-items: flex-start; flex-direction: column; }
+  .jobs-panel { max-height: min(680px, 70vh); }
 }
 
 @media (max-width: 640px) {
