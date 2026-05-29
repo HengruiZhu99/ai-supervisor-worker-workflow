@@ -83,7 +83,7 @@ if not states:
     raise SystemExit(0)
 if any(state in {"ready_for_review", "blocked", "review_failed", "review_timeout", "invalid"} for state in states):
     raise SystemExit(0)
-if not any(state in {"queued", "running", "reviewing", "rejected"} for state in states):
+if not any(state in {"queued", "running", "reviewing", "rejected", "implemented"} for state in states):
     raise SystemExit(0)
 raise SystemExit(1)
 PY
@@ -162,7 +162,7 @@ Rules:
 - Use immutable `base_sha` from `status.json` for all worker diff comparisons, for example `git -C .worktrees/JNNNN diff base_sha..HEAD`. Treat `base_ref` as human-readable context only.
 - Review jobs in `ready_for_review` according to the supervisor protocol.
 - Treat jobs in `review_failed` or `review_timeout` as needing supervisor action; either rerun reviewers, reject with feedback, or open a human gate.
-- A job in `reviewing` is still in the worker/reviewer pipeline. Do not review or modify it yet; wait for `ready_for_review`.
+- A job in `implemented` or `reviewing` is still in the worker/reviewer pipeline. Do not review or modify it yet; wait for `ready_for_review`.
 - For each `ready_for_review` job, inspect the worker report plus reviewer reports under `.ai/jobs/JNNNN/reviews/` when present.
 - Check `changed_files.attempt-N.txt` and reviewer `diff_coverage` YAML blocks. If reviewers did not inspect every changed file, or if the diff is too large to review comprehensively, reject with actionable feedback to split the work or remove noisy/generated changes. Do not accept work based only on the worker report.
 - Treat reviewer reports as advisory but important. If a reviewer recommends revision, either reject with actionable feedback or explicitly document why the concern is waived.

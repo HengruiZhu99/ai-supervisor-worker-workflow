@@ -26,6 +26,7 @@ DEFAULT_LOG_DISPLAY_LINES = 10_000
 ACTIVE_JOB_STATES = {
     "queued",
     "running",
+    "implemented",
     "reviewing",
     "rejected",
     "ready_for_review",
@@ -395,13 +396,14 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
 def active_job_summary(job_rows: list[dict]) -> dict | None:
     priority = {
         "running": 0,
-        "reviewing": 1,
-        "queued": 2,
-        "rejected": 3,
-        "ready_for_review": 4,
-        "review_failed": 5,
-        "review_timeout": 6,
-        "blocked": 7,
+        "implemented": 1,
+        "reviewing": 2,
+        "queued": 3,
+        "rejected": 4,
+        "ready_for_review": 5,
+        "review_failed": 6,
+        "review_timeout": 7,
+        "blocked": 8,
     }
     candidates = [job for job in job_rows if job.get("state") in priority]
     if not candidates:
@@ -521,7 +523,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
         )
     elif review_failed_job:
         summary = f"Reviewer stage failed on {review_failed_job.get('id', 'a job')}; supervisor action is needed."
-    elif active and active.get("state") == "reviewing":
+    elif active and active.get("state") in {"implemented", "reviewing"}:
         summary = f"Cursor reviewers are reviewing {active.get('id', 'a job')}."
     elif active and active.get("timed_out"):
         summary = f"Worker timed out on {active.get('id', 'a job')}."
@@ -549,7 +551,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
     if active:
         if active.get("state") == "ready_for_review":
             worker_text = f"Cursor finished {active.get('id')} attempt {active.get('attempt')}; awaiting supervisor review."
-        elif active.get("state") == "reviewing":
+        elif active.get("state") in {"implemented", "reviewing"}:
             worker_text = f"Cursor reviewers are reviewing {active.get('id')} attempt {active.get('attempt')}."
         elif active.get("timed_out"):
             worker_text = f"Cursor timed out on {active.get('id')} attempt {active.get('attempt')}: {active.get('worker_error')}"
@@ -571,7 +573,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
         supervisor_text = "Supervisor must revise roadmap/project brief/ledger itself and open a follow-up human review gate."
     elif human_review_action_exists:
         supervisor_text = "Supervisor must classify human review concerns and create a small worker job, revised gate, or clarification gate."
-    elif active and active.get("state") in {"queued", "running", "reviewing", "rejected"}:
+    elif active and active.get("state") in {"queued", "running", "implemented", "reviewing", "rejected"}:
         supervisor_text = f"Supervisor is waiting for worker state changes on {active.get('id')}."
     elif any(job.get("state") == "ready_for_review" for job in job_rows):
         supervisor_text = "Supervisor should review a job that is ready_for_review."
