@@ -1204,6 +1204,218 @@ Hard constraints:
     }
 
 
+def workflow_chat(root: Path, message: str, history: object, allow_edits: bool, model_override: str = "") -> dict:
+    message = message.strip()
+    if not message:
+        return {"ok": False, "message": "Enter a question for the workflow chat."}
+    if not shutil.which("codex"):
+        return {"ok": False, "message": "codex executable was not found in PATH."}
+
+    code, jobs_summary, jobs_err = run(["python3", "scripts/summarize_jobs.py"], root)
+    if code != 0:
+        jobs_summary = jobs_err or jobs_summary or "Unable to summarize jobs."
+    _, project_status, _ = run(["git", "status", "--short"], root)
+    _, project_head, _ = run(["git", "log", "--oneline", "-1"], root)
+    _, workflow_status, _ = run(["git", "status", "--short"], PACKAGE_ROOT)
+    _, workflow_head, _ = run(["git", "log", "--oneline", "-1"], PACKAGE_ROOT)
+
+    job_rows = jobs(root)
+    processes = process_blocks(root)
+    controls = {
+        "worker": control_info(root, "worker_loop"),
+        "supervisor": control_info(root, "supervisor_loop"),
+    }
+    supervisor = supervisor_state(root, job_rows)
+    activity = activity_state(job_rows, processes, controls, supervisor)
+    active = activity.get("active_job") or {}
+
+    context_files = [
+        ("Project AGENTS.md", read_text(root / "AGENTS.md", 35_000)),
+        ("Workflow package README.md", read_text(PACKAGE_ROOT / "README.md", 35_000)),
+        (".ai/supervisor/supervisor_protocol.md", read_text(root / ".ai" / "supervisor" / "supervisor_protocol.md", 35_000)),
+        (".ai/supervisor/roadmap.md", read_text(root / ".ai" / "supervisor" / "roadmap.md", 45_000)),
+        (".ai/supervisor/ledger.md", read_text(root / ".ai" / "supervisor" / "ledger.md", 45_000)),
+    ]
+    if active.get("id"):
+        job_dir = root / ".ai" / "jobs" / str(active.get("id"))
+        attempt = active.get("attempt", 0)
+        context_files.extend(
+            [
+                (f"{active.get('id')} status.json", json.dumps(read_json(job_dir / "status.json"), indent=2)),
+                (f"{active.get('id')} task.md", read_text(job_dir / "task.md", 30_000)),
+                (f"{active.get('id')} report.md", read_text(job_dir / "report.md", 25_000)),
+                (f"{active.get('id')} worker output", tail(job_dir / f"cursor_final.attempt-{attempt}.md", 160)),
+            ]
+        )
+    context = "\n\n".join(f"## {name}\n\n{text or '(missing or empty)'}" for name, text in context_files)
+
+    if allow_edits:
+        mode_rules = f"""The user explicitly enabled edit mode for this chat.
+
+You may edit files if and only if the user's current message asks for a concrete workflow change.
+
+Editing rules:
+- Prefer reusable workflow changes in `{PACKAGE_ROOT}` when the request is generally applicable to the AI supervisor/worker package.
+- Use the project repo `{root}` only for project-specific workflow state, wrappers, or submodule pointer updates.
+- Do not edit active job artifacts under `.ai/jobs/` unless the user explicitly asks for job-state repair.
+- Do not run `cursor-agent`, `scripts/worker_loop.sh`, or `scripts/supervisor_loop.sh`.
+- Do not stop running worker or supervisor loops unless the user explicitly asks.
+- Do not push to a remote unless the user explicitly asks.
+- If you make reusable workflow-package changes, run focused validation and commit them in the workflow package when complete.
+- If you advance the project submodule pointer, commit only that pointer/wrapper change in the project repo and do not stage active job artifacts.
+- Keep the final answer concise: what changed, validation, commits, and any manual step.
+"""
+    else:
+        mode_rules = """This chat is in read-only guidance mode.
+
+Hard constraints:
+- Answer the user's question only.
+- Do not edit files.
+- Do not dispatch jobs.
+- Do not start, stop, or relaunch loops.
+- Do not update Git state.
+- If the user asks for a change, explain that they must enable "Allow this chat agent to edit workflow files" and resend the request.
+"""
+
+    prompt = f"""You are a workflow-aware Codex agent launched from the AI Workflow Console.
+
+The user wants to chat about the supervisor/worker workflow, the current run, or the reusable workflow package.
+
+{mode_rules}
+
+# User message
+
+{message}
+
+# Recent chat history
+
+{compact_history(history)}
+
+# Current activity
+
+- Summary: {activity.get('summary', '')}
+- Worker: {activity.get('worker', '')}
+- Supervisor: {activity.get('supervisor', '')}
+- Active job: {json.dumps(active, indent=2)}
+
+# Project Git
+
+- Root: `{root}`
+- HEAD: `{project_head}`
+- Dirty status:
+```text
+{project_status or '(clean)'}
+```
+
+# Workflow Package Git
+
+- Root: `{PACKAGE_ROOT}`
+- HEAD: `{workflow_head}`
+- Dirty status:
+```text
+{workflow_status or '(clean)'}
+```
+
+# Compact job table
+
+```text
+{jobs_summary}
+```
+
+# Context
+
+{context}
+"""
+
+    model = model_override.strip() or os.environ.get("AI_WORKFLOW_CHAT_MODEL") or os.environ.get("CODEX_MODEL") or "gpt-5.5"
+    effort = os.environ.get("AI_WORKFLOW_CHAT_REASONING_EFFORT") or os.environ.get("CODEX_REASONING_EFFORT") or "high"
+    timeout_seconds = max(30, env_int("AI_WORKFLOW_CHAT_TIMEOUT", 600 if allow_edits else 300))
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    log_path = runs_dir(root) / f"workflow_chat_{stamp}.log"
+    sandbox = "workspace-write" if allow_edits else "read-only"
+    args = [
+        "codex",
+        "--ask-for-approval",
+        "never",
+        "--sandbox",
+        sandbox,
+        "exec",
+        "-C",
+        str(root),
+        "-m",
+        model,
+        "-c",
+        f'model_reasoning_effort="{effort}"',
+        "-",
+    ]
+    try:
+        result = subprocess.run(
+            args,
+            input=prompt,
+            cwd=str(root),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        log_path.write_text(
+            f"# Workflow Chat\n\nTimed out after {timeout_seconds}s.\n\n## Mode\n\n{sandbox}\n\n## Prompt\n\n{prompt}\n\n## Partial stdout\n\n{exc.stdout or ''}\n\n## Partial stderr\n\n{exc.stderr or ''}\n",
+            encoding="utf-8",
+        )
+        return {
+            "ok": False,
+            "message": f"Workflow chat timed out after {timeout_seconds}s.",
+            "log_file": str(log_path.relative_to(root)),
+            "model": model,
+        }
+
+    answer = result.stdout.strip()
+    log_path.write_text(
+        "\n".join(
+            [
+                "# Workflow Chat",
+                "",
+                f"- Mode: `{sandbox}`",
+                f"- Model: `{model}`",
+                f"- Reasoning effort: `{effort}`",
+                f"- Exit code: `{result.returncode}`",
+                "",
+                "## Prompt",
+                "",
+                prompt,
+                "",
+                "## Stdout",
+                "",
+                answer,
+                "",
+                "## Stderr",
+                "",
+                result.stderr.strip(),
+            ]
+        ).rstrip() + "\n",
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        return {
+            "ok": False,
+            "message": (result.stderr.strip() or answer or f"Workflow chat failed with exit code {result.returncode}")[-2000:],
+            "answer": answer,
+            "exit_code": result.returncode,
+            "log_file": str(log_path.relative_to(root)),
+            "model": model,
+        }
+    return {
+        "ok": True,
+        "answer": answer or "(The workflow agent returned no text.)",
+        "model": model,
+        "reasoning_effort": effort,
+        "log_file": str(log_path.relative_to(root)),
+        "mode": sandbox,
+    }
+
+
 def create_structural_change_request(
     root: Path,
     reviews_dir: Path,
@@ -1515,6 +1727,17 @@ class Handler(SimpleHTTPRequestHandler):
                 str(payload.get("message", "")),
                 payload.get("history", []),
                 payload.get("draft_review", {}),
+            )
+            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            return
+
+        if parsed.path == "/api/workflow-chat":
+            result = workflow_chat(
+                self.project_root,
+                str(payload.get("message", "")),
+                payload.get("history", []),
+                bool(payload.get("allow_edits", False)),
+                str(payload.get("model", "")),
             )
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return

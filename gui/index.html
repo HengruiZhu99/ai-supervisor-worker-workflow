@@ -53,9 +53,35 @@
                   <div class="progress-track"><div id="jobProgressBar" class="progress-bar"></div></div>
                 </div>
               </div>
-              <div class="status-half">
-                <div class="status-title">Current Status</div>
-                <p id="currentStatus">Checking...</p>
+              <div class="overview-lower">
+                <div class="status-half">
+                  <div class="status-title">Current Status</div>
+                  <p id="currentStatus">Checking...</p>
+                </div>
+                <div class="workflow-chat">
+                  <div class="chat-head">
+                    <span>Workflow Chat</span>
+                    <span id="workflowChatMeta" class="muted">Read-only guidance</span>
+                  </div>
+                  <div id="workflowChatLog" class="chat-log compact"></div>
+                  <form id="workflowChatForm" class="chat-form compact">
+                    <textarea id="workflowChatInput" name="message" placeholder="Ask about the workflow, current run, or request an AI workflow edit"></textarea>
+                    <div class="chat-options">
+                      <label class="check-line">
+                        <input id="workflowChatAllowEdits" type="checkbox" name="allow_edits" />
+                        <span>Allow this chat agent to edit workflow files</span>
+                      </label>
+                      <label>
+                        Model
+                        <input id="workflowChatModel" name="model" value="gpt-5.5" />
+                      </label>
+                    </div>
+                    <div class="button-row">
+                      <button type="submit">Send</button>
+                      <button type="button" id="clearWorkflowChatButton">Clear</button>
+                    </div>
+                  </form>
+                </div>
               </div>
             </div>
           </article>

@@ -212,22 +212,29 @@ textarea {
 
 .overview-split {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
-  min-height: 250px;
+  min-height: 520px;
 }
 
 .overview-half {
   min-height: 0;
 }
 
+.overview-lower {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  min-height: 0;
+  padding-top: 14px;
+}
+
 .status-half {
   display: grid;
   align-content: center;
   gap: 8px;
-  border-top: 1px solid var(--line);
   min-height: 0;
-  padding-top: 14px;
 }
 
 .status-title {
@@ -247,7 +254,7 @@ textarea {
 .status-half p {
   margin: 0;
   color: var(--ink);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 900;
   line-height: 1.28;
 }
@@ -451,7 +458,7 @@ textarea {
   line-height: 1.45;
 }
 
-.supervisor-chat {
+.supervisor-chat, .workflow-chat {
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--panel-soft);
@@ -460,6 +467,10 @@ textarea {
   display: grid;
   grid-template-rows: auto minmax(120px, 1fr) auto;
   gap: 10px;
+}
+
+.workflow-chat {
+  min-height: 0;
 }
 
 .chat-head {
@@ -476,6 +487,10 @@ textarea {
   display: grid;
   gap: 10px;
   align-content: start;
+}
+
+.chat-log.compact {
+  max-height: 210px;
 }
 
 .chat-message {
@@ -521,6 +536,23 @@ textarea {
 
 .chat-form textarea {
   min-height: 80px;
+}
+
+.chat-form.compact textarea {
+  min-height: 60px;
+}
+
+.chat-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(120px, 0.7fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.chat-options label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .review-form {
@@ -684,7 +716,7 @@ textarea {
 }
 
 @media (max-width: 1080px) {
-  .hero-grid, .content-grid, .detail-grid, .review-layout, .reviewer-grid { grid-template-columns: 1fr; }
+  .hero-grid, .content-grid, .detail-grid, .review-layout, .reviewer-grid, .chat-options { grid-template-columns: 1fr; }
   .topbar { align-items: flex-start; flex-direction: column; }
 }
 

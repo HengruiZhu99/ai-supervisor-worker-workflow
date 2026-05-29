@@ -5,6 +5,8 @@ const state = {
   supervisorChatSignature: "",
   supervisorChatHistory: [],
   supervisorChatBusy: false,
+  workflowChatHistory: [],
+  workflowChatBusy: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -116,6 +118,28 @@ function renderSupervisorChat() {
   }
   if (meta) {
     meta.textContent = state.supervisorChatBusy ? "Asking..." : (meta.dataset.last || "Read-only guidance");
+  }
+}
+
+function renderWorkflowChat() {
+  const log = $("workflowChatLog");
+  const meta = $("workflowChatMeta");
+  if (!log) return;
+  if (!state.workflowChatHistory.length) {
+    log.innerHTML = '<div class="chat-empty">Ask about the workflow, current run, or request a workflow edit.</div>';
+  } else {
+    log.innerHTML = state.workflowChatHistory.map((message) => `
+      <div class="chat-message ${message.role === "user" ? "user" : "assistant"}">
+        <span class="role">${message.role === "user" ? "You" : "Workflow Agent"}</span>
+        ${escapeHtml(message.content || "")}
+      </div>
+    `).join("");
+    log.scrollTop = log.scrollHeight;
+  }
+  if (meta) {
+    meta.textContent = state.workflowChatBusy
+      ? "Working..."
+      : (meta.dataset.last || "Read-only guidance");
   }
 }
 
@@ -376,6 +400,7 @@ function render(data, options = {}) {
     renderTree(data.tree);
   }
   renderHumanReview(data.supervisor);
+  renderWorkflowChat();
 }
 
 async function refresh(options = {}) {
@@ -493,6 +518,59 @@ $("supervisorChatInput").addEventListener("keydown", (event) => {
   }
   event.preventDefault();
   $("supervisorChatForm").requestSubmit();
+});
+$("workflowChatForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = $("workflowChatInput");
+  const message = input.value.trim();
+  if (!message || state.workflowChatBusy) return;
+
+  const allowEdits = $("workflowChatAllowEdits")?.checked || false;
+  state.workflowChatHistory.push({ role: "user", content: message });
+  input.value = "";
+  state.workflowChatBusy = true;
+  $("workflowChatMeta").dataset.last = allowEdits ? "Edit mode" : "Read-only guidance";
+  renderWorkflowChat();
+
+  try {
+    const result = await postJson("/api/workflow-chat", {
+      message,
+      history: state.workflowChatHistory.slice(-12),
+      allow_edits: allowEdits,
+      model: $("workflowChatModel")?.value || "",
+    });
+    state.workflowChatHistory.push({
+      role: "assistant",
+      content: result.answer || result.message || "(No answer returned.)",
+    });
+    $("workflowChatMeta").dataset.last = [
+      allowEdits ? "Edit mode" : "Read-only guidance",
+      result.model ? result.model : "",
+      result.log_file ? result.log_file : "",
+    ].filter(Boolean).join(" · ");
+    await refresh({ refreshStaticPanels: true });
+  } catch (error) {
+    state.workflowChatHistory.push({
+      role: "assistant",
+      content: `Workflow chat failed: ${error.message}`,
+    });
+    $("workflowChatMeta").dataset.last = allowEdits ? "Edit mode" : "Read-only guidance";
+  } finally {
+    state.workflowChatBusy = false;
+    renderWorkflowChat();
+  }
+});
+$("clearWorkflowChatButton").addEventListener("click", () => {
+  state.workflowChatHistory = [];
+  $("workflowChatMeta").dataset.last = "Read-only guidance";
+  renderWorkflowChat();
+});
+$("workflowChatInput").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
+    return;
+  }
+  event.preventDefault();
+  $("workflowChatForm").requestSubmit();
 });
 refresh({ refreshStaticPanels: true }).catch((error) => {
   $("healthPill").textContent = "Error";
