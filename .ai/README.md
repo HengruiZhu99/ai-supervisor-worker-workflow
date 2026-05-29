@@ -69,11 +69,32 @@ diff_coverage:
 
 The worker loop writes `changed_files.attempt-N.txt` from the immutable `base_sha..HEAD` range and checks reviewer coverage before a job becomes ready for supervisor review.
 
-Worker reports should include a `Skill Suggestions` section. Reviewers assess those suggestions, and the supervisor checks existing skills before creating anything:
+Worker reports should include `Workflow Friction` and `Skill Suggestions` sections. Friction covers unclear instructions, missing context, repeated boilerplate, unavailable helper commands, painful manual steps, or places where a template/checklist/script would have avoided confusion. Reviewers assess those suggestions, and the supervisor checks existing skills before creating anything:
 
 ```bash
 python3 scripts/list_skills.py
 ```
+
+Nontrivial workflow-improvement proposals are tracked in:
+
+```text
+.ai/supervisor/workflow_improvement_queue.md
+.ai/supervisor/skill_decisions.md
+```
+
+The supervisor may record entries with:
+
+```bash
+python3 scripts/record_workflow_improvement.py \
+  --source job:JNNNN \
+  --category skill \
+  --scope project \
+  --title "Short title" \
+  --rationale "Why this avoids repeated work" \
+  --proposed-change "What should change"
+```
+
+Workers propose, reviewers evaluate, and the supervisor decides whether the right response is a ledger note, docs, template/checklist/protocol update, script fix, project-specific skill, general reusable skill, defer, or reject.
 
 To see the model ids available to your Cursor account:
 
@@ -209,6 +230,6 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/human_milestone_review.py scripts/list_skills.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
 python3 scripts/summarize_jobs.py
 ```

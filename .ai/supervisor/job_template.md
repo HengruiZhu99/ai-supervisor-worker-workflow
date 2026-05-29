@@ -45,6 +45,9 @@ Return:
 5. Scientific assumptions
 6. Known limitations
 7. Suggested follow-up
-8. Skill suggestions
+8. Workflow friction
+9. Skill suggestions
 
-For skill suggestions, return `None` if no new skill is justified. Otherwise include proposed name, scope (`project-specific` or `general scientific workflow`), when to use it, duplication risk versus existing skills, and the minimum content needed.
+For workflow friction, return `None` if the task and workflow were clear. Otherwise list missing context, unclear instructions, repeated boilerplate, unavailable helper commands, painful manual steps, or places where a template/checklist/script would have prevented confusion.
+
+For skill suggestions, return `None` if no new skill is justified. Otherwise include proposed name, scope (`project-specific` or `general scientific workflow`), when to use it, duplication risk versus existing skills, and the minimum content needed. Do not create or edit skills unless this job explicitly assigns workflow-maintenance work.

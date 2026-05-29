@@ -184,6 +184,7 @@ write_reviewer_prompt() {
     echo "Use commands such as 'git diff --name-only $base_sha..$final_commit', 'git diff $base_sha..$final_commit -- <path>', and direct source reads from the worktree."
     echo "If the diff is too large to review comprehensively within this reviewer pass, recommend revise/split; do not recommend acceptance for partially reviewed work."
     echo "Cross-check the worker report, test log, commit docs, and actual code. The actual diff and worktree are the source of truth."
+    echo "Inspect the worker's Workflow Friction and Skill Suggestions sections. Treat them as proposals only. Decide whether each point is real, repeated, already covered by an existing skill/template/checklist/script, or too narrow to keep."
     echo
     echo "Include this machine-checkable fenced YAML block exactly once:"
     echo '```yaml'
@@ -213,7 +214,9 @@ write_reviewer_prompt() {
     echo "6. Test and validation assessment"
     echo "7. Scope assessment"
     echo "8. Suggested supervisor decision rationale"
-    echo "9. Skill suggestion review: whether the worker's suggested skills are useful, duplicate existing skills, and should be project-specific, general workflow skills, deferred, or rejected. Run 'python3 scripts/list_skills.py' if needed."
+    echo "9. Workflow friction review: which reported frictions are valid, whether they need a skill, template, script, protocol/checklist update, project documentation, or no action, and whether the issue appears one-off or recurring."
+    echo "10. Skill suggestion review: whether the worker's suggested skills are useful, duplicate existing skills, and should be project-specific, general workflow skills, deferred, or rejected. Run 'python3 scripts/list_skills.py' if needed."
+    echo "11. Workflow evolution recommendations: provide concise proposed queue entries for the supervisor, each with title, source, category (skill/template/script/protocol/checklist/docs/ledger), scope (project/general), rationale, and recommended decision (create/update/defer/reject)."
   } >"$prompt_file"
 }
 
@@ -423,10 +426,12 @@ process_job() {
     echo "- Run the requested tests."
     echo "- Break changes into meaningful commits where the task naturally separates into pieces."
     echo "- If files are changed and no meaningful commits exist, leave changes staged or unstaged; the worker loop will create a fallback attempt commit."
-    echo "- Return a concise report with summary, files changed, commits made, tests run and results, scientific assumptions, known limitations, and suggested follow-up."
+    echo "- Return a concise report with summary, files changed, commits made, tests run and results, scientific assumptions, known limitations, suggested follow-up, workflow friction, and skill suggestions."
+    echo "- Include a Workflow Friction section. Say 'None' if the job instructions and workflow were clear. Otherwise list missing context, unclear requirements, duplicated/repeated work, painful manual steps, commands that were unavailable, or places where a template/checklist/script would have prevented confusion."
     echo "- Include a Skill Suggestions section. Say 'None' if no new skill is justified."
     echo "- Before proposing a skill, consult existing skills with 'python3 scripts/list_skills.py' when available."
     echo "- For each skill suggestion, state proposed name, scope (project-specific or general scientific-coding workflow), when to use it, duplication risk versus existing skills, and the minimal content it should contain."
+    echo "- Do not create or edit skills, supervisor protocols, roadmap files, or workflow scripts yourself unless this specific job explicitly assigns that work. Suggestions should be reported for supervisor review."
     echo
     echo "## Task"
     cat "$job/task.md"
@@ -535,6 +540,9 @@ process_job() {
     echo
     echo "## Changed files"
     cat "$job/changed_files.attempt-$attempt.txt"
+    echo
+    echo "## Workflow evolution inputs"
+    echo "The worker report above should include Workflow Friction and Skill Suggestions sections. Reviewers and the Codex supervisor evaluate these before any workflow change is made."
     if [[ "$post_test_dirty" == true ]]; then
       echo
       echo "## Post-test dirty worktree"

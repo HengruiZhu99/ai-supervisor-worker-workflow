@@ -154,6 +154,8 @@ Read:
 - `.ai/supervisor/ledger.md`
 - `.ai/supervisor/review_checklist.md`
 - `.ai/supervisor/commit_policy.md`
+- `.ai/supervisor/workflow_improvement_queue.md`, if present
+- `.ai/supervisor/skill_decisions.md`, if present
 
 Rules:
 - Do not implement scientific project code yourself.
@@ -166,9 +168,12 @@ Rules:
 - For each `ready_for_review` job, inspect the worker report plus reviewer reports under `.ai/jobs/JNNNN/reviews/` when present.
 - Check `changed_files.attempt-N.txt` and reviewer `diff_coverage` YAML blocks. If reviewers did not inspect every changed file, or if the diff is too large to review comprehensively, reject with actionable feedback to split the work or remove noisy/generated changes. Do not accept work based only on the worker report.
 - Treat reviewer reports as advisory but important. If a reviewer recommends revision, either reject with actionable feedback or explicitly document why the concern is waived.
-- Inspect the worker's Skill Suggestions section and the reviewers' skill-suggestion assessments. Run `python3 scripts/list_skills.py` before creating any new skill.
+- Inspect the worker's Workflow Friction and Skill Suggestions sections and the reviewers' workflow-evolution assessments. Run `python3 scripts/list_skills.py` before creating any new skill.
+- Treat workflow evolution as reviewed change control: workers propose, reviewers assess, Codex supervisor deduplicates and decides. Do not let a worker-owned implementation job directly mutate workflow skills, templates, or supervisor protocols unless the job was explicitly a workflow-maintenance job.
+- Record nontrivial workflow evolution proposals or decisions in `.ai/supervisor/workflow_improvement_queue.md` and `.ai/supervisor/skill_decisions.md`. You may use `python3 scripts/record_workflow_improvement.py` for consistent entries.
 - Create a new skill only when it avoids real future duplication and does not overlap existing skills. Project-specific skills go under the project `skills/`; generally reusable scientific-coding workflow skills go under `external/ai-supervisor-worker-workflow/skills/` and require committing/pushing the workflow package plus updating the submodule pointer when possible.
-- Record skill decisions in `.ai/supervisor/ledger.md`, including paths created or reasons for deferring/rejecting suggestions.
+- Prefer the smallest effective workflow change: ledger note, checklist/template update, protocol clarification, script fix, project doc, project-specific skill, then general reusable skill.
+- Record skill and workflow-evolution decisions in `.ai/supervisor/ledger.md`, including created paths or reasons for deferring/rejecting suggestions.
 - Accept or reject completed jobs based on report, tests, diffstat, comprehensive actual-diff review, and commit documentation.
 - For ordinary revision requests, write concise actionable `feedback.md` and set state to `rejected` so the worker loop retries it.
 - For terminal outcomes that must not be retried, set state to `superseded` or `cancelled`; do not use `rejected`.
@@ -178,6 +183,7 @@ Rules:
 - If a job is queued/running/rejected after your actions, stop with `WAITING_FOR_WORKER`.
 - If the milestone is complete, blocked, or needs a human scope/science decision, create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` using `.ai/supervisor/milestone_review_template.md`.
 - The human gate must include a milestone summary, a `## Human Review To-Do List` section with `- [ ]` checklist items, and instructions to run `python3 scripts/human_milestone_review.py`.
+- At milestone gates, include a short Workflow Evolution section summarizing accepted/deferred/rejected workflow-friction and skill-suggestion decisions since the last gate.
 - Do not create a new worker job after creating a human gate.
 - Keep human input at milestone boundaries, not individual jobs or commits.
 - Supervisor planning files are supervisor-owned. Do not create a Cursor worker job whose objective is to edit `.ai/supervisor/roadmap.md`, `.ai/supervisor/project_brief.md`, `.ai/supervisor/ledger.md`, build/dependency policy, or milestone sequencing.

@@ -51,10 +51,13 @@
 
 ## Skill stewardship
 
+- [ ] Did the worker include workflow friction or explicitly say none?
 - [ ] Did the worker include skill suggestions or explicitly say none?
-- [ ] Did reviewers assess the skill suggestions?
+- [ ] Did reviewers assess workflow friction and skill suggestions?
+- [ ] Are reported frictions better solved by a ledger note, docs, template/checklist/protocol update, script fix, project skill, or reusable workflow skill?
 - [ ] Are any suggested skills non-duplicative and useful enough to create?
 - [ ] Is each accepted skill classified correctly as project-specific or generally reusable?
+- [ ] Were nontrivial decisions recorded in `.ai/supervisor/workflow_improvement_queue.md`, `.ai/supervisor/skill_decisions.md`, or the ledger?
 
 ## Decision
 

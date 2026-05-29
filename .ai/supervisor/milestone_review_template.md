@@ -25,6 +25,10 @@ Choose one:
 
 ## Risks requiring human decision
 
+## Workflow evolution
+
+Summarize worker-reported friction, reviewer assessments, skill suggestions, and supervisor decisions since the previous milestone gate.
+
 ## Recommended next milestone
 
 ## Human Review To-Do List
@@ -33,6 +37,7 @@ Choose one:
 - [ ] Accepted jobs and commits are reviewable.
 - [ ] Tests and validation are acceptable.
 - [ ] Scientific assumptions, risks, and limitations are acceptable.
+- [ ] Workflow evolution decisions are acceptable.
 - [ ] Recommended next milestone is acceptable.
 
 ## Human Review Instructions
