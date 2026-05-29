@@ -91,6 +91,8 @@ Nonzero Cursor worker exits are requeued once by default when the failure is not
 
 The worker loop normalizes common accidental Codex-style Cursor model ids, such as `gpt-5.5` to `gpt-5.5-high`. If Cursor exits nonzero after emitting `[system success]`, tests pass, and the post-test worktree is clean, the attempt is still sent to reviewers while the nonzero Cursor exit remains documented.
 
+For recovery, a completed attempt can be marked `implemented`; the worker loop then runs only reviewers for the existing attempt and moves the job to `ready_for_review`, `review_failed`, or `review_timeout`.
+
 ### Step 4
 
 Run the autonomous Codex supervisor loop in another terminal or tmux pane:

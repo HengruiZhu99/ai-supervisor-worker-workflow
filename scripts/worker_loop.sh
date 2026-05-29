@@ -584,6 +584,67 @@ process_job() {
   cleanup_current_lock
 }
 
+review_existing_job() {
+  local job="$1"
+  local status_file="$job/status.json"
+  local lock_dir="$job/.lock"
+
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    return 0
+  fi
+  CURRENT_LOCK="$lock_dir"
+
+  local id branch attempt worktree base_sha final_commit reviewer_status next_state
+  id="$(json_field "$status_file" id)"
+  branch="$(json_field "$status_file" branch)"
+  attempt="$(jq -r '.attempt // 0' "$status_file")"
+  base_sha="$(json_field "$status_file" base_sha)"
+  final_commit="$(json_field "$status_file" commit)"
+  worktree=".worktrees/$id"
+
+  if [[ -z "$id" || -z "$branch" || -z "$base_sha" || -z "$final_commit" || "$attempt" == "0" ]]; then
+    update_status "$status_file" state=blocked worker_error="implemented job is missing id, branch, base_sha, commit, or attempt"
+    cleanup_current_lock
+    return 0
+  fi
+  if ! git -C "$worktree" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    update_status "$status_file" state=blocked worker_error="implemented job worktree is missing or invalid: $worktree"
+    cleanup_current_lock
+    return 0
+  fi
+  if ! git -C "$worktree" merge-base --is-ancestor "$base_sha" "$final_commit" >/dev/null 2>&1; then
+    update_status "$status_file" state=blocked worker_error="implemented job commit is not reachable from base_sha: $base_sha..$final_commit"
+    cleanup_current_lock
+    return 0
+  fi
+
+  if [[ ! -s "$job/changed_files.attempt-$attempt.txt" ]]; then
+    git -C "$worktree" diff --name-status "$base_sha..$final_commit" >"$job/changed_files.attempt-$attempt.txt" || true
+  fi
+  if [[ ! -s "$job/diffstat.attempt-$attempt.txt" ]]; then
+    git -C "$worktree" diff --stat "$base_sha..$final_commit" >"$job/diffstat.attempt-$attempt.txt" || true
+  fi
+  if [[ ! -s "$job/diff.attempt-$attempt.patch" ]]; then
+    git -C "$worktree" diff "$base_sha..$final_commit" >"$job/diff.attempt-$attempt.patch" || true
+  fi
+
+  reviewer_status=0
+  run_reviewers "$job" "$status_file" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_status=$?
+  next_state=ready_for_review
+  if [[ "$reviewer_status" -eq 124 ]]; then
+    next_state=review_timeout
+  elif [[ "$reviewer_status" -ne 0 ]]; then
+    next_state=review_failed
+  fi
+
+  update_status "$status_file" \
+    state="$next_state" \
+    workflow_commit="$workflow_commit" \
+    report="$job/report.md"
+
+  cleanup_current_lock
+}
+
 while true; do
   if [[ -f "$HUMAN_GATE" || -f "$STRUCTURAL_REQUEST" || -f "$HUMAN_REVIEW_ACTION_REQUEST" ]]; then
     sleep "$POLL_SECONDS"
@@ -597,6 +658,9 @@ while true; do
     if [[ "$state" == "queued" || "$state" == "rejected" ]]; then
       found=1
       process_job "$(dirname "$status_file")"
+    elif [[ "$state" == "implemented" ]]; then
+      found=1
+      review_existing_job "$(dirname "$status_file")"
     fi
   done
   shopt -u nullglob

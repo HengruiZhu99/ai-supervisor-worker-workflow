@@ -123,6 +123,8 @@ Reviewer reports include a machine-checkable `diff_coverage` YAML block. The wor
 
 The worker loop normalizes common accidental Codex-style Cursor model ids, for example `gpt-5.5` to `gpt-5.5-high`, before invoking `cursor-agent`. If Cursor returns nonzero after emitting `[system success]`, tests pass, and the post-test worktree is clean, the attempt proceeds to reviewer review while recording the nonzero exit in `status.json`.
 
+If an older workflow leaves a completed attempt in a blocked state before reviewers run, set the job state to `implemented`; the worker loop will run only the reviewer stage for the existing `base_sha..commit` attempt and then move the job to `ready_for_review`, `review_failed`, or `review_timeout`.
+
 Worker reports should include a `Skill Suggestions` section. Reviewers assess those suggestions, and the supervisor checks them against existing skills with:
 
 ```bash
