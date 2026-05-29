@@ -26,6 +26,7 @@ POLL_SECONDS="${POLL_SECONDS:-5}"
 CURRENT_LOCK=""
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 STRUCTURAL_REQUEST=".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"
+HUMAN_REVIEW_ACTION_REQUEST=".ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md"
 
 cleanup_current_lock() {
   if [[ -n "${CURRENT_LOCK:-}" ]]; then
@@ -554,7 +555,7 @@ process_job() {
 }
 
 while true; do
-  if [[ -f "$HUMAN_GATE" || -f "$STRUCTURAL_REQUEST" ]]; then
+  if [[ -f "$HUMAN_GATE" || -f "$STRUCTURAL_REQUEST" || -f "$HUMAN_REVIEW_ACTION_REQUEST" ]]; then
     sleep "$POLL_SECONDS"
     continue
   fi

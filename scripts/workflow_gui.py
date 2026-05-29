@@ -357,6 +357,8 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
     gate_text = read_text(gate_path)
     structural_request_path = supervisor / "STRUCTURAL_CHANGE_REQUESTED.md"
     structural_request_text = read_text(structural_request_path)
+    human_review_action_path = supervisor / "HUMAN_REVIEW_ACTION_REQUESTED.md"
+    human_review_action_text = read_text(human_review_action_path)
     runs_dir = root / ".ai" / "supervisor_runs"
     run_logs = sorted(runs_dir.glob("supervisor.*.log"))
     latest_log = run_logs[-1] if run_logs else None
@@ -381,6 +383,8 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
         "human_gate_checklist": parse_gate_checklist(gate_text) if gate_path.exists() else [],
         "structural_request_exists": structural_request_path.exists(),
         "structural_request": structural_request_text,
+        "human_review_action_exists": human_review_action_path.exists(),
+        "human_review_action": human_review_action_text,
         "latest_human_review": str(latest_review.relative_to(root)) if latest_review else "",
         "latest_human_review_result": latest_review_result,
         "latest_supervisor_log": str(latest_log.relative_to(root)) if latest_log else "",
@@ -492,6 +496,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
     worker_running = bool(controls.get("worker", {}).get("running"))
     human_gate_exists = bool(supervisor.get("human_gate_exists"))
     structural_request_exists = bool(supervisor.get("structural_request_exists"))
+    human_review_action_exists = bool(supervisor.get("human_review_action_exists"))
     preparing_human_review = codex_active and supervisor_preparing_human_review(supervisor, job_rows)
 
     if human_gate_exists:
@@ -501,6 +506,12 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
             "Supervisor is preparing a structural plan revision."
             if codex_active
             else "Structural plan revision is waiting for the supervisor."
+        )
+    elif human_review_action_exists:
+        summary = (
+            "Supervisor is preparing a human-review revision plan."
+            if codex_active
+            else "Human-review revision request is waiting for the supervisor."
         )
     elif ready_job:
         summary = (
@@ -558,6 +569,8 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
 
     if structural_request_exists:
         supervisor_text = "Supervisor must revise roadmap/project brief/ledger itself and open a follow-up human review gate."
+    elif human_review_action_exists:
+        supervisor_text = "Supervisor must classify human review concerns and create a small worker job, revised gate, or clarification gate."
     elif active and active.get("state") in {"queued", "running", "reviewing", "rejected"}:
         supervisor_text = f"Supervisor is waiting for worker state changes on {active.get('id')}."
     elif any(job.get("state") == "ready_for_review" for job in job_rows):
@@ -1268,6 +1281,67 @@ def create_structural_change_request(
     return request_path
 
 
+def create_human_review_action_request(
+    root: Path,
+    reviews_dir: Path,
+    stamp: str,
+    archived_gate: Path,
+    review_record: Path,
+    failed: list[dict],
+) -> Path:
+    request_path = root / ".ai" / "supervisor" / "HUMAN_REVIEW_ACTION_REQUESTED.md"
+    lines = [
+        "# Human Review Action Request",
+        "",
+        "This request must be handled by the Codex supervisor before any Cursor worker job is created.",
+        "",
+        "## Supervisor Objective",
+        "",
+        "Read the failed human milestone review items, classify the concerns, and decide the next safe workflow action.",
+        "",
+        "## Required Supervisor Behavior",
+        "",
+        "- Do not pass the raw failed checklist directly to Cursor.",
+        "- Decide whether each concern is implementation work, test/validation work, documentation work, supervisor-owned planning/scope work, or a human clarification need.",
+        "- If implementation is needed, create exactly one small, self-contained worker job for the next actionable piece.",
+        "- If concerns should be split, create only the first small worker job and record the planned sequence in the ledger.",
+        "- If supervisor-owned planning records must change, update them yourself and open a new human review gate before dispatching implementation.",
+        "- If the concern is ambiguous, open a human review/clarification gate instead of guessing.",
+        "- Archive or remove `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` only after a new worker job or human gate exists.",
+        "",
+        "## Review Context",
+        "",
+        f"- Archived milestone gate: `{archived_gate}`",
+        f"- Human review record: `{review_record}`",
+        "",
+        "## Failed Human Review Items",
+        "",
+    ]
+    for index, item in enumerate(failed, 1):
+        lines.append(f"### {index}. {item.get('item', 'Unnamed item')}")
+        lines.append("")
+        comment = str(item.get("comment", "")).strip() or "No comment provided."
+        lines.append(comment)
+        lines.append("")
+    lines.extend(
+        [
+            "## Completion Contract",
+            "",
+            "The supervisor should record:",
+            "1. Classification of the human concerns",
+            "2. Whether a worker job, revised human gate, or clarification gate was created",
+            "3. Path to any created job or gate",
+            "4. Validation or checks run for supervisor-owned changes",
+            "5. Known limitations or follow-up sequence",
+        ]
+    )
+    text = "\n".join(lines).rstrip() + "\n"
+    request_path.write_text(text, encoding="utf-8")
+    archive_copy = reviews_dir / f"human_review_action_request_{stamp}.md"
+    archive_copy.write_text(text, encoding="utf-8")
+    return request_path
+
+
 def write_human_review(root: Path, decisions: list[dict], structural_change: dict | None = None) -> dict:
     gate_path = root / ".ai" / "supervisor" / "HUMAN_REVIEW_REQUIRED.md"
     if not gate_path.exists():
@@ -1356,77 +1430,16 @@ def write_human_review(root: Path, decisions: list[dict], structural_change: dic
             "commit_output": commit_output,
         }
 
-    active = active_jobs(root)
-    if active:
-        return {
-            "ok": False,
-            "message": "Changes requested, but active jobs remain; no revision job created.",
-            "active_jobs": active,
-            "review_record": str(review_record.relative_to(root)),
-            "archived_gate": str(archived_gate.relative_to(root)),
-        }
-
-    task_path = reviews_dir / f"revision_task_{stamp}.md"
-    task_lines = [
-        "# Human Review Revision Job",
-        "",
-        "## Objective",
-        "",
-        "Address the human milestone review concerns listed below.",
-        "",
-        "## Scope",
-        "",
-        "Allowed:",
-        "- Make only the changes required to resolve the failed human review items.",
-        "- Update documentation, tests, or workflow records needed to make the milestone reviewable.",
-        "",
-        "Not allowed:",
-        "- Do not start the next milestone.",
-        "- Do not broaden scientific scope beyond the reviewed milestone.",
-        "",
-        "## Failed Human Review Items",
-        "",
-    ]
-    for index, item in enumerate(failed, 1):
-        task_lines.append(f"### {index}. {item.get('item', 'Unnamed item')}")
-        task_lines.append("")
-        task_lines.append(str(item.get("comment", "")).strip() or "No comment provided.")
-        task_lines.append("")
-    task_lines.extend(
-        [
-            "## Required Validation",
-            "",
-            "Run the validation command from the affected milestone or explain why it cannot run.",
-        ]
+    request_path = create_human_review_action_request(
+        root, reviews_dir, stamp, archived_gate, review_record, failed
     )
-    task_path.write_text("\n".join(task_lines).rstrip() + "\n", encoding="utf-8")
-    _, base_ref, _ = run(["git", "rev-parse", "HEAD"], root)
-    result = subprocess.run(
-        [
-            "python3",
-            "scripts/create_job.py",
-            "--title",
-            "Address human milestone review concerns",
-            "--base-ref",
-            base_ref or "HEAD",
-            "--test-command",
-            "python3 scripts/summarize_jobs.py",
-            "--task-file",
-            str(task_path),
-        ],
-        cwd=str(root),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if result.returncode != 0:
-        return {"ok": False, "message": result.stderr or result.stdout or "failed to create revision job"}
-    commit_ok, commit_output = commit_workflow_records(root, "workflow: record human milestone review")
+    with ledger.open("a", encoding="utf-8") as handle:
+        handle.write(f"- Human milestone review requested changes. Supervisor action request: `{request_path.relative_to(root)}`.\n")
+    commit_ok, commit_output = commit_workflow_records(root, "workflow: record human milestone review action request")
     return {
         "ok": True,
-        "message": "Changes requested. Revision job created.",
-        "job_path": result.stdout.strip(),
+        "message": "Changes requested. Supervisor action request created; the supervisor will decide the next worker job or gate.",
+        "request_path": str(request_path.relative_to(root)),
         "review_record": str(review_record.relative_to(root)),
         "archived_gate": str(archived_gate.relative_to(root)),
         "commit_ok": commit_ok,

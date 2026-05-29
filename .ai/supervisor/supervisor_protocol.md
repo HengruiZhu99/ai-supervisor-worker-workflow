@@ -56,7 +56,7 @@ The human should process the milestone gate by running:
 python3 scripts/human_milestone_review.py
 ```
 
-The script asks for `yes` or `no` on every checklist item, collects comments for each failed item, records the review under `.ai/supervisor/human_reviews/`, archives the gate, and creates one revision job if any item fails.
+The script asks for `yes` or `no` on every checklist item, collects comments for each failed item, records the review under `.ai/supervisor/human_reviews/`, archives the gate, and creates `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` if any ordinary checklist item fails. The Codex supervisor must read that request and decide whether to create a small worker revision job, split work into a sequence, update supervisor-owned plans, or open a clarification gate.
 
 ## Waiting protocol
 
@@ -73,7 +73,7 @@ The worker loop handles waiting and execution.
 
 In automated milestone mode, the supervisor automation script may sleep while waiting for worker state changes. It should invoke Codex only when a job is `ready_for_review`, when no active job exists and no human gate is present, or when recovering from an interrupted supervisor run.
 
-The worker loop must pause globally while `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` or `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` exists. Do not process queued or rejected jobs until the human gate or structural request is resolved.
+The worker loop must pause globally while `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md`, or `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` exists. Do not process queued or rejected jobs until the human gate, structural request, or human-review action request is resolved.
 
 Terminal job states:
 - `accepted`: reviewed and integrated or otherwise accepted by the supervisor.
@@ -207,6 +207,20 @@ When `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` exists, the supervisor shou
 If an older worker-created structural revision job exists, treat its report as advisory input only. Do not integrate worker-owned edits to roadmap, project brief, ledger, or future milestone sequencing merely because that job completed. The supervisor should make the final planning edits itself and may reject the worker job as superseded by the supervisor-owned structural protocol.
 
 After creating the structural revision human gate, do not dispatch the next implementation job. Stop at the new human gate until the revised plan is approved. If the supervisor loop was launched with `SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE=1`, push the supervisor-owned structural revision and review gate to the configured remote; if push fails, record the failure in the ledger and keep the gate in place.
+
+## Human review action protocol
+
+At a human milestone gate, ordinary failed checklist items must pass through the Codex supervisor before Cursor receives work. Archive the gate, record the review, and create `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md`.
+
+When `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` exists, the supervisor should:
+- read the archived gate, human review record, and action request;
+- classify each failed item as implementation, test/validation, documentation, supervisor-owned planning/scope, or human clarification;
+- create exactly one small worker job only when the next action is clear and implementation/test/doc scoped;
+- split broad concerns into a sequence and dispatch only the first small closed-form job;
+- update supervisor-owned planning records itself if the concern changes roadmap, scope, milestones, or scientific acceptance criteria;
+- open a new human gate when the concern needs clarification or revised plan approval;
+- archive or remove `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` only after a worker job or human gate exists;
+- commit workflow records and stop with `WAITING_FOR_WORKER` if a job is queued.
 
 ## Rejection protocol
 

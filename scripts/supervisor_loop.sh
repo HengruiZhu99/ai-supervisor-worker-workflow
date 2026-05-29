@@ -15,6 +15,7 @@ SUPERVISOR_MAX_FAILURE_RELAUNCHES="${SUPERVISOR_MAX_FAILURE_RELAUNCHES:-1}"
 SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE="${SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE:-0}"
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 STRUCTURAL_REQUEST=".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"
+HUMAN_REVIEW_ACTION_REQUEST=".ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md"
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -51,6 +52,11 @@ job_signature() {
     else
       echo "structural_request:absent"
     fi
+    if [[ -f "$HUMAN_REVIEW_ACTION_REQUEST" ]]; then
+      echo "human_review_action_request:present:$(stat -c '%Y' "$HUMAN_REVIEW_ACTION_REQUEST" 2>/dev/null || true)"
+    else
+      echo "human_review_action_request:absent"
+    fi
     find .ai/jobs -path '.ai/jobs/J*/status.json' -type f -printf '%p:%T@\n' 2>/dev/null | sort || true
   } | python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
 }
@@ -61,6 +67,8 @@ import json
 from pathlib import Path
 
 if Path(".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md").exists():
+    raise SystemExit(0)
+if Path(".ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md").exists():
     raise SystemExit(0)
 
 jobs_dir = Path(".ai/jobs")
@@ -174,6 +182,7 @@ Rules:
 - Keep human input at milestone boundaries, not individual jobs or commits.
 - Supervisor planning files are supervisor-owned. Do not create a Cursor worker job whose objective is to edit `.ai/supervisor/roadmap.md`, `.ai/supervisor/project_brief.md`, `.ai/supervisor/ledger.md`, build/dependency policy, or milestone sequencing.
 - If `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` exists, handle it yourself as supervisor: read it plus the referenced human review/gate records, update roadmap/project brief/ledger/policy/job sequencing as needed, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` summarizing the revised plan and to-do list, archive or remove `STRUCTURAL_CHANGE_REQUESTED.md`, commit workflow records, and stop without dispatching a worker job.
+- If `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` exists, handle it yourself as supervisor before any worker sees the concern: read it plus the referenced human review/gate records, classify each failed review item as implementation revision, test/validation revision, documentation revision, planning/scope revision, or human clarification. Then either create exactly one small worker job with a closed-form task, update supervisor-owned planning records and open a new human gate, or open a human clarification gate. Archive or remove `HUMAN_REVIEW_ACTION_REQUESTED.md` only after the next worker job or human gate exists, commit workflow records, and stop. Do not pass the raw failed checklist directly to Cursor.
 - If an older worker-created major structural revision job is `ready_for_review`, treat the worker report as advisory only. Do not integrate worker-owned roadmap/project-brief/ledger edits. Prefer rejecting it as superseded by supervisor-owned structural planning, then perform the structural planning update yourself if the request remains unresolved.
 - After creating the structural revision human gate, do not dispatch the next implementation job. Stop at the new human review gate so the human can approve the revised plan.
 - If the runtime option `SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE` shown above is `1`, and after creating the structural revision review gate the main branch has a configured remote, commit workflow records as needed and push the updated main branch. If push fails, record the failure in the ledger and leave the human gate in place.

@@ -162,7 +162,7 @@ Review that milestone summary with the interactive checklist command:
 python3 scripts/human_milestone_review.py
 ```
 
-Answer `yes` or `no` for every review item. If an item fails, enter comments when prompted. The script will still cycle through the rest of the list, archive the gate, record the review, and create one revision worker job for all failed items.
+Answer `yes` or `no` for every review item. If an item fails, enter comments when prompted. The script will still cycle through the rest of the list, archive the gate, record the review, and create `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md`. The supervisor then reads the request and decides whether to create a small worker revision job, split the concerns, update planning records, or ask for clarification.
 
 For major architecture, dependency, or roadmap changes, use the dashboard's Major Structural Change box or answer yes to the CLI structural-change prompt. That path supersedes the checklist outcome and creates `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` for the Codex supervisor.
 
@@ -170,7 +170,7 @@ The supervisor owns structural planning. It updates the roadmap and related arch
 
 If every item passes, the script archives the gate, records approval, and prunes accepted job worktrees and local `ai/JNNNN` branches listed in the approved milestone review. `.ai/jobs/` and `.ai/commit_docs/` records are preserved. Active, rejected, blocked, and ready-for-review jobs are not pruned.
 
-While `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` or `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` exists, the worker loop pauses globally and will not process queued or rejected jobs.
+While `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md`, or `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` exists, the worker loop pauses globally and will not process queued or rejected jobs.
 
 The same approval and pruning behavior is available through the dashboard human review panel.
 

@@ -61,7 +61,11 @@ def supervisor_markdown_paths(root: Path, include_design_prompt: bool) -> list[s
         if path.name == "design_prompt.md" and not include_design_prompt:
             continue
         paths.append(str(path.relative_to(root)))
-    for path in [".ai/supervisor/HUMAN_REVIEW_REQUIRED.md", ".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"]:
+    for path in [
+        ".ai/supervisor/HUMAN_REVIEW_REQUIRED.md",
+        ".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md",
+        ".ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md",
+    ]:
         if path not in paths:
             paths.append(path)
     return paths
