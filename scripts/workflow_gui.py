@@ -363,7 +363,10 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
     runs_dir = root / ".ai" / "supervisor_runs"
     run_logs = sorted(runs_dir.glob("supervisor.*.log"))
     latest_log = run_logs[-1] if run_logs else None
-    review_records = sorted((supervisor / "human_reviews").glob("human_review_*.md"))
+    review_records = sorted(
+        path for path in (supervisor / "human_reviews").glob("human_review_*.md")
+        if re.fullmatch(r"human_review_\d{8}T\d{6}Z\.md", path.name)
+    )
     latest_review = review_records[-1] if review_records else None
     latest_review_text = read_text(latest_review) if latest_review else ""
     latest_review_result = ""
@@ -475,7 +478,10 @@ def worker_display_log(root: Path, job_rows: list[dict], fallback: dict) -> dict
 def supervisor_preparing_human_review(supervisor: dict, job_rows: list[dict]) -> bool:
     if supervisor.get("human_gate_exists"):
         return False
-    if supervisor.get("latest_human_review_result") == "approved":
+    latest_result = str(supervisor.get("latest_human_review_result", ""))
+    if latest_result == "approved":
+        return False
+    if latest_result in {"changes_requested", "structural_change_requested"}:
         return False
     if any(job.get("state") in ACTIVE_JOB_STATES for job in job_rows):
         return False
