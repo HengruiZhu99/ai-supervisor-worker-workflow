@@ -121,6 +121,8 @@ Reviewer A is tuned for scientific/numerical review. Reviewer B is tuned for bui
 
 Reviewer reports include a machine-checkable `diff_coverage` YAML block. The worker loop writes `changed_files.attempt-N.txt` from `base_sha..HEAD` and runs `scripts/check_reviewer_coverage.py`; reviewer failure leaves the job in `review_failed` or `review_timeout` for supervisor action.
 
+The worker loop normalizes common accidental Codex-style Cursor model ids, for example `gpt-5.5` to `gpt-5.5-high`, before invoking `cursor-agent`. If Cursor returns nonzero after emitting `[system success]`, tests pass, and the post-test worktree is clean, the attempt proceeds to reviewer review while recording the nonzero exit in `status.json`.
+
 Worker reports should include a `Skill Suggestions` section. Reviewers assess those suggestions, and the supervisor checks them against existing skills with:
 
 ```bash

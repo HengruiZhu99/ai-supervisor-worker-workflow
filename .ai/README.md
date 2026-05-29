@@ -89,6 +89,8 @@ CURSOR_MODEL=gpt-5.5-high CURSOR_AGENT_EXTRA_ARGS="--force" ./scripts/worker_loo
 
 Nonzero Cursor worker exits are requeued once by default when the failure is not a timeout and tests did not create dirty files. Adjust with `WORKER_AUTO_RELAUNCH_FAILURE` and `WORKER_MAX_FAILURE_RESUMES`. Reviewer exits are retried with `CURSOR_REVIEWER_MAX_RELAUNCHES`.
 
+The worker loop normalizes common accidental Codex-style Cursor model ids, such as `gpt-5.5` to `gpt-5.5-high`. If Cursor exits nonzero after emitting `[system success]`, tests pass, and the post-test worktree is clean, the attempt is still sent to reviewers while the nonzero Cursor exit remains documented.
+
 ### Step 4
 
 Run the autonomous Codex supervisor loop in another terminal or tmux pane:

@@ -28,6 +28,24 @@ HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 STRUCTURAL_REQUEST=".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"
 HUMAN_REVIEW_ACTION_REQUEST=".ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md"
 
+normalize_cursor_model() {
+  case "$1" in
+    gpt-5.5)
+      echo "gpt-5.5-high"
+      ;;
+    gpt-5.3-codex)
+      echo "gpt-5.3-codex-high"
+      ;;
+    *)
+      echo "$1"
+      ;;
+  esac
+}
+
+CURSOR_MODEL="$(normalize_cursor_model "$CURSOR_MODEL")"
+CURSOR_REVIEWER_A_MODEL="$(normalize_cursor_model "$CURSOR_REVIEWER_A_MODEL")"
+CURSOR_REVIEWER_B_MODEL="$(normalize_cursor_model "$CURSOR_REVIEWER_B_MODEL")"
+
 cleanup_current_lock() {
   if [[ -n "${CURRENT_LOCK:-}" ]]; then
     rmdir "$CURRENT_LOCK" 2>/dev/null || true
@@ -62,6 +80,9 @@ done
 
 workflow_commit="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo "workflow_commit=$workflow_commit"
+echo "cursor_model=$CURSOR_MODEL"
+echo "cursor_reviewer_a_model=$CURSOR_REVIEWER_A_MODEL"
+echo "cursor_reviewer_b_model=$CURSOR_REVIEWER_B_MODEL"
 
 run_cursor_agent() {
   local worktree="$1"
@@ -507,8 +528,16 @@ process_job() {
     tests_passed=true
   fi
 
+  local cursor_reported_success=false
+  if grep -q '\[system success\]' "$cursor_out" 2>/dev/null; then
+    cursor_reported_success=true
+  fi
+
   local next_state=ready_for_review
-  if [[ "$worker_exit" -ne 0 ]]; then
+  if [[ "$worker_exit" -ne 0 && "$cursor_reported_success" == true && "$tests_passed" == true && "$post_test_dirty" != true ]]; then
+    worker_error="${worker_error:+$worker_error; }cursor-agent returned nonzero after reporting system success; continuing to reviewer stage"
+    echo "$worker_error" | tee -a "$cursor_err" >&2
+  elif [[ "$worker_exit" -ne 0 ]]; then
     next_state=blocked
   fi
   if [[ "$post_test_dirty" == true ]]; then
@@ -540,6 +569,7 @@ process_job() {
     base_sha="$base_sha" \
     workflow_commit="$workflow_commit" \
     worker_exit="$worker_exit" \
+    cursor_reported_success="$cursor_reported_success" \
     timed_out="$timed_out" \
     worker_error="$worker_error" \
     auto_resume_timeout="$WORKER_AUTO_RESUME_TIMEOUT" \
