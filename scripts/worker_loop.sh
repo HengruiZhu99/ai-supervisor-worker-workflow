@@ -144,6 +144,14 @@ json_field() {
   jq -r --arg field "$field" '.[$field] // ""' "$status_file"
 }
 
+utc_now() {
+  date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+collect_cursor_metrics() {
+  python3 scripts/collect_agent_metrics.py cursor "$@" >/dev/null || true
+}
+
 lock_pid_alive() {
   local lock_dir="$1"
   local pid
@@ -421,11 +429,14 @@ run_one_reviewer() {
   local review_out="$reviews_dir/$role.attempt-$attempt.md"
   local review_err="$reviews_dir/$role.stderr.attempt-$attempt.log"
   local review_stream="$reviews_dir/$role.stream.attempt-$attempt.jsonl"
+  local review_metrics="$reviews_dir/$role.metrics.attempt-$attempt.json"
   local reviewer_exit=0
+  local reviewer_started_at reviewer_finished_at
 
   write_reviewer_prompt "$role" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" "$prompt_file"
 
   set +e
+  reviewer_started_at="$(utc_now)"
   if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" ]]; then
     run_cursor_reviewer "$ROOT/$worktree" "$ROOT/$prompt_file" "$model" \
       2> >(tee "$review_err" >&2) \
@@ -436,7 +447,22 @@ run_one_reviewer() {
     run_cursor_reviewer "$ROOT/$worktree" "$ROOT/$prompt_file" "$model" 2> >(tee "$review_err" >&2) | tee "$review_out"
   fi
   reviewer_exit=${PIPESTATUS[0]}
+  reviewer_finished_at="$(utc_now)"
   set -e
+
+  collect_cursor_metrics \
+    --role reviewer \
+    --reviewer-role "$role" \
+    --job-id "$id" \
+    --attempt "$attempt" \
+    --model "$model" \
+    --stream "$review_stream" \
+    --stdout "$review_out" \
+    --stderr "$review_err" \
+    --started-at "$reviewer_started_at" \
+    --finished-at "$reviewer_finished_at" \
+    --exit-code "$reviewer_exit" \
+    --output "$review_metrics"
 
   if [[ "$reviewer_exit" -eq 124 ]]; then
     echo "Reviewer $role timed out after ${CURSOR_REVIEW_TIMEOUT}s" | tee -a "$review_err" >&2
@@ -529,7 +555,9 @@ run_reviewers() {
     reviewer_coverage_exit="$coverage_exit" \
     reviewers_complete="$([[ "$reviewer_a_exit" -eq 0 && "$reviewer_b_exit" -eq 0 && "$coverage_exit" -eq 0 ]] && echo true || echo false)" \
     reviewer_a_report="$job/reviews/reviewer-a.attempt-$attempt.md" \
-    reviewer_b_report="$job/reviews/reviewer-b.attempt-$attempt.md"
+    reviewer_b_report="$job/reviews/reviewer-b.attempt-$attempt.md" \
+    reviewer_a_metrics="$job/reviews/reviewer-a.metrics.attempt-$attempt.json" \
+    reviewer_b_metrics="$job/reviews/reviewer-b.metrics.attempt-$attempt.json"
 
   if [[ "$reviewer_a_exit" -eq 124 || "$reviewer_b_exit" -eq 124 ]]; then
     return 124
@@ -636,10 +664,13 @@ process_job() {
   local cursor_out="$job/cursor_final.attempt-$attempt.md"
   local cursor_err="$job/cursor_stderr.attempt-$attempt.log"
   local cursor_stream="$job/cursor_stream.attempt-$attempt.jsonl"
+  local worker_metrics="$job/metrics.worker.attempt-$attempt.json"
   local worker_exit=0
   local timed_out=false
   local worker_error=""
+  local worker_started_at worker_finished_at
   set +e
+  worker_started_at="$(utc_now)"
   if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" ]]; then
     run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" \
       2> >(tee "$cursor_err" >&2) \
@@ -650,6 +681,7 @@ process_job() {
     run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" 2> >(tee "$cursor_err" >&2) | tee "$cursor_out"
   fi
   worker_exit=${PIPESTATUS[0]}
+  worker_finished_at="$(utc_now)"
   set -e
   if [[ "$worker_exit" -eq 124 ]]; then
     timed_out=true
@@ -662,6 +694,24 @@ process_job() {
   elif [[ "$worker_exit" -ne 0 ]]; then
     worker_error="cursor-agent exited with code $worker_exit"
   fi
+
+  local metrics_timeout_arg=()
+  if [[ "$timed_out" == true ]]; then
+    metrics_timeout_arg=(--timed-out)
+  fi
+  collect_cursor_metrics \
+    --role worker \
+    --job-id "$id" \
+    --attempt "$attempt" \
+    --model "$CURSOR_MODEL" \
+    --stream "$cursor_stream" \
+    --stdout "$cursor_out" \
+    --stderr "$cursor_err" \
+    --started-at "$worker_started_at" \
+    --finished-at "$worker_finished_at" \
+    --exit-code "$worker_exit" \
+    "${metrics_timeout_arg[@]}" \
+    --output "$worker_metrics"
 
   local pre_commit_head post_cursor_head
   pre_commit_head="$(git -C "$worktree" rev-parse HEAD)"
@@ -824,6 +874,7 @@ process_job() {
     attempt_consistency_exit="$consistency_exit" \
     attempt_consistency_log="$job/attempt_consistency.attempt-$attempt.md" \
     changed_files="$job/changed_files.attempt-$attempt.txt" \
+    worker_metrics="$worker_metrics" \
     commit="$final_commit" \
     report="$job/report.md"
 

@@ -211,6 +211,12 @@ Reviewer outputs are stored in `.ai/jobs/JNNNN/reviews/`. A job in `reviewing` i
 
 If a reviewer times out or exits nonzero, the worker loop may retry the reviewer according to its configured relaunch limit. If failures remain, the job state becomes `review_timeout` or `review_failed`. The supervisor should inspect reviewer logs and decide whether to rerun reviewers, reject with worker feedback, mark the job terminal, or open a human gate.
 
+## Agent metrics protocol
+
+Each AI agent invocation should produce a compact metrics record for workflow evaluation and paper reproducibility. Worker and reviewer Cursor records live next to the job artifacts, while supervisor records live under `.ai/metrics/supervisor/`. All records are appended to `.ai/metrics/runs.jsonl`.
+
+Metrics should include role, model, job id or supervisor run id, attempt when applicable, start and finish timestamps, wall time, API duration when available, exit code, token counts when available, and paths to raw logs/streams. Treat the metrics as audit records; do not use them to decide scientific correctness.
+
 ## Acceptance protocol
 
 If accepted:

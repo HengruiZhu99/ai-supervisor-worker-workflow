@@ -12,6 +12,7 @@ from pathlib import Path
 
 DEFAULT_MESSAGE = "workflow: record ai workflow state"
 SUPERVISOR_PATHS = [
+    ".ai/metrics",
     ".ai/supervisor/human_reviews",
     "docs/build.md",
     "skills",

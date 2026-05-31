@@ -36,6 +36,10 @@ workflow_commit="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null ||
 echo "workflow_commit=$workflow_commit"
 supervisor_failure_relaunches=0
 
+utc_now() {
+  date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
 commit_workflow_records() {
   python3 scripts/commit_workflow_records.py --message "workflow: record supervisor state" || true
 }
@@ -123,9 +127,10 @@ PY
 }
 
 run_codex_supervisor() {
-  local timestamp log_file
+  local timestamp log_file metrics_file supervisor_started_at supervisor_finished_at
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   log_file="$SUPERVISOR_RUNS_DIR/supervisor.$timestamp.log"
+  metrics_file=".ai/metrics/supervisor/supervisor.$timestamp.metrics.json"
 
   local model_args=()
   if [[ -n "$CODEX_MODEL" ]]; then
@@ -138,6 +143,7 @@ run_codex_supervisor() {
   fi
 
   set +e
+  supervisor_started_at="$(utc_now)"
   {
     echo "Runtime option: SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE=$SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE"
     echo "workflow_commit=$workflow_commit"
@@ -198,7 +204,19 @@ Return a concise summary of what you reviewed, accepted/rejected/dispatched, and
 PROMPT
   } | codex --ask-for-approval never --sandbox danger-full-access exec -C "$ROOT" "${model_args[@]}" "${config_args[@]}" $CODEX_EXTRA_ARGS - >"$log_file" 2>&1
   local codex_exit=$?
+  supervisor_finished_at="$(utc_now)"
   set -e
+
+  python3 scripts/collect_agent_metrics.py codex \
+    --role supervisor \
+    --run-id "supervisor.$timestamp" \
+    --model "$CODEX_MODEL" \
+    --reasoning-effort "$CODEX_REASONING_EFFORT" \
+    --log "$log_file" \
+    --started-at "$supervisor_started_at" \
+    --finished-at "$supervisor_finished_at" \
+    --exit-code "$codex_exit" \
+    --output "$metrics_file" >/dev/null || true
 
   cat "$log_file"
   if [[ "$codex_exit" -ne 0 ]]; then

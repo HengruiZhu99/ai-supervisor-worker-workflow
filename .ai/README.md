@@ -75,6 +75,23 @@ Worker locks record the owning process ID. If the worker loop crashes or the mac
 
 After Cursor and validation finish, the worker loop runs `scripts/check_attempt_consistency.py` before reviewer handoff. This compares worker reports and commit docs against canonical workflow facts such as `status.json`, the attempt commit range, and `test.attempt-N.log`. Contradictions like "no commit" when the worker loop created a commit, or "tests did not run" when the canonical test log contains the validation command, block the attempt before reviewer time is spent.
 
+## Agent Metrics
+
+The workflow records per-agent usage metrics under `.ai/metrics/`.
+
+- Worker Cursor runs write `.ai/jobs/JNNNN/metrics.worker.attempt-N.json`.
+- Reviewer Cursor runs write `.ai/jobs/JNNNN/reviews/reviewer-*.metrics.attempt-N.json`.
+- Codex supervisor runs write `.ai/metrics/supervisor/supervisor.TIMESTAMP.metrics.json`.
+- All records are appended to `.ai/metrics/runs.jsonl`.
+
+Cursor stream metrics include model, session/request ids when available, wall time, API duration, exit code, input/output tokens, cache-read tokens, and cache-write tokens. Codex supervisor metrics include model, reasoning effort, wall time, exit code, log path, and any token total parseable from the Codex log.
+
+Summarize recent records with:
+
+```bash
+python3 scripts/summarize_agent_metrics.py
+```
+
 Worker reports should include `Workflow Friction` and `Skill Suggestions` sections. Friction covers unclear instructions, missing context, repeated boilerplate, unavailable helper commands, painful manual steps, or places where a template/checklist/script would have avoided confusion. Reviewers assess those suggestions, and the supervisor checks existing skills before creating anything:
 
 ```bash
@@ -236,6 +253,7 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/check_attempt_consistency.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/check_attempt_consistency.py scripts/collect_agent_metrics.py scripts/summarize_agent_metrics.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
 python3 scripts/summarize_jobs.py
+python3 scripts/summarize_agent_metrics.py
 ```
