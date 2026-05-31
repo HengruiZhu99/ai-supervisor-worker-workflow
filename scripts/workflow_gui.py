@@ -1064,6 +1064,9 @@ def draft_review_text(draft_review: object) -> str:
             lines.append(f"- {label}: {passed}")
             if comment:
                 lines.append(f"  Comment: {comment}")
+    approval_comment = str(draft_review.get("approval_comment", "")).strip()
+    if approval_comment:
+        lines.extend(["", "Optional approval comment:", approval_comment])
     return "\n".join(lines).strip() or "No draft review choices are visible yet."
 
 
@@ -1562,7 +1565,12 @@ def create_human_review_action_request(
     return request_path
 
 
-def write_human_review(root: Path, decisions: list[dict], structural_change: dict | None = None) -> dict:
+def write_human_review(
+    root: Path,
+    decisions: list[dict],
+    structural_change: dict | None = None,
+    approval_comment: str = "",
+) -> dict:
     gate_path = root / ".ai" / "supervisor" / "HUMAN_REVIEW_REQUIRED.md"
     if not gate_path.exists():
         return {"ok": False, "message": "No human review gate exists."}
@@ -1575,6 +1583,7 @@ def write_human_review(root: Path, decisions: list[dict], structural_change: dic
     archived_gate = reviews_dir / f"HUMAN_REVIEW_REQUIRED_{stamp}.md"
     structural_requested = bool((structural_change or {}).get("requested"))
     structural_comment = str((structural_change or {}).get("comment", "")).strip()
+    approval_comment = approval_comment.strip()
     failed = [item for item in decisions if not item.get("passed")]
     result_label = "structural_change_requested" if structural_requested else (
         "changes_requested" if failed else "approved"
@@ -1606,6 +1615,8 @@ def write_human_review(root: Path, decisions: list[dict], structural_change: dic
                 for comment_line in comment.splitlines():
                     lines.append(f"  {comment_line}")
                 lines.append("")
+        if result_label == "approved" and approval_comment:
+            lines.extend(["", "## Approval Comment", "", approval_comment])
     lines.extend(["", "## Original Milestone Gate", "", gate_text])
     review_record.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     shutil.move(str(gate_path), archived_gate)
@@ -1635,6 +1646,10 @@ def write_human_review(root: Path, decisions: list[dict], structural_change: dic
     if not failed:
         prune_ok, prune_output = prune_accepted_job_refs(root, review_record)
         with ledger.open("a", encoding="utf-8") as handle:
+            if approval_comment:
+                handle.write("- Approval comment:\n")
+                for line in approval_comment.splitlines():
+                    handle.write(f"  {line}\n")
             handle.write("- Accepted job branch/worktree pruning:\n")
             for line in prune_output.splitlines():
                 handle.write(f"  - {line}\n")
@@ -1719,6 +1734,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.project_root,
                 list(payload.get("decisions", [])),
                 payload.get("structural_change") if isinstance(payload.get("structural_change"), dict) else None,
+                str(payload.get("approval_comment", "")),
             )
             if result.get("ok"):
                 result["auto_start"] = auto_start_loops_after_human_review(self.project_root)

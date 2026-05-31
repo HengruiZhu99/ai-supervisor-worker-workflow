@@ -49,3 +49,5 @@ python3 scripts/human_milestone_review.py
 ```
 
 Answer `yes` or `no` for every checklist item. If any item is `no`, enter comments when prompted. The script will still ask about the remaining items, then create a supervisor action request. The supervisor will decide whether to create one small worker revision job, split the concerns, update plans, or ask for clarification.
+
+If every checklist item is approved, you may add an optional approval comment for the durable review record.

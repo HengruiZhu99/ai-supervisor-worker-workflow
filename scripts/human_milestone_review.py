@@ -66,8 +66,8 @@ def ask_yes_no(prompt: str) -> bool:
         print("Please answer yes or no.")
 
 
-def ask_comment() -> str:
-    print("Enter comment for the revision job. Finish with a blank line.")
+def ask_multiline(prompt: str) -> str:
+    print(prompt)
     lines = []
     while True:
         line = input("> ")
@@ -75,6 +75,10 @@ def ask_comment() -> str:
             break
         lines.append(line)
     return "\n".join(lines).strip()
+
+
+def ask_comment() -> str:
+    return ask_multiline("Enter comment for the revision job. Finish with a blank line.")
 
 
 def active_jobs() -> list[str]:
@@ -98,6 +102,7 @@ def write_review_record(
     gate_text: str,
     decisions: list[dict[str, str | bool]],
     result_label: str | None = None,
+    approval_comment: str = "",
 ) -> Path:
     reviews_dir.mkdir(parents=True, exist_ok=True)
     out_path = reviews_dir / f"human_review_{stamp}.md"
@@ -122,6 +127,8 @@ def write_review_record(
             for comment_line in str(item["comment"]).splitlines() or ["No comment provided."]:
                 lines.append(f"  {comment_line}")
             lines.append("")
+    if result == "approved" and approval_comment.strip():
+        lines.extend(["", "## Approval Comment", "", approval_comment.strip()])
     lines.extend(["", "## Original Milestone Gate", "", gate_text])
     out_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return out_path
@@ -510,6 +517,13 @@ def main() -> int:
             comment = "" if passed else ask_comment()
             decisions.append({"item": item, "passed": passed, "comment": comment})
 
+    failed = [item for item in decisions if not item["passed"]]
+    approval_comment = ""
+    if not structural_requested and not failed:
+        approval_comment = ask_multiline(
+            "Optional approval comment for the milestone record. Finish with a blank line, or press Enter to skip."
+        )
+
     stamp = utc_stamp()
     reviews_dir = Path(".ai/supervisor/human_reviews")
     review_record = write_review_record(
@@ -519,6 +533,7 @@ def main() -> int:
         gate_text,
         decisions,
         "structural_change_requested" if structural_requested else None,
+        approval_comment,
     )
     archived_gate = reviews_dir / f"HUMAN_REVIEW_REQUIRED_{stamp}.md"
     shutil.move(str(gate_path), archived_gate)
@@ -540,14 +555,17 @@ def main() -> int:
         print(auto_start_loops())
         return 0
 
-    failed = [item for item in decisions if not item["passed"]]
     if not failed:
         prune_output = prune_accepted_job_refs(review_record)
-        append_ledger(
-            f"- Human milestone review approved all items. Record: `{review_record}`.\n"
-            "- Accepted job branch/worktree pruning:\n"
-            + "\n".join(f"  - {line}" for line in prune_output.splitlines())
+        ledger_message = f"- Human milestone review approved all items. Record: `{review_record}`.\n"
+        if approval_comment.strip():
+            ledger_message += "- Approval comment:\n" + "\n".join(
+                f"  {line}" for line in approval_comment.strip().splitlines()
+            ) + "\n"
+        ledger_message += "- Accepted job branch/worktree pruning:\n" + "\n".join(
+            f"  - {line}" for line in prune_output.splitlines()
         )
+        append_ledger(ledger_message)
         print(f"\nApproved. Review record: {review_record}")
         print(f"Archived gate: {archived_gate}")
         print("\nAccepted job branch/worktree pruning:")

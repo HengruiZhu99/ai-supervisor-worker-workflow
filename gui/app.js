@@ -85,6 +85,7 @@ function collectHumanReviewDraft() {
   const items = [...form.querySelectorAll(".review-item")];
   const structuralRequested = $("structuralChangeRequested")?.checked || false;
   const structuralComment = $("structuralChangeComment")?.value || "";
+  const approvalComment = $("approvalComment")?.value || "";
   const decisions = items.filter((item) => item.dataset.index !== undefined).map((item) => {
     const index = item.dataset.index;
     const checked = item.querySelector(`input[name="review-${index}"]:checked`);
@@ -98,6 +99,7 @@ function collectHumanReviewDraft() {
       requested: structuralRequested,
       comment: structuralComment,
     },
+    approval_comment: approvalComment,
   };
 }
 
@@ -323,6 +325,10 @@ function renderHumanReview(supervisor) {
       </label>
       <textarea id="structuralChangeComment" name="structural-change-comment" placeholder="Architecture, dependency, roadmap, or milestone change request"></textarea>
     </div>
+    <div class="review-item approval-comment">
+      <div class="review-question">Optional Approval Comment</div>
+      <textarea id="approvalComment" name="approval-comment" placeholder="Recorded only when all checklist items are approved"></textarea>
+    </div>
   ` + items.map((item, index) => `
     <div class="review-item" data-index="${index}">
       <div class="review-question">${escapeHtml(item)}</div>
@@ -449,6 +455,7 @@ $("humanReviewForm").addEventListener("submit", async (event) => {
   const items = [...event.currentTarget.querySelectorAll(".review-item")];
   const structuralRequested = $("structuralChangeRequested")?.checked || false;
   const structuralComment = $("structuralChangeComment")?.value || "";
+  const approvalComment = $("approvalComment")?.value || "";
   if (structuralRequested && !structuralComment.trim()) {
     alert("Enter the major structural change request before submitting.");
     return;
@@ -467,6 +474,7 @@ $("humanReviewForm").addEventListener("submit", async (event) => {
         requested: structuralRequested,
         comment: structuralComment,
       },
+      approval_comment: approvalComment,
     });
     alert(result.message || "Human review submitted.");
     await refresh({ refreshStaticPanels: true });
