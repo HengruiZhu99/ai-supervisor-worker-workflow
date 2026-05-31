@@ -383,6 +383,33 @@ def commit_workflow_records(message: str) -> str:
     return output or "No workflow record changes to commit."
 
 
+def current_branch() -> str:
+    result = run(["git", "branch", "--show-current"])
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def push_after_human_review() -> str:
+    if os.environ.get("AI_WORKFLOW_PUSH_AFTER_HUMAN_REVIEW", "1") == "0":
+        return "Push skipped: AI_WORKFLOW_PUSH_AFTER_HUMAN_REVIEW=0"
+
+    remote = os.environ.get("AI_WORKFLOW_PUSH_REMOTE", "origin")
+    branch = os.environ.get("AI_WORKFLOW_PUSH_BRANCH", "") or current_branch()
+    if not branch:
+        return "Push skipped: current Git checkout is detached or branch is unknown."
+
+    remote_result = run(["git", "remote", "get-url", remote])
+    if remote_result.returncode != 0:
+        return f"Push skipped: remote '{remote}' is not configured."
+
+    result = run(["git", "push", "-u", remote, branch])
+    output = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+    if result.returncode != 0:
+        return output or f"Push failed for {remote}/{branch} with no output."
+    return output or f"Pushed {branch} to {remote}."
+
+
 def pid_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -551,6 +578,8 @@ def main() -> int:
         print(f"Supervisor structural request: {request_path}")
         print("\nWorkflow record commit:")
         print(commit_workflow_records("workflow: record major structural change request"))
+        print("\nPush after human review:")
+        print(push_after_human_review())
         print("\nAuto-start loops:")
         print(auto_start_loops())
         return 0
@@ -572,6 +601,8 @@ def main() -> int:
         print(prune_output)
         print("\nWorkflow record commit:")
         print(commit_workflow_records("workflow: record human milestone approval"))
+        print("\nPush after human review:")
+        print(push_after_human_review())
         print("\nAuto-start loops:")
         print(auto_start_loops())
         return 0
@@ -589,6 +620,8 @@ def main() -> int:
     print(f"Supervisor action request: {request_path}")
     print("\nWorkflow record commit:")
     print(commit_workflow_records("workflow: record human milestone review action request"))
+    print("\nPush after human review:")
+    print(push_after_human_review())
     print("\nAuto-start loops:")
     print(auto_start_loops())
     return 0

@@ -95,7 +95,7 @@ The dashboard includes:
 - a read-only "Ask Supervisor" chat inside the human milestone review panel for questions before submitting the checklist
 
 Loops launched from the dashboard are wrapped with a small crash relaunch guard. The default is three process-level restarts; adjust with `AI_WORKFLOW_LOOP_MAX_RESTARTS` and `AI_WORKFLOW_LOOP_RESTART_DELAY`.
-After a successful human-review submission through the dashboard or `scripts/human_milestone_review.py`, the workflow automatically starts the supervisor and worker loops if either is offline.
+After a successful human-review submission through the dashboard or `scripts/human_milestone_review.py`, the workflow automatically starts the supervisor and worker loops if either is offline. It also pushes the current branch to `origin` by default after recording the human review. Disable that push with `AI_WORKFLOW_PUSH_AFTER_HUMAN_REVIEW=0`, or choose a different target with `AI_WORKFLOW_PUSH_REMOTE` and `AI_WORKFLOW_PUSH_BRANCH`.
 
 Workflow Chat defaults to read-only guidance. To let the chat agent edit workflow files, enable "Allow this chat agent to edit workflow files" before sending the request. Edit mode is intended for workflow maintenance, not scientific implementation jobs; it should not run Cursor, start loops, or modify active job artifacts unless explicitly requested.
 
