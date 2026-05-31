@@ -133,6 +133,11 @@ python3 scripts/list_skills.py
 
 Project-specific skills belong in the project `skills/` directory. Generally reusable scientific-coding workflow skills belong in this workflow package's `skills/` directory.
 
+The supervisor may also create or update skills from repeated failure artifacts
+even when the worker does not suggest them. For example, repeated
+`attempt_consistency.attempt-N.md` failures should trigger the reusable
+`attempt-artifact-consistency` skill and, when needed, a script or template fix.
+
 The log panes show the last 10000 lines by default. To change that display limit:
 
 ```bash

@@ -98,6 +98,12 @@ Worker reports should include `Workflow Friction` and `Skill Suggestions` sectio
 python3 scripts/list_skills.py
 ```
 
+The supervisor can also originate workflow-improvement proposals from failure
+artifacts that are easier to see from outside the worker session, such as
+attempt-consistency failures, stale commit docs, reviewer coverage failures, or
+timeout patterns. Use `attempt-artifact-consistency` when reports, commit docs,
+job status, git history, changed-file lists, and test logs must be reconciled.
+
 Nontrivial workflow-improvement proposals are tracked in:
 
 ```text

@@ -649,6 +649,7 @@ process_job() {
     echo "- Include a Workflow Friction section. Say 'None' if the job instructions and workflow were clear. Otherwise list missing context, unclear requirements, duplicated/repeated work, painful manual steps, commands that were unavailable, or places where a template/checklist/script would have prevented confusion."
     echo "- Include a Skill Suggestions section. Say 'None' if no new skill is justified."
     echo "- Before proposing a skill, consult existing skills with 'python3 scripts/list_skills.py' when available."
+    echo "- Before finalizing, make sure your report and any commit documentation match this attempt's actual commits, tests, and final state. Use the attempt-artifact-consistency skill if available, especially after retry feedback about stale or contradictory attempt artifacts."
     echo "- For each skill suggestion, state proposed name, scope (project-specific or general scientific-coding workflow), when to use it, duplication risk versus existing skills, and the minimal content it should contain."
     echo "- Do not create or edit skills, supervisor protocols, roadmap files, or workflow scripts yourself unless this specific job explicitly assigns that work. Suggestions should be reported for supervisor review."
     echo

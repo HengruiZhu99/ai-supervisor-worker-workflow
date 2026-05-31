@@ -168,6 +168,14 @@ Each worker report should include:
 
 The worker proposes only. The reviewers assess. The Codex supervisor owns all decisions and implementation of workflow changes.
 
+The supervisor may also identify workflow improvements from repeated failure
+artifacts even when the worker did not suggest them. Examples include repeated
+`attempt_consistency.attempt-N.md` failures, reviewer coverage failures,
+timeout patterns, stale commit documentation, or human interventions outside
+milestone gates. Treat these as supervisor-originated workflow-evolution
+proposals and evaluate them against existing skills, templates, scripts, and
+protocols.
+
 When reviewing a job, reviewers should assess:
 
 - whether the reported friction is real and likely to recur;
@@ -178,9 +186,10 @@ When reviewing a job, reviewers should assess:
 When reviewing a job, the supervisor should:
 
 1. Read worker workflow friction, worker skill suggestions, and reviewer assessments.
-2. Run `python3 scripts/list_skills.py` to list existing project and workflow skills.
-3. Check for duplication by comparing name, trigger conditions, and proposed checklist content against existing `skills/*/SKILL.md` files and supervisor protocols/templates.
-4. Prefer the smallest effective durable improvement:
+2. Inspect audit artifacts such as `status.json`, `attempt_consistency.attempt-N.md`, reviewer coverage reports, timeout/failure logs, and `feedback.md` for repeated workflow failure modes that the worker may not recognize.
+3. Run `python3 scripts/list_skills.py` to list existing project and workflow skills.
+4. Check for duplication by comparing name, trigger conditions, and proposed checklist content against existing `skills/*/SKILL.md` files and supervisor protocols/templates.
+5. Prefer the smallest effective durable improvement:
    - ledger note only
    - project documentation
    - job/review template update
@@ -188,13 +197,13 @@ When reviewing a job, the supervisor should:
    - helper script fix
    - project-specific skill
    - general reusable workflow skill
-5. Reject or defer suggestions that are too narrow, already covered, speculative, or better handled as ordinary docs/tests.
-6. Decide location:
+6. Reject or defer suggestions that are too narrow, already covered, speculative, or better handled as ordinary docs/tests.
+7. Decide location:
    - project-specific skills belong in the project repository under `skills/<skill-name>/SKILL.md`.
    - generally reusable scientific-coding workflow skills belong in the AI workflow repository under `external/ai-supervisor-worker-workflow/skills/<skill-name>/SKILL.md`.
-7. If creating a skill, keep it concise: YAML frontmatter with `name` and `description`, then when to use it, checklist, output format, and common failure modes.
-8. Record nontrivial proposals and decisions in `.ai/supervisor/workflow_improvement_queue.md` and `.ai/supervisor/skill_decisions.md`. Use `python3 scripts/record_workflow_improvement.py` when convenient.
-9. Record the decision in `.ai/supervisor/ledger.md`, including created path or rejection/defer rationale.
+8. If creating a skill, keep it concise: YAML frontmatter with `name` and `description`, then when to use it, checklist, output format, and common failure modes.
+9. Record nontrivial proposals and decisions in `.ai/supervisor/workflow_improvement_queue.md` and `.ai/supervisor/skill_decisions.md`. Use `python3 scripts/record_workflow_improvement.py` when convenient.
+10. Record the decision in `.ai/supervisor/ledger.md`, including created path or rejection/defer rationale.
 
 For general workflow skills, update and commit the workflow submodule repository first, push it when a remote exists, then update the project submodule pointer in the project repository. If pushing is unavailable, leave the general skill as a proposal in the ledger and do not silently create an unpushed dependency.
 
