@@ -93,7 +93,7 @@ Preflight should:
 - verify the isolated worktree is valid and on the expected branch;
 - verify `base_sha` is an ancestor of the worktree `HEAD`;
 - initialize configured Git submodules by default;
-- verify `external/kokkos/CMakeLists.txt` exists when `external/kokkos` is a configured submodule;
+- verify any project-declared required submodule paths listed in `WORKER_REQUIRED_SUBMODULE_PATHS`;
 - block before spending an agent attempt if deterministic environment setup fails.
 
 Do not rely on a worker prompt to initialize required build submodules. Deterministic repository setup belongs to the workflow scripts.

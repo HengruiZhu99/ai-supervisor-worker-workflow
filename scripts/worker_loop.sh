@@ -28,6 +28,7 @@ WORKER_AUTO_RELAUNCH_FAILURE="${WORKER_AUTO_RELAUNCH_FAILURE:-1}"
 WORKER_MAX_FAILURE_RESUMES="${WORKER_MAX_FAILURE_RESUMES:-2}"
 WORKER_INIT_SUBMODULES="${WORKER_INIT_SUBMODULES:-1}"
 WORKER_SUBMODULE_PATHS="${WORKER_SUBMODULE_PATHS:-}"
+WORKER_REQUIRED_SUBMODULE_PATHS="${WORKER_REQUIRED_SUBMODULE_PATHS:-}"
 WORKER_RECOVER_STALE_RUNNING="${WORKER_RECOVER_STALE_RUNNING:-1}"
 WORKER_RECOVER_LEGACY_STALE_LOCKS="${WORKER_RECOVER_LEGACY_STALE_LOCKS:-0}"
 WORKER_RUNS_DIR="${WORKER_RUNS_DIR:-.ai/supervisor_runs}"
@@ -349,14 +350,21 @@ run_worker_preflight() {
       echo "Skipped: WORKER_INIT_SUBMODULES=$WORKER_INIT_SUBMODULES or no .gitmodules file."
     fi
 
-    if git -C "$worktree" config --file .gitmodules --get-regexp '^submodule\\..*\\.path$' 2>/dev/null | awk '{print $2}' | grep -qx 'external/kokkos'; then
+    if [[ -n "$WORKER_REQUIRED_SUBMODULE_PATHS" ]]; then
       echo
-      echo "## Kokkos submodule check"
-      if [[ ! -f "$worktree/external/kokkos/CMakeLists.txt" ]]; then
-        echo "ERROR: external/kokkos is configured as a submodule but external/kokkos/CMakeLists.txt is missing after submodule initialization"
+      echo "## Required submodule checks"
+      local required_path missing_required=0
+      for required_path in $WORKER_REQUIRED_SUBMODULE_PATHS; do
+        if [[ ! -e "$worktree/$required_path" ]]; then
+          echo "ERROR: required submodule path is missing after submodule initialization: $required_path"
+          missing_required=1
+        else
+          echo "$required_path exists."
+        fi
+      done
+      if [[ "$missing_required" -ne 0 ]]; then
         exit 14
       fi
-      echo "external/kokkos is initialized."
     fi
 
     echo

@@ -74,7 +74,7 @@ review_decision:
 The worker loop writes `changed_files.attempt-N.txt` from the immutable `base_sha..HEAD` range and checks reviewer coverage before a job becomes ready for supervisor review.
 It also parses `review_decision`; reviewer-blocked jobs remain in `review_failed` for supervisor action.
 
-Before invoking Cursor, the worker loop runs a deterministic preflight. By default it initializes Git submodules with `git submodule update --init --recursive`, verifies the expected branch and base SHA, records `preflight.attempt-N.log`, and checks that a configured `external/kokkos` submodule has its `CMakeLists.txt`. Set `WORKER_INIT_SUBMODULES=0` to disable submodule initialization, or `WORKER_SUBMODULE_PATHS="external/kokkos"` to restrict the initialized paths.
+Before invoking Cursor, the worker loop runs a deterministic preflight. By default it initializes Git submodules with `git submodule update --init --recursive`, verifies the expected branch and base SHA, and records `preflight.attempt-N.log`. Set `WORKER_INIT_SUBMODULES=0` to disable submodule initialization, `WORKER_SUBMODULE_PATHS="path/a path/b"` to restrict initialized paths, or `WORKER_REQUIRED_SUBMODULE_PATHS="path/a path/b"` to block before agent work if required submodule paths are still missing.
 
 Worker locks record the owning process ID. If the worker loop crashes or the machine restarts after a job is marked `running`, the next loop startup can recover stale owned locks and requeue the job, or mark it `implemented` when enough artifacts exist for reviewer handoff. Legacy lock directories without a PID are not recovered unless `WORKER_RECOVER_LEGACY_STALE_LOCKS=1` is set.
 
