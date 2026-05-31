@@ -82,22 +82,55 @@ function formValues(form) {
 
 function wrappersForRole(role) {
   const wrappers = state.data?.agent_wrappers?.wrappers || [];
-  return wrappers.filter((wrapper) => (wrapper.roles || []).includes(role));
+  return wrappers.filter((wrapper) => {
+    const roles = wrapper.roles || [];
+    return roles.length === 0 || roles.includes(role);
+  });
 }
 
 function defaultModelFor(wrapper, role) {
   return wrapper?.default_models?.[role] || wrapper?.models?.[0] || "";
 }
 
-function populateModelOptions(input, wrapper, role) {
+function roleDefaultWrapper(role) {
+  if (role === "supervisor" || role === "chat") return "codex";
+  return "cursor-agent";
+}
+
+function wrapperOptionLabel(wrapper, role) {
+  const recommended = (wrapper.recommended_roles || []).includes(role) ? " recommended" : "";
+  const unavailable = wrapper.available === false ? " not in PATH" : "";
+  const suffix = [recommended, unavailable].filter(Boolean).join(",");
+  return `${wrapper.label || wrapper.id}${suffix ? ` (${suffix.trim()})` : ""}`;
+}
+
+function modelChoices(wrapper) {
+  const models = wrapper?.models || [];
+  return models.length ? models : [""];
+}
+
+function populateModelOptions(input, wrapper, role, preferredModel = "") {
   if (!input || !wrapper) return;
-  const datalist = input.list;
-  if (datalist) {
-    datalist.innerHTML = (wrapper.models || []).map((model) => `<option value="${escapeHtml(model)}"></option>`).join("");
-  }
-  if (!input.value || !(wrapper.models || []).includes(input.value)) {
-    const value = defaultModelFor(wrapper, role);
-    if (value) input.value = value;
+  const models = modelChoices(wrapper);
+  const priorValue = input.value;
+  input.innerHTML = models.map((model) => `
+    <option value="${escapeHtml(model)}">${escapeHtml(model || "(wrapper default)")}</option>
+  `).join("");
+
+  const desired =
+    preferredModel ||
+    (priorValue && models.includes(priorValue) ? priorValue : "") ||
+    defaultModelFor(wrapper, role) ||
+    models[0] ||
+    "";
+  if (models.includes(desired) || desired === "") {
+    input.value = desired;
+  } else {
+    input.insertAdjacentHTML(
+      "beforeend",
+      `<option value="${escapeHtml(desired)}">${escapeHtml(desired)} (custom)</option>`,
+    );
+    input.value = desired;
   }
 }
 
@@ -107,18 +140,17 @@ function populateAgentControls() {
     const role = select.dataset.role;
     const modelInput = $(select.dataset.modelInput);
     const wrappers = wrappersForRole(role);
-    const preferred = select.value || (role === "supervisor" ? "codex" : "cursor-agent");
+    const preferred = select.value || roleDefaultWrapper(role);
     select.innerHTML = wrappers.map((wrapper) => `
       <option value="${escapeHtml(wrapper.id)}" ${wrapper.id === preferred ? "selected" : ""}>
-        ${escapeHtml(wrapper.label || wrapper.id)}${wrapper.available === false ? " (not in PATH)" : ""}
+        ${escapeHtml(wrapperOptionLabel(wrapper, role))}
       </option>
     `).join("");
     if (!select.value && wrappers.length) select.value = wrappers[0].id;
     const selected = wrappers.find((wrapper) => wrapper.id === select.value) || wrappers[0];
-    populateModelOptions(modelInput, selected, role);
+    populateModelOptions(modelInput, selected, role, modelInput?.dataset.preferredModel || "");
     select.addEventListener("change", () => {
       const next = wrappersForRole(role).find((wrapper) => wrapper.id === select.value);
-      if (modelInput) modelInput.value = "";
       populateModelOptions(modelInput, next, role);
     });
   });

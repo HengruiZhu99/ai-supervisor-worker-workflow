@@ -17,13 +17,16 @@ python3 scripts/agent_wrapper.py list --json
 
 Built-in wrappers:
 
-- `cursor-agent`: worker and reviewer roles.
-- `codex`: supervisor and chat roles.
+- `cursor-agent`: available for worker, reviewer, supervisor, and chat roles;
+  recommended for workers and reviewers.
+- `codex`: available for worker, reviewer, supervisor, and chat roles;
+  recommended for supervisors and chat.
 
 To add another wrapper, such as Claude Code:
 
 1. Create `agent_wrappers/claude-code/wrapper.json`.
-2. Declare supported roles and suggested models.
+2. Declare supported roles, recommended roles, role defaults, and suggested
+   models.
 3. Either add a built-in runner in `scripts/agent_wrapper.py`, or provide a
    `command` array in `wrapper.json`.
 

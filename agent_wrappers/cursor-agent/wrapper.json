@@ -1,12 +1,15 @@
 {
   "id": "cursor-agent",
   "label": "Cursor Agent",
-  "description": "Use cursor-agent for worker or read-only reviewer roles.",
-  "roles": ["worker", "reviewer"],
+  "description": "Use cursor-agent for worker, reviewer, supervisor, or workflow-chat roles.",
+  "roles": ["worker", "reviewer", "supervisor", "chat"],
+  "recommended_roles": ["worker", "reviewer"],
   "executable": "cursor-agent",
   "default_models": {
     "worker": "gpt-5.5-high",
-    "reviewer": "gpt-5.3-codex-high"
+    "reviewer": "gpt-5.3-codex-high",
+    "supervisor": "gpt-5.5-high",
+    "chat": "gpt-5.5-high"
   },
   "models": [
     "gpt-5.5-high",

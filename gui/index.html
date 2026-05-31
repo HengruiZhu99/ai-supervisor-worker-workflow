@@ -95,8 +95,7 @@
               </label>
               <label>
                 Worker model
-                <input id="workerModel" name="model" list="workerModelOptions" value="gpt-5.5-high" />
-                <datalist id="workerModelOptions"></datalist>
+                <select id="workerModel" name="model" data-model-select></select>
               </label>
               <label>
                 Timeout seconds
@@ -124,8 +123,7 @@
               </label>
               <label>
                 Reviewer A model
-                <input id="reviewerAModel" name="reviewer_a_model" list="reviewerAModelOptions" value="claude-opus-4-7-thinking-high" />
-                <datalist id="reviewerAModelOptions"></datalist>
+                <select id="reviewerAModel" name="reviewer_a_model" data-model-select data-preferred-model="claude-opus-4-7-thinking-high"></select>
               </label>
               <label>
                 Reviewer B wrapper
@@ -133,8 +131,7 @@
               </label>
               <label>
                 Reviewer B model
-                <input id="reviewerBModel" name="reviewer_b_model" list="reviewerBModelOptions" value="gpt-5.3-codex-high" />
-                <datalist id="reviewerBModelOptions"></datalist>
+                <select id="reviewerBModel" name="reviewer_b_model" data-model-select data-preferred-model="gpt-5.3-codex-high"></select>
               </label>
               <label>
                 Reviewer timeout seconds
@@ -157,8 +154,7 @@
               </label>
               <label>
                 Supervisor model
-                <input id="supervisorModel" name="model" list="supervisorModelOptions" value="gpt-5.5" />
-                <datalist id="supervisorModelOptions"></datalist>
+                <select id="supervisorModel" name="model" data-model-select></select>
               </label>
               <label>
                 Reasoning effort
