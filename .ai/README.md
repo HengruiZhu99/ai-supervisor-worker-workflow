@@ -65,15 +65,28 @@ diff_coverage:
   files_reviewed:
     - path/from/changed_files
   unreviewed_files: []
+review_decision:
+  recommendation: accept
+  blocks_acceptance: false
+  blocking_reasons: []
 ```
 
 The worker loop writes `changed_files.attempt-N.txt` from the immutable `base_sha..HEAD` range and checks reviewer coverage before a job becomes ready for supervisor review.
+It also parses `review_decision`; reviewer-blocked jobs remain in `review_failed` for supervisor action.
 
 Before invoking Cursor, the worker loop runs a deterministic preflight. By default it initializes Git submodules with `git submodule update --init --recursive`, verifies the expected branch and base SHA, records `preflight.attempt-N.log`, and checks that a configured `external/kokkos` submodule has its `CMakeLists.txt`. Set `WORKER_INIT_SUBMODULES=0` to disable submodule initialization, or `WORKER_SUBMODULE_PATHS="external/kokkos"` to restrict the initialized paths.
 
 Worker locks record the owning process ID. If the worker loop crashes or the machine restarts after a job is marked `running`, the next loop startup can recover stale owned locks and requeue the job, or mark it `implemented` when enough artifacts exist for reviewer handoff. Legacy lock directories without a PID are not recovered unless `WORKER_RECOVER_LEGACY_STALE_LOCKS=1` is set.
 
 After Cursor and validation finish, the worker loop runs `scripts/check_attempt_consistency.py` before reviewer handoff. This compares worker reports and commit docs against canonical workflow facts such as `status.json`, the attempt commit range, and `test.attempt-N.log`. Contradictions like "no commit" when the worker loop created a commit, or "tests did not run" when the canonical test log contains the validation command, block the attempt before reviewer time is spent.
+
+Bound long validation commands with:
+
+```bash
+TEST_TIMEOUT=7200 ./scripts/worker_loop.sh
+```
+
+If tests intentionally generate local artifacts, declare them in `.ai/jobs/JNNNN/allowed_artifacts.txt` using shell-style glob patterns. Any undeclared dirty files after tests block the attempt and are recorded in `post_test_status.attempt-N.txt`.
 
 ## Agent Metrics
 
@@ -166,6 +179,15 @@ It does not ask for human input after every small job. It reviews job reports, t
 
 Jobs store both `base_ref` and immutable `base_sha`. Reviewers and the supervisor should compare `base_sha..HEAD`, because branch names and `HEAD` can move as workflow records are committed.
 
+Before integrating a reviewed job, run:
+
+```bash
+python3 scripts/integrate_job.py JNNNN
+python3 scripts/integrate_job.py JNNNN --apply
+```
+
+The first command verifies immutable base boundaries, tests, reviewer completion, post-test cleanliness, and attempt consistency. The second applies the merge only if the main worktree is clean.
+
 The supervisor loop defaults to the ChatGPT Codex naming convention for GPT-5.5 High: `CODEX_MODEL=gpt-5.5` with `CODEX_REASONING_EFFORT=high`. Cursor model ids and Codex model ids are not guaranteed to match; Cursor uses `gpt-5.5-high`, while Codex uses `gpt-5.5` plus high reasoning effort.
 
 To choose a Codex-supported model for the supervisor loop:
@@ -228,7 +250,7 @@ The supervisor owns structural planning. It updates the roadmap and related arch
 
 If every item passes, the script archives the gate, records approval, and prunes accepted job worktrees and local `ai/JNNNN` branches listed in the approved milestone review. `.ai/jobs/` and `.ai/commit_docs/` records are preserved. Active, rejected, blocked, and ready-for-review jobs are not pruned.
 
-While `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md`, or `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` exists, the worker loop pauses globally and will not process queued or rejected jobs.
+While `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md`, `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md`, or `.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md` exists, the worker loop pauses globally and will not process queued or rejected jobs.
 
 The same approval and pruning behavior is available through the dashboard human review panel.
 
@@ -263,7 +285,7 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/check_attempt_consistency.py scripts/collect_agent_metrics.py scripts/summarize_agent_metrics.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/check_attempt_consistency.py scripts/collect_agent_metrics.py scripts/summarize_agent_metrics.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
 python3 scripts/summarize_jobs.py
 python3 scripts/summarize_agent_metrics.py
 ```

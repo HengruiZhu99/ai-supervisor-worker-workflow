@@ -14,7 +14,7 @@ DEFAULT_MESSAGE = "workflow: record ai workflow state"
 SUPERVISOR_PATHS = [
     ".ai/metrics",
     ".ai/supervisor/human_reviews",
-    "docs/build.md",
+    "docs",
     "skills",
 ]
 JOB_ID_RE = re.compile(r"(J\d{4,})")

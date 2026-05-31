@@ -58,7 +58,13 @@ diff_coverage:
   files_reviewed:
     - path/from/changed_files
   unreviewed_files: []
+review_decision:
+  recommendation: accept
+  blocks_acceptance: false
+  blocking_reasons: []
 ```
+
+If either reviewer sets `blocks_acceptance: true`, the job should not become supervisor-ready for acceptance until Codex has reviewed the concern and either rejects the job with feedback or explicitly waives the concern with rationale.
 
 Reviewers should also assess any worker skill suggestions: whether they would avoid real duplication, whether they duplicate existing skills, and whether they should be project-specific or generally reusable.
 

@@ -75,7 +75,7 @@ The worker loop handles waiting and execution.
 
 In automated milestone mode, the supervisor automation script may sleep while waiting for worker state changes. It should invoke Codex only when a job is `ready_for_review`, when no active job exists and no human gate is present, or when recovering from an interrupted supervisor run.
 
-The worker loop must pause globally while `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md`, or `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` exists. Do not process queued or rejected jobs until the human gate, structural request, or human-review action request is resolved.
+The worker loop must pause globally while `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md`, `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md`, or `.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md` exists. Do not process queued or rejected jobs until the human gate, structural request, human-review action request, or supervisor action request is resolved.
 
 Terminal job states:
 - `accepted`: reviewed and integrated or otherwise accepted by the supervisor.
@@ -141,11 +141,17 @@ diff_coverage:
   files_reviewed:
     - path/from/changed_files
   unreviewed_files: []
+review_decision:
+  recommendation: accept
+  blocks_acceptance: false
+  blocking_reasons: []
 ```
 
-The supervisor should check reviewer diff coverage before accepting. The worker loop runs `scripts/check_reviewer_coverage.py` against `changed_files.attempt-N.txt`; if the reviewer stage fails, jobs enter `review_failed` or `review_timeout` instead of `ready_for_review`. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
+The supervisor should check reviewer diff coverage and machine-readable decisions before accepting. The worker loop runs `scripts/check_reviewer_coverage.py` against `changed_files.attempt-N.txt` and parses `review_decision` with `scripts/analyze_reviewer_reports.py`; if the reviewer stage fails or either reviewer blocks acceptance, jobs enter `review_failed` or `review_timeout` instead of `ready_for_review`. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
 
 The worker loop also runs `scripts/check_attempt_consistency.py` before reviewer handoff. If worker reports or commit documentation contradict canonical workflow facts from `status.json`, the attempt commit range, or `test.attempt-N.log`, the job should be blocked before reviewers run. The supervisor should inspect `attempt_consistency.attempt-N.md` and create workflow-maintenance feedback rather than accepting misleading audit records.
+
+After tests, the worker loop records raw and filtered dirty-worktree status. Jobs may declare expected generated files in `.ai/jobs/JNNNN/allowed_artifacts.txt`; undeclared post-test dirty files block the attempt. This prevents tests from silently creating source, build, cache, or generated artifacts after the worker commit.
 
 Accept only if:
 - scope is correct
@@ -243,6 +249,7 @@ If accepted:
 - in milestone-gated mode, create the next job automatically if the current milestone still has approved work remaining
 - integrate the accepted worker branch into the main project history using a reviewable Git merge or cherry-pick strategy appropriate for the repository state
 - preserve the worker's meaningful commits when practical
+- run `python3 scripts/integrate_job.py JNNNN` before integration when available; apply with `python3 scripts/integrate_job.py JNNNN --apply` or an equivalent explicit Git command only after the guard passes
 
 If the main worktree has unrelated uncommitted changes that prevent integration, accept/reject the job decision in `status.json`, record the integration blocker in the ledger, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, and do not create the next job until the blocker is resolved.
 
@@ -285,6 +292,10 @@ When `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` exists, the supervisor sh
 - open a new human gate when the concern needs clarification or revised plan approval;
 - archive or remove `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` only after a worker job or human gate exists;
 - commit workflow records and stop with `WAITING_FOR_WORKER` if a job is queued.
+
+## Supervisor action protocol
+
+Operational supervisor failures should not automatically become human milestone gates. When `.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md` exists, the Codex supervisor should inspect the referenced logs, repair the state if safe, rerun reviewer or integration steps as appropriate, update events and ledger records, then archive or remove the request. Open `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` only when there is a real milestone, scope, architecture, or scientific decision the supervisor cannot resolve.
 
 ## Rejection protocol
 

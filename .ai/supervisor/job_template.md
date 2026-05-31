@@ -34,6 +34,8 @@ Run:
 ...
 ```
 
+If validation intentionally generates untracked or modified files, list the expected paths or glob patterns in `.ai/jobs/JNNNN/allowed_artifacts.txt`. Otherwise the worker loop treats post-test dirty files as a blocking failure.
+
 ## Worker report contract
 
 Return:

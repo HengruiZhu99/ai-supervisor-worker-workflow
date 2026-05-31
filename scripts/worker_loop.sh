@@ -18,6 +18,7 @@ CURSOR_REVIEWER_A_MODEL="${CURSOR_REVIEWER_A_MODEL:-claude-opus-4-7-thinking-hig
 CURSOR_REVIEWER_B_MODEL="${CURSOR_REVIEWER_B_MODEL:-gpt-5.3-codex-high}"
 CURSOR_REVIEWER_EXTRA_ARGS="${CURSOR_REVIEWER_EXTRA_ARGS:-}"
 CURSOR_REVIEWER_MAX_RELAUNCHES="${CURSOR_REVIEWER_MAX_RELAUNCHES:-1}"
+TEST_TIMEOUT="${TEST_TIMEOUT:-0}"
 WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-0}"
 WORKER_MAX_TIMEOUT_RESUMES="${WORKER_MAX_TIMEOUT_RESUMES:-1}"
 WORKER_AUTO_RELAUNCH_FAILURE="${WORKER_AUTO_RELAUNCH_FAILURE:-1}"
@@ -26,11 +27,14 @@ WORKER_INIT_SUBMODULES="${WORKER_INIT_SUBMODULES:-1}"
 WORKER_SUBMODULE_PATHS="${WORKER_SUBMODULE_PATHS:-}"
 WORKER_RECOVER_STALE_RUNNING="${WORKER_RECOVER_STALE_RUNNING:-1}"
 WORKER_RECOVER_LEGACY_STALE_LOCKS="${WORKER_RECOVER_LEGACY_STALE_LOCKS:-0}"
+WORKER_RUNS_DIR="${WORKER_RUNS_DIR:-.ai/supervisor_runs}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
 CURRENT_LOCK=""
+LOOP_LOCK=""
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 STRUCTURAL_REQUEST=".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"
 HUMAN_REVIEW_ACTION_REQUEST=".ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md"
+SUPERVISOR_ACTION_REQUEST=".ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md"
 
 normalize_cursor_model() {
   case "$1" in
@@ -67,15 +71,30 @@ mark_current_lock_owned() {
 
 stop_worker_loop() {
   cleanup_current_lock
+  cleanup_loop_lock
   exit 143
 }
 
 interrupt_worker_loop() {
   cleanup_current_lock
+  cleanup_loop_lock
   exit 130
 }
 
-trap cleanup_current_lock EXIT
+cleanup_loop_lock() {
+  if [[ -n "${LOOP_LOCK:-}" ]]; then
+    rm -f "$LOOP_LOCK/pid" "$LOOP_LOCK/started_at" 2>/dev/null || true
+    rmdir "$LOOP_LOCK" 2>/dev/null || true
+    LOOP_LOCK=""
+  fi
+}
+
+cleanup_all_locks() {
+  cleanup_current_lock
+  cleanup_loop_lock
+}
+
+trap cleanup_all_locks EXIT
 trap interrupt_worker_loop INT
 trap stop_worker_loop TERM
 
@@ -173,11 +192,41 @@ lock_pid_alive() {
   kill -0 "$pid" 2>/dev/null
 }
 
+acquire_loop_lock() {
+  mkdir -p "$WORKER_RUNS_DIR"
+  local lock_dir="$WORKER_RUNS_DIR/worker_loop.lock"
+  if mkdir "$lock_dir" 2>/dev/null; then
+    LOOP_LOCK="$lock_dir"
+    printf '%s\n' "$$" >"$LOOP_LOCK/pid"
+    date -u +"%Y-%m-%dT%H:%M:%SZ" >"$LOOP_LOCK/started_at"
+    return 0
+  fi
+  if lock_pid_alive "$lock_dir"; then
+    echo "worker_loop already running with pid $(cat "$lock_dir/pid" 2>/dev/null || echo unknown)"
+    exit 0
+  fi
+  clear_known_stale_lock "$lock_dir" || true
+  if mkdir "$lock_dir" 2>/dev/null; then
+    LOOP_LOCK="$lock_dir"
+    printf '%s\n' "$$" >"$LOOP_LOCK/pid"
+    date -u +"%Y-%m-%dT%H:%M:%SZ" >"$LOOP_LOCK/started_at"
+    return 0
+  fi
+  echo "failed to acquire worker loop lock: $lock_dir" >&2
+  exit 1
+}
+
 clear_known_stale_lock() {
   local lock_dir="$1"
   rm -f "$lock_dir/pid" "$lock_dir/started_at" 2>/dev/null || true
   rmdir "$lock_dir" 2>/dev/null
 }
+
+record_event() {
+  python3 scripts/record_workflow_event.py "$@" >/dev/null 2>&1 || true
+}
+
+acquire_loop_lock
 
 recover_stale_running_jobs() {
   [[ "$WORKER_RECOVER_STALE_RUNNING" == "1" ]] || return 0
@@ -392,7 +441,7 @@ write_reviewer_prompt() {
     echo "Cross-check the worker report, test log, commit docs, and actual code. The actual diff and worktree are the source of truth."
     echo "Inspect the worker's Workflow Friction and Skill Suggestions sections. Treat them as proposals only. Decide whether each point is real, repeated, already covered by an existing skill/template/checklist/script, or too narrow to keep."
     echo
-    echo "Include this machine-checkable fenced YAML block exactly once:"
+    echo "Include this machine-checkable fenced YAML block exactly once. Replace the template values with your actual review result:"
     echo '```yaml'
     echo "diff_coverage:"
     echo "  full_diff_reviewed: true"
@@ -407,6 +456,10 @@ write_reviewer_prompt() {
       echo "  files_reviewed: []"
     fi
     echo "  unreviewed_files: []"
+    echo "review_decision:"
+    echo "  recommendation: accept  # one of: accept, revise, needs-supervisor-judgment"
+    echo "  blocks_acceptance: false"
+    echo "  blocking_reasons: []"
     echo '```'
     echo
     echo "## Output Format"
@@ -539,6 +592,8 @@ run_reviewers() {
   local reviews_dir="$job/reviews"
   local reviewer_a_exit_file="$reviews_dir/reviewer-a.exit.attempt-$attempt.txt"
   local reviewer_b_exit_file="$reviews_dir/reviewer-b.exit.attempt-$attempt.txt"
+  local reviewer_decision_file="$reviews_dir/reviewer_decisions.attempt-$attempt.json"
+  local reviewer_decision_log="$reviews_dir/reviewer_decisions.attempt-$attempt.log"
   local reviewer_a_pid reviewer_b_pid
   mkdir -p "$reviews_dir"
   rm -f "$reviewer_a_exit_file" "$reviewer_b_exit_file"
@@ -563,11 +618,33 @@ run_reviewers() {
     "$job/reviews/reviewer-b.attempt-$attempt.md" \
     >"$job/reviews/coverage.attempt-$attempt.txt" 2>&1 || coverage_exit=$?
 
+  local decision_exit=0
+  python3 scripts/analyze_reviewer_reports.py \
+    --reviewer-a "$job/reviews/reviewer-a.attempt-$attempt.md" \
+    --reviewer-b "$job/reviews/reviewer-b.attempt-$attempt.md" \
+    --output "$reviewer_decision_file" \
+    >"$reviewer_decision_log" 2>&1 || decision_exit=$?
+
+  local reviewer_a_blocks reviewer_b_blocks reviewer_blocked_by reviewer_a_recommendation reviewer_b_recommendation
+  reviewer_a_blocks="$(jq -r '.reviewer_a_blocks // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
+  reviewer_b_blocks="$(jq -r '.reviewer_b_blocks // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
+  reviewer_a_recommendation="$(jq -r '.reviewer_a_recommendation // "unknown"' "$reviewer_decision_file" 2>/dev/null || echo unknown)"
+  reviewer_b_recommendation="$(jq -r '.reviewer_b_recommendation // "unknown"' "$reviewer_decision_file" 2>/dev/null || echo unknown)"
+  reviewer_blocked_by="$(jq -r '(.blocked_by // []) | join(",")' "$reviewer_decision_file" 2>/dev/null || echo "")"
+
   update_status "$status_file" \
     reviewer_a_exit="$reviewer_a_exit" \
     reviewer_b_exit="$reviewer_b_exit" \
     reviewer_coverage_exit="$coverage_exit" \
-    reviewers_complete="$([[ "$reviewer_a_exit" -eq 0 && "$reviewer_b_exit" -eq 0 && "$coverage_exit" -eq 0 ]] && echo true || echo false)" \
+    reviewer_decision_exit="$decision_exit" \
+    reviewers_complete="$([[ "$reviewer_a_exit" -eq 0 && "$reviewer_b_exit" -eq 0 && "$coverage_exit" -eq 0 && "$decision_exit" -eq 0 ]] && echo true || echo false)" \
+    reviewer_decision_file="$reviewer_decision_file" \
+    reviewer_decision_log="$reviewer_decision_log" \
+    reviewer_a_recommendation="$reviewer_a_recommendation" \
+    reviewer_b_recommendation="$reviewer_b_recommendation" \
+    reviewer_a_blocks="$reviewer_a_blocks" \
+    reviewer_b_blocks="$reviewer_b_blocks" \
+    review_blocked_by="$reviewer_blocked_by" \
     reviewer_a_report="$job/reviews/reviewer-a.attempt-$attempt.md" \
     reviewer_b_report="$job/reviews/reviewer-b.attempt-$attempt.md" \
     reviewer_a_metrics="$job/reviews/reviewer-a.metrics.attempt-$attempt.json" \
@@ -575,6 +652,19 @@ run_reviewers() {
 
   if [[ "$reviewer_a_exit" -eq 124 || "$reviewer_b_exit" -eq 124 ]]; then
     return 124
+  fi
+  if [[ "$decision_exit" -ne 0 ]]; then
+    record_event \
+      --kind review_block \
+      --role reviewer \
+      --reason-code reviewer_recommended_revision \
+      --reason "reviewer decision analysis blocked acceptance" \
+      --job-id "$id" \
+      --attempt "$attempt" \
+      --state review_failed \
+      --blocked-by "$reviewer_blocked_by" \
+      --path "$reviewer_decision_file"
+    return 1
   fi
   if [[ "$reviewer_a_exit" -ne 0 || "$reviewer_b_exit" -ne 0 || "$coverage_exit" -ne 0 ]]; then
     return 1
@@ -743,16 +833,25 @@ process_job() {
 
   local test_log="$job/test.attempt-$attempt.log"
   local test_exit=0
+  local test_timed_out=false
   if [[ -n "$test_command" ]]; then
     set +e
     git -C "$worktree" status --short >"$test_log"
     {
       echo
       echo "$ $test_command"
-      bash -lc "cd '$ROOT/$worktree' && $test_command"
+      if [[ "$TEST_TIMEOUT" != "0" ]]; then
+        timeout "$TEST_TIMEOUT" bash -lc "cd '$ROOT/$worktree' && $test_command"
+      else
+        bash -lc "cd '$ROOT/$worktree' && $test_command"
+      fi
     } >>"$test_log" 2>&1
     test_exit=$?
     set -e
+    if [[ "$test_exit" -eq 124 || "$test_exit" -eq 137 ]]; then
+      test_timed_out=true
+      echo "Test command timed out after ${TEST_TIMEOUT}s" >>"$test_log"
+    fi
   else
     echo "No test command specified." >"$test_log"
     test_exit=0
@@ -761,7 +860,13 @@ process_job() {
   local final_commit
   final_commit="$(git -C "$worktree" rev-parse HEAD)"
   local post_test_status="$job/post_test_status.attempt-$attempt.txt"
-  git -C "$worktree" status --porcelain >"$post_test_status"
+  local post_test_status_raw="$job/post_test_status_raw.attempt-$attempt.txt"
+  local allowed_artifacts="$job/allowed_artifacts.txt"
+  git -C "$worktree" status --porcelain >"$post_test_status_raw"
+  python3 scripts/filter_allowed_artifacts.py \
+    --status "$post_test_status_raw" \
+    --allow-file "$allowed_artifacts" \
+    --output "$post_test_status" >/dev/null 2>&1 || true
   local post_test_dirty=false
   local post_test_dirty_error=""
   if [[ -s "$post_test_status" ]]; then
@@ -816,9 +921,12 @@ process_job() {
   update_status "$status_file" \
     commit="$final_commit" \
     test_exit="$test_exit" \
+    test_timed_out="$test_timed_out" \
     tests_passed="$tests_passed" \
     post_test_dirty="$post_test_dirty" \
     post_test_status="$post_test_status" \
+    post_test_status_raw="$post_test_status_raw" \
+    allowed_artifacts="$allowed_artifacts" \
     report="$job/report.md"
 
   python3 scripts/create_commit_doc.py \
@@ -841,6 +949,7 @@ process_job() {
   fi
 
   local next_state=ready_for_review
+  local hard_block=false
   if [[ "$worker_exit" -ne 0 && "$cursor_reported_success" == true && "$tests_passed" == true && "$post_test_dirty" != true ]]; then
     worker_error="${worker_error:+$worker_error; }cursor-agent returned nonzero after reporting system success; continuing to reviewer stage"
     echo "$worker_error" | tee -a "$cursor_err" >&2
@@ -849,17 +958,19 @@ process_job() {
   fi
   if [[ "$post_test_dirty" == true ]]; then
     next_state=blocked
+    hard_block=true
     worker_error="${worker_error:+$worker_error; }$post_test_dirty_error"
   fi
   if [[ "$consistency_exit" -ne 0 ]]; then
     next_state=blocked
+    hard_block=true
     worker_error="${worker_error:+$worker_error; }attempt consistency check failed; see $job/attempt_consistency.attempt-$attempt.md"
   fi
-  if [[ "$worker_exit" -ne 0 && "$timed_out" != true && "$post_test_dirty" != true && "$WORKER_AUTO_RELAUNCH_FAILURE" == "1" && "$attempt" -lt "$WORKER_MAX_FAILURE_RESUMES" ]]; then
+  if [[ "$worker_exit" -ne 0 && "$timed_out" != true && "$hard_block" != true && "$WORKER_AUTO_RELAUNCH_FAILURE" == "1" && "$attempt" -lt "$WORKER_MAX_FAILURE_RESUMES" ]]; then
     next_state=queued
     echo "Requeueing $id after worker failure attempt $attempt; max failure resumes: $WORKER_MAX_FAILURE_RESUMES"
   fi
-  if [[ "$timed_out" == true && "$WORKER_AUTO_RESUME_TIMEOUT" == "1" && "$attempt" -lt "$WORKER_MAX_TIMEOUT_RESUMES" ]]; then
+  if [[ "$timed_out" == true && "$hard_block" != true && "$WORKER_AUTO_RESUME_TIMEOUT" == "1" && "$attempt" -lt "$WORKER_MAX_TIMEOUT_RESUMES" ]]; then
     next_state=queued
     echo "Requeueing $id after timeout attempt $attempt; max timeout resumes: $WORKER_MAX_TIMEOUT_RESUMES"
   fi
@@ -874,6 +985,28 @@ process_job() {
     fi
   fi
 
+  if [[ "$next_state" == "blocked" ]]; then
+    record_event \
+      --kind failure \
+      --role worker \
+      --reason-code worker_blocked \
+      --reason "${worker_error:-worker job blocked}" \
+      --job-id "$id" \
+      --attempt "$attempt" \
+      --state "$next_state" \
+      --path "$job/report.md"
+  elif [[ "$next_state" == "review_failed" || "$next_state" == "review_timeout" ]]; then
+    record_event \
+      --kind failure \
+      --role reviewer \
+      --reason-code "$next_state" \
+      --reason "reviewer stage did not complete cleanly" \
+      --job-id "$id" \
+      --attempt "$attempt" \
+      --state "$next_state" \
+      --path "$job/reviews"
+  fi
+
   update_status "$status_file" \
     state="$next_state" \
     attempt="$attempt" \
@@ -885,9 +1018,12 @@ process_job() {
     worker_error="$worker_error" \
     auto_resume_timeout="$WORKER_AUTO_RESUME_TIMEOUT" \
     test_exit="$test_exit" \
+    test_timed_out="$test_timed_out" \
     tests_passed="$tests_passed" \
     post_test_dirty="$post_test_dirty" \
     post_test_status="$post_test_status" \
+    post_test_status_raw="$post_test_status_raw" \
+    allowed_artifacts="$allowed_artifacts" \
     attempt_consistency_exit="$consistency_exit" \
     attempt_consistency_log="$job/attempt_consistency.attempt-$attempt.md" \
     changed_files="$job/changed_files.attempt-$attempt.txt" \
@@ -973,7 +1109,7 @@ review_existing_job() {
 }
 
 while true; do
-  if [[ -f "$HUMAN_GATE" || -f "$STRUCTURAL_REQUEST" || -f "$HUMAN_REVIEW_ACTION_REQUEST" ]]; then
+  if [[ -f "$HUMAN_GATE" || -f "$STRUCTURAL_REQUEST" || -f "$HUMAN_REVIEW_ACTION_REQUEST" || -f "$SUPERVISOR_ACTION_REQUEST" ]]; then
     sleep "$POLL_SECONDS"
     continue
   fi

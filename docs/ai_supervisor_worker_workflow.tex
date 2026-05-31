@@ -1,0 +1,263 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{longtable}
+
+\title{Filesystem-Gated Multi-Agent Workflow for Scientific Software Development}
+\author{AI Supervisor/Worker Workflow}
+\date{\today}
+
+\renewcommand{\path}[1]{\texttt{#1}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document describes a reusable AI-assisted coding workflow for scientific
+software projects.  Codex acts as a milestone-gated supervisor and Cursor acts as
+an implementation worker.  Optional read-only Cursor reviewers inspect each
+worker attempt before the supervisor accepts or rejects work.  Communication is
+through durable files in the project repository, which makes state auditable,
+restartable, and independent of direct agent-to-agent process control.
+\end{abstract}
+
+\section{Design Goals}
+
+The workflow is designed for scientific codes where correctness, reproducibility,
+and reviewable history matter more than maximizing autonomous throughput.  The
+main goals are:
+
+\begin{itemize}
+  \item decompose large milestones into small, closed-form worker jobs;
+  \item require tests and scientific assumptions for numerical work;
+  \item preserve reviewable Git history and attempt documentation;
+  \item keep human intervention at milestone gates rather than every job;
+  \item recover from crashes, timeouts, stale locks, and machine restarts;
+  \item make reviewer coverage and blocking decisions machine-checkable;
+  \item collect metrics for later analysis of agent reliability and cost.
+\end{itemize}
+
+\section{Repository Layout}
+
+\begin{longtable}{p{0.32\linewidth}p{0.62\linewidth}}
+\textbf{Path} & \textbf{Purpose}\\
+\hline
+\path{AGENTS.md} & Role, scientific coding, Git hygiene, and workflow-evolution rules.\\
+\path{.ai/supervisor/} & Durable supervisor memory: design prompt, project brief, roadmap, ledger, policies, and human gates.\\
+\path{.ai/jobs/JNNNN/} & One worker job: task, status, reports, logs, patches, reviewer reports, and feedback.\\
+\path{.ai/commit\_docs/} & Markdown documentation for each worker attempt and its commit range.\\
+\path{.ai/metrics/} & Structured run metrics and workflow events.\\
+\path{.worktrees/JNNNN/} & Isolated Git worktree for a worker job branch.\\
+\path{skills/} & Project skills plus installed reusable workflow skills visible to Codex and Cursor prompts.\\
+\path{scripts/} & Dependency-light shell and Python helpers for dispatch, review, metrics, GUI, and recovery.\\
+\end{longtable}
+
+\section{Roles}
+
+\subsection{Supervisor}
+
+The Codex supervisor owns planning, dispatch, review, acceptance, rejection, and
+ledger maintenance.  It reads the project design and current state, creates one
+small job at a time, reviews the worker report, tests, diff, commit docs, and
+reviewer reports, then integrates or rejects the job.  Supervisor-owned planning
+files include \path{roadmap.md}, \path{project\_brief.md}, and \path{ledger.md};
+workers may suggest changes to those files but should not own them.
+
+\subsection{Worker}
+
+The Cursor worker implements exactly one assigned job in an isolated worktree.
+It runs the requested validation, keeps changes in meaningful commits where
+possible, and writes a concise report.  Each report includes workflow friction
+and skill suggestions so repeated procedural failures can be converted into
+templates, scripts, protocols, or skills.
+
+\subsection{Reviewers}
+
+Two optional read-only Cursor reviewers run after the worker and tests finish.
+Reviewer A focuses on scientific, mathematical, numerical, and algorithmic
+robustness.  Reviewer B focuses on code quality, build behavior, portability,
+tests, maintainability, and Git hygiene.  Reviewers inspect the actual diff
+rather than relying on the worker report.
+
+\section{Overall Control Flow}
+
+\begin{verbatim}
+Human design prompt
+        |
+        v
+Codex supervisor extracts brief, roadmap, and current milestone
+        |
+        v
+Create exactly one small worker job in .ai/jobs/JNNNN/
+        |
+        v
+Cursor worker implements in .worktrees/JNNNN
+        |
+        v
+Validation, commit docs, changed_files, diffstat, report
+        |
+        v
+Reviewer A and Reviewer B inspect the actual diff in parallel
+        |
+        v
+Codex supervisor reviews worker artifacts plus reviewer artifacts
+        |
+        +-- reject --> feedback.md --> worker retry
+        |
+        +-- accept --> integrate branch, update ledger
+                         |
+                         +-- milestone incomplete --> next small job
+                         |
+                         +-- milestone complete/blocked --> human review gate
+\end{verbatim}
+
+\section{Job State Machine}
+
+Each job has a \path{status.json} with immutable \path{base\_sha},
+human-readable \path{base\_ref}, the job branch, attempt number, and current
+state.  The immutable base commit is the review boundary for all diffs.
+
+\begin{verbatim}
+queued/rejected
+      |
+      v
+running -- deterministic or worker failure --> blocked
+      |
+      v
+reviewing -- reviewer timeout/failure/block --> review_failed or review_timeout
+      |
+      v
+ready_for_review -- supervisor rejects --> rejected
+      |
+      +-- supervisor accepts --> accepted
+
+Any nonterminal job can become cancelled or superseded by explicit decision.
+Terminal jobs are not retried by the worker loop.
+\end{verbatim}
+
+\section{Worker Attempt Protocol}
+
+The worker loop performs deterministic steps before and after invoking Cursor:
+
+\begin{enumerate}
+  \item Acquire a loop-level singleton lock and a job lock with owner PID.
+  \item Create or reuse \path{.worktrees/JNNNN} on branch \path{ai/JNNNN}.
+  \item Resolve and persist \path{base\_sha}; never use a moving ref for review.
+  \item Run preflight checks: branch, worktree cleanliness, base ancestry, and
+        submodule initialization, including Kokkos when configured.
+  \item Build a prompt containing only the job task, feedback, visible skills,
+        validation command, and report contract.
+  \item Invoke \path{cursor-agent} with configurable model, timeout, and extra
+        local flags.
+  \item Commit remaining changes if Cursor did not create commits.
+  \item Run the job validation command, optionally bounded by \path{TEST\_TIMEOUT}.
+  \item Record raw and filtered post-test dirty status.  Allowed generated files
+        may be declared in \path{allowed\_artifacts.txt}; undeclared dirty files
+        block the attempt.
+  \item Generate \path{changed\_files}, \path{diffstat}, \path{diff.patch},
+        \path{report.md}, commit docs, consistency checks, metrics, and events.
+\end{enumerate}
+
+\section{Reviewer Protocol}
+
+Reviewers run in parallel.  Each report must include a fenced YAML block:
+
+\begin{verbatim}
+diff_coverage:
+  full_diff_reviewed: true
+  files_reviewed:
+    - path/from/changed_files
+  unreviewed_files: []
+review_decision:
+  recommendation: accept
+  blocks_acceptance: false
+  blocking_reasons: []
+\end{verbatim}
+
+The worker loop checks coverage with \path{check\_reviewer\_coverage.py} and
+parses reviewer decisions with \path{analyze\_reviewer\_reports.py}.  Reviewer
+timeouts or blocking recommendations prevent the job from becoming ready for
+supervisor acceptance.
+
+\section{Supervisor Acceptance Protocol}
+
+The supervisor reviews the canonical artifacts rather than relying on a single
+report.  It should inspect:
+
+\begin{itemize}
+  \item \path{status.json}, including \path{base\_sha}, attempts, tests, and reviewer fields;
+  \item \path{report.md}, \path{test.attempt-N.log}, \path{diffstat}, and selected patch sections;
+  \item \path{changed\_files.attempt-N.txt} and reviewer coverage;
+  \item reviewer A and B reports and reviewer-decision analysis;
+  \item commit documentation and the actual branch diff \path{base\_sha..HEAD};
+  \item attempt-consistency and post-test-dirty artifacts.
+\end{itemize}
+
+Before integration, \path{integrate\_job.py} verifies state, tests, reviewer
+completion, post-test cleanliness, attempt consistency, branch existence, and
+base ancestry.  Integration is explicit and should be done from a clean main
+worktree.
+
+\section{Human Gates}
+
+Human review is reserved for milestone boundaries, major structural changes, and
+decisions the supervisor cannot safely make.  Ordinary failed checklist items
+are routed through \path{HUMAN\_REVIEW\_ACTION\_REQUESTED.md}; the supervisor
+classifies them and creates a small revision job, updates planning records, or
+opens a clarification gate.  Major structural requests are handled by the
+supervisor first, then returned to the human as an updated milestone plan.
+
+\section{Failure Handling}
+
+\begin{longtable}{p{0.30\linewidth}p{0.64\linewidth}}
+\textbf{Failure mode} & \textbf{Handling}\\
+\hline
+Worker timeout & Record timeout, optionally auto-resume if configured, otherwise block.\\
+Worker crash & Auto-relaunch limited attempts for non-hard failures; record event.\\
+Reviewer timeout/crash & Retry reviewers, then set \path{review\_timeout} or \path{review\_failed}.\\
+Reviewer blocks acceptance & Keep job out of \path{ready\_for\_review}; supervisor decides reject, waive, or rerun.\\
+Post-test dirty files & Block unless all paths match \path{allowed\_artifacts.txt}.\\
+Stale running job & Recover only if lock owner PID is gone; mark \path{implemented} if artifacts exist.\\
+Supervisor crash & Create \path{SUPERVISOR\_ACTION\_REQUIRED.md}, pause worker dispatch, and avoid a human milestone gate unless a real human decision is needed.\\
+Superseded work & Use terminal state \path{superseded} so the worker loop does not retry it.\\
+\end{longtable}
+
+\section{Workflow Evolution}
+
+Workers report friction and skill suggestions.  Reviewers evaluate those
+suggestions.  The supervisor deduplicates them against existing skills,
+templates, scripts, and protocols, then chooses the smallest durable fix:
+ledger note, documentation, checklist, template, protocol, script, project skill,
+or reusable workflow skill.  Repeated failure artifacts can also trigger
+supervisor-originated improvements, even when workers do not recognize the
+pattern.
+
+\section{Metrics and Paper Reproducibility}
+
+Cursor worker and reviewer runs write per-agent metrics next to job artifacts,
+and supervisor runs write metrics under \path{.ai/metrics/supervisor/}.  All
+records are appended to \path{.ai/metrics/runs.jsonl}.  Workflow events such as
+failures, reviewer blocks, and human interventions are appended to
+\path{.ai/metrics/events.jsonl}.  These records can support a later empirical
+study of agent reliability, failure modes, human-intervention frequency, token
+use, wall-clock time, and scientific-code review outcomes.
+
+\section{Minimal Commands}
+
+\begin{verbatim}
+python3 scripts/workflow_gui.py
+
+CURSOR_MODEL=gpt-5.5-high \
+CURSOR_REVIEWER_A_MODEL=claude-opus-4-7-thinking-high \
+CURSOR_REVIEWER_B_MODEL=gpt-5.3-codex-high \
+./scripts/worker_loop.sh
+
+CODEX_MODEL=gpt-5.5 CODEX_REASONING_EFFORT=high \
+./scripts/supervisor_loop.sh
+
+python3 scripts/summarize_jobs.py
+python3 scripts/summarize_agent_metrics.py
+\end{verbatim}
+
+\end{document}

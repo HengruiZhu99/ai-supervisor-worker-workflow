@@ -16,6 +16,8 @@ SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE="${SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE:-
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 STRUCTURAL_REQUEST=".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"
 HUMAN_REVIEW_ACTION_REQUEST=".ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md"
+SUPERVISOR_ACTION_REQUEST=".ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md"
+LOOP_LOCK=""
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -35,6 +37,57 @@ export AI_WORKFLOW_PACKAGE_ROOT="${AI_WORKFLOW_PACKAGE_ROOT:-$WORKFLOW_PACKAGE_R
 workflow_commit="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo "workflow_commit=$workflow_commit"
 supervisor_failure_relaunches=0
+
+lock_pid_alive() {
+  local lock_dir="$1"
+  local pid
+  [[ -s "$lock_dir/pid" ]] || return 1
+  pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+cleanup_loop_lock() {
+  if [[ -n "${LOOP_LOCK:-}" ]]; then
+    rm -f "$LOOP_LOCK/pid" "$LOOP_LOCK/started_at" 2>/dev/null || true
+    rmdir "$LOOP_LOCK" 2>/dev/null || true
+    LOOP_LOCK=""
+  fi
+}
+
+acquire_loop_lock() {
+  local lock_dir="$SUPERVISOR_RUNS_DIR/supervisor_loop.lock"
+  if mkdir "$lock_dir" 2>/dev/null; then
+    LOOP_LOCK="$lock_dir"
+    printf '%s\n' "$$" >"$LOOP_LOCK/pid"
+    date -u +"%Y-%m-%dT%H:%M:%SZ" >"$LOOP_LOCK/started_at"
+    return 0
+  fi
+  if lock_pid_alive "$lock_dir"; then
+    echo "supervisor_loop already running with pid $(cat "$lock_dir/pid" 2>/dev/null || echo unknown)"
+    exit 0
+  fi
+  rm -f "$lock_dir/pid" "$lock_dir/started_at" 2>/dev/null || true
+  rmdir "$lock_dir" 2>/dev/null || true
+  if mkdir "$lock_dir" 2>/dev/null; then
+    LOOP_LOCK="$lock_dir"
+    printf '%s\n' "$$" >"$LOOP_LOCK/pid"
+    date -u +"%Y-%m-%dT%H:%M:%SZ" >"$LOOP_LOCK/started_at"
+    return 0
+  fi
+  echo "failed to acquire supervisor loop lock: $lock_dir" >&2
+  exit 1
+}
+
+record_event() {
+  python3 scripts/record_workflow_event.py "$@" >/dev/null 2>&1 || true
+}
+
+trap cleanup_loop_lock EXIT
+trap 'cleanup_loop_lock; exit 130' INT
+trap 'cleanup_loop_lock; exit 143' TERM
+
+acquire_loop_lock
 
 utc_now() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
@@ -73,6 +126,11 @@ job_signature() {
     else
       echo "human_review_action_request:absent"
     fi
+    if [[ -f "$SUPERVISOR_ACTION_REQUEST" ]]; then
+      echo "supervisor_action_request:present:$(stat -c '%Y' "$SUPERVISOR_ACTION_REQUEST" 2>/dev/null || true)"
+    else
+      echo "supervisor_action_request:absent"
+    fi
     find .ai/jobs -path '.ai/jobs/J*/status.json' -type f -printf '%p:%T@\n' 2>/dev/null | sort || true
   } | python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
 }
@@ -85,6 +143,8 @@ from pathlib import Path
 if Path(".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md").exists():
     raise SystemExit(0)
 if Path(".ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md").exists():
+    raise SystemExit(0)
+if Path(".ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md").exists():
     raise SystemExit(0)
 
 jobs_dir = Path(".ai/jobs")
@@ -174,6 +234,7 @@ Read:
 - `.ai/supervisor/commit_policy.md`
 - `.ai/supervisor/workflow_improvement_queue.md`, if present
 - `.ai/supervisor/skill_decisions.md`, if present
+- `.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md`, if present
 
 PROMPT
     write_available_skills
@@ -201,6 +262,7 @@ Rules:
 - For ordinary revision requests, write concise actionable `feedback.md` and set state to `rejected` so the worker loop retries it.
 - For terminal outcomes that must not be retried, set state to `superseded` or `cancelled`; do not use `rejected`.
 - For accepted jobs, integrate the accepted worker branch into the main project history using a reviewable merge or cherry-pick strategy, set state to `accepted`, update the ledger, and record assumptions/risks.
+- Before integrating a `ready_for_review` job, run `python3 scripts/integrate_job.py JNNNN` as a verification guard when available. If it passes and the main worktree is clean, use `python3 scripts/integrate_job.py JNNNN --apply` or an equivalent explicit Git integration command, then update status to `accepted`.
 - If unrelated uncommitted main-worktree changes prevent integration, record the accepted/rejected decision and blocker, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, and do not create the next job.
 - If the current milestone still has approved work remaining and no job is queued/running/rejected, create exactly one next small worker job.
 - If a job is queued/running/rejected after your actions, stop with `WAITING_FOR_WORKER`.
@@ -212,6 +274,7 @@ Rules:
 - Supervisor planning files are supervisor-owned. Do not create a Cursor worker job whose objective is to edit `.ai/supervisor/roadmap.md`, `.ai/supervisor/project_brief.md`, `.ai/supervisor/ledger.md`, build/dependency policy, or milestone sequencing.
 - If `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` exists, handle it yourself as supervisor: read it plus the referenced human review/gate records, update roadmap/project brief/ledger/policy/job sequencing as needed, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` summarizing the revised plan and to-do list, archive or remove `STRUCTURAL_CHANGE_REQUESTED.md`, commit workflow records, and stop without dispatching a worker job.
 - If `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` exists, handle it yourself as supervisor before any worker sees the concern: read it plus the referenced human review/gate records, classify each failed review item as implementation revision, test/validation revision, documentation revision, planning/scope revision, or human clarification. Then either create exactly one small worker job with a closed-form task, update supervisor-owned planning records and open a new human gate, or open a human clarification gate. Archive or remove `HUMAN_REVIEW_ACTION_REQUESTED.md` only after the next worker job or human gate exists, commit workflow records, and stop. Do not pass the raw failed checklist directly to Cursor.
+- If `.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md` exists, treat it as an operational supervisor action request, not a human milestone gate. Read the file and referenced logs, repair the workflow state if safe, rerun reviewer or integration steps if needed, update ledger/events, archive or remove the action request once resolved, and only open a human gate if there is a genuine milestone, scope, or scientific decision the supervisor cannot make.
 - If an older worker-created major structural revision job is `ready_for_review`, treat the worker report as advisory only. Do not integrate worker-owned roadmap/project-brief/ledger edits. Prefer rejecting it as superseded by supervisor-owned structural planning, then perform the structural planning update yourself if the request remains unresolved.
 - After creating the structural revision human gate, do not dispatch the next implementation job. Stop at the new human review gate so the human can approve the revised plan.
 - If the runtime option `SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE` shown above is `1`, and after creating the structural revision review gate the main branch has a configured remote, commit workflow records as needed and push the updated main branch. If push fails, record the failure in the ledger and leave the human gate in place.
@@ -244,22 +307,33 @@ PROMPT
       return $?
     fi
     {
-      echo "# Human Milestone Review"
+      echo "# Supervisor Action Required"
       echo
       echo "## Status"
       echo
-      echo "blocked"
+      echo "supervisor_command_failed"
       echo
       echo "## Summary"
       echo
-      echo "The autonomous Codex supervisor command failed with exit code $codex_exit."
+      echo "The autonomous Codex supervisor command failed with exit code $codex_exit after configured relaunch attempts."
       echo
-      echo "## Risks requiring human decision"
+      echo "## Required supervisor action"
       echo
-      echo "- Inspect $log_file and decide whether to rerun the supervisor loop or intervene manually."
-    } >"$HUMAN_GATE"
+      echo "- Inspect $log_file."
+      echo "- Recover any partially updated job state if needed."
+      echo "- Continue autonomous workflow if the failure is operational."
+      echo "- Open a human milestone gate only for unresolved scope, scientific, or architecture decisions."
+    } >"$SUPERVISOR_ACTION_REQUEST"
+    record_event \
+      --kind failure \
+      --role supervisor \
+      --reason-code supervisor_command_failed \
+      --reason "Codex supervisor failed with exit code $codex_exit" \
+      --state action_required \
+      --path "$log_file" \
+      --path "$SUPERVISOR_ACTION_REQUEST"
     commit_workflow_records
-    echo "HUMAN_REVIEW_REQUIRED: $HUMAN_GATE"
+    echo "SUPERVISOR_ACTION_REQUIRED: $SUPERVISOR_ACTION_REQUEST"
     return "$codex_exit"
   fi
 
