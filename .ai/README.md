@@ -104,6 +104,10 @@ attempt-consistency failures, stale commit docs, reviewer coverage failures, or
 timeout patterns. Use `attempt-artifact-consistency` when reports, commit docs,
 job status, git history, changed-file lists, and test logs must be reconciled.
 
+The supervisor loop and worker loop include this skill index in Codex, worker,
+and reviewer prompts so skills are visible to both agent families. Agents should
+open the listed `SKILL.md` file before applying a relevant skill.
+
 Nontrivial workflow-improvement proposals are tracked in:
 
 ```text

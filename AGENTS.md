@@ -66,6 +66,12 @@ Reviewers should also assess any worker skill suggestions: whether they would av
 
 Codex owns skill creation decisions. Before creating a skill, Codex should list existing skills, compare triggers and checklists for overlap, and reject suggestions that are too narrow or already covered. Project-specific skills belong in this repository under `skills/`. Generally reusable scientific-coding workflow skills belong in the reusable workflow package under `external/ai-supervisor-worker-workflow/skills/` and should be committed and pushed there before updating the submodule pointer.
 
+Skills must be discoverable by both Codex and Cursor. The supervisor loop and
+worker loop should include the `python3 scripts/list_skills.py` output in their
+agent prompts, and agents should read the listed `SKILL.md` file before applying
+a relevant skill. Do not assume repository skills are automatically loaded by an
+agent runtime.
+
 ## Scientific Coding Rules
 
 - Prefer simple reference implementations before optimized implementations.

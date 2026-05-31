@@ -168,6 +168,12 @@ Each worker report should include:
 
 The worker proposes only. The reviewers assess. The Codex supervisor owns all decisions and implementation of workflow changes.
 
+Skills are filesystem instructions, not hidden runtime state. Before dispatch,
+review, or supervisor action, make skills visible by including the output of
+`python3 scripts/list_skills.py` in the relevant agent prompt. Workers,
+reviewers, and Codex should open the listed `SKILL.md` path before using a
+skill.
+
 The supervisor may also identify workflow improvements from repeated failure
 artifacts even when the worker did not suggest them. Examples include repeated
 `attempt_consistency.attempt-N.md` failures, reviewer coverage failures,

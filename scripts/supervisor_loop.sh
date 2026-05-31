@@ -40,6 +40,18 @@ utc_now() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
+write_available_skills() {
+  echo "Available skills visible to this supervisor run:"
+  echo
+  echo '```text'
+  if ! python3 "$AI_WORKFLOW_PACKAGE_ROOT/scripts/list_skills.py" 2>/dev/null; then
+    echo "Skill listing unavailable; inspect project skills/ and workflow package skills/ manually."
+  fi
+  echo '```'
+  echo
+  echo "When a skill is relevant, read the listed SKILL.md file before applying it. These repository skills are not assumed to be loaded by the Codex runtime automatically."
+}
+
 commit_workflow_records() {
   python3 scripts/commit_workflow_records.py --message "workflow: record supervisor state" || true
 }
@@ -163,6 +175,10 @@ Read:
 - `.ai/supervisor/workflow_improvement_queue.md`, if present
 - `.ai/supervisor/skill_decisions.md`, if present
 
+PROMPT
+    write_available_skills
+    cat <<'PROMPT'
+
 Rules:
 - Do not implement scientific project code yourself.
 - Worker implementation files live on the branch and isolated worktree named in each job's `status.json`; they are not expected to exist in the main worktree before acceptance.
@@ -199,7 +215,7 @@ Rules:
 - If an older worker-created major structural revision job is `ready_for_review`, treat the worker report as advisory only. Do not integrate worker-owned roadmap/project-brief/ledger edits. Prefer rejecting it as superseded by supervisor-owned structural planning, then perform the structural planning update yourself if the request remains unresolved.
 - After creating the structural revision human gate, do not dispatch the next implementation job. Stop at the new human review gate so the human can approve the revised plan.
 - If the runtime option `SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE` shown above is `1`, and after creating the structural revision review gate the main branch has a configured remote, commit workflow records as needed and push the updated main branch. If push fails, record the failure in the ledger and leave the human gate in place.
-- Use skills under `skills/` when relevant.
+- Use the available project/workflow skills listed above when relevant. If a skill is relevant, open its `SKILL.md` and follow it.
 
 Return a concise summary of what you reviewed, accepted/rejected/dispatched, and whether the workflow is waiting for worker or human review.
 PROMPT

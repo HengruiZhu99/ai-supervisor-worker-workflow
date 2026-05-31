@@ -96,6 +96,18 @@ echo "cursor_model=$CURSOR_MODEL"
 echo "cursor_reviewer_a_model=$CURSOR_REVIEWER_A_MODEL"
 echo "cursor_reviewer_b_model=$CURSOR_REVIEWER_B_MODEL"
 
+write_available_skills() {
+  echo "## Available Skills"
+  echo
+  echo "These project and workflow skills are visible in this worktree. When a skill is relevant, read the listed SKILL.md file before applying it."
+  echo
+  echo '```text'
+  if ! python3 "$AI_WORKFLOW_PACKAGE_ROOT/scripts/list_skills.py" 2>/dev/null; then
+    echo "Skill listing unavailable; fall back to inspecting project skills/ and workflow package skills/ manually."
+  fi
+  echo '```'
+}
+
 run_cursor_agent() {
   local worktree="$1"
   local prompt_file="$2"
@@ -363,6 +375,8 @@ write_reviewer_prompt() {
     echo "- Test log: $ROOT/$job/test.attempt-$attempt.log"
     echo "- Commit docs: $ROOT/.ai/commit_docs/"
     echo "- Existing skills: run 'python3 scripts/list_skills.py' in the worktree if needed. The environment variable AI_WORKFLOW_PACKAGE_ROOT is set to $AI_WORKFLOW_PACKAGE_ROOT."
+    echo
+    write_available_skills
     echo
     echo "## Changed Files To Cover"
     echo
@@ -652,6 +666,8 @@ process_job() {
     echo "- Before finalizing, make sure your report and any commit documentation match this attempt's actual commits, tests, and final state. Use the attempt-artifact-consistency skill if available, especially after retry feedback about stale or contradictory attempt artifacts."
     echo "- For each skill suggestion, state proposed name, scope (project-specific or general scientific-coding workflow), when to use it, duplication risk versus existing skills, and the minimal content it should contain."
     echo "- Do not create or edit skills, supervisor protocols, roadmap files, or workflow scripts yourself unless this specific job explicitly assigns that work. Suggestions should be reported for supervisor review."
+    echo
+    write_available_skills
     echo
     echo "## Task"
     cat "$job/task.md"
