@@ -15,11 +15,14 @@
 
 \begin{abstract}
 This document describes a reusable AI-assisted coding workflow for scientific
-software projects.  Codex acts as a milestone-gated supervisor and Cursor acts as
-an implementation worker.  Optional read-only Cursor reviewers inspect each
-worker attempt before the supervisor accepts or rejects work.  Communication is
-through durable files in the project repository, which makes state auditable,
-restartable, and independent of direct agent-to-agent process control.
+software projects.  A milestone-gated supervisor decomposes large goals into
+small jobs, one or more implementation workers execute those jobs, and optional
+read-only reviewers inspect each worker attempt before acceptance.  The default
+deployment uses Codex CLI for the supervisor and Cursor Agent for workers and
+reviewers, but those command-line wrappers are configurable per role.  All
+coordination happens through durable files in the project repository, which
+makes state auditable, restartable, and independent of direct agent-to-agent
+process control.
 \end{abstract}
 
 \section{Design Goals}
@@ -49,6 +52,8 @@ main goals are:
 \path{.ai/commit\_docs/} & Markdown documentation for each worker attempt and its commit range.\\
 \path{.ai/metrics/} & Structured run metrics and workflow events.\\
 \path{.worktrees/JNNNN/} & Isolated Git worktree for a worker job branch.\\
+\path{agent\_wrappers/} & Role-neutral wrapper registry with executable, model, and recommended-role metadata.\\
+\path{gui/} & Local dashboard for launching/stopping loops, selecting wrappers/models, reviewing gates, and inspecting logs.\\
 \path{skills/} & Project skills plus installed reusable workflow skills visible to Codex and Cursor prompts.\\
 \path{scripts/} & Dependency-light shell and Python helpers for dispatch, review, metrics, GUI, and recovery.\\
 \end{longtable}
@@ -57,8 +62,10 @@ main goals are:
 
 \subsection{Supervisor}
 
-The Codex supervisor owns planning, dispatch, review, acceptance, rejection, and
-ledger maintenance.  It reads the project design and current state, creates one
+The supervisor owns planning, dispatch, review, acceptance, rejection, and ledger
+maintenance.  In the default configuration it is launched through Codex CLI, but
+the dashboard can also launch it through Cursor Agent or any future compatible
+wrapper.  The supervisor reads the project design and current state, creates one
 small job at a time, reviews the worker report, tests, diff, commit docs, and
 reviewer reports, then integrates or rejects the job.  Supervisor-owned planning
 files include \path{roadmap.md}, \path{project\_brief.md}, and \path{ledger.md};
@@ -66,19 +73,68 @@ workers may suggest changes to those files but should not own them.
 
 \subsection{Worker}
 
-The Cursor worker implements exactly one assigned job in an isolated worktree.
-It runs the requested validation, keeps changes in meaningful commits where
-possible, and writes a concise report.  Each report includes workflow friction
-and skill suggestions so repeated procedural failures can be converted into
-templates, scripts, protocols, or skills.
+The worker implements exactly one assigned job in an isolated worktree.  In the
+default configuration it is launched through Cursor Agent, but Codex CLI can also
+be selected as the worker wrapper.  The worker runs the requested validation,
+keeps changes in meaningful commits where possible, and writes a concise report.
+Each report includes workflow friction and skill suggestions so repeated
+procedural failures can be converted into templates, scripts, protocols, or
+skills.
 
 \subsection{Reviewers}
 
-Two optional read-only Cursor reviewers run after the worker and tests finish.
-Reviewer A focuses on scientific, mathematical, numerical, and algorithmic
-robustness.  Reviewer B focuses on code quality, build behavior, portability,
-tests, maintainability, and Git hygiene.  Reviewers inspect the actual diff
-rather than relying on the worker report.
+Two optional read-only reviewers run after the worker and tests finish.  Each
+reviewer has an independent wrapper and model.  Reviewer A focuses on
+scientific, mathematical, numerical, and algorithmic robustness.  Reviewer B
+focuses on code quality, build behavior, portability, tests, maintainability,
+and Git hygiene.  Reviewers inspect the actual diff rather than relying on the
+worker report.
+
+\section{Agent Wrappers and Model Selection}
+
+Agent wrappers decouple workflow roles from a specific command-line product.
+The registry in \path{agent\_wrappers/} declares wrapper IDs, labels,
+executables, supported roles, recommended roles, default models per role, and
+the models that should appear in the dashboard dropdowns.  The built-in wrappers
+are role-neutral:
+
+\begin{longtable}{p{0.20\linewidth}p{0.34\linewidth}p{0.36\linewidth}}
+\textbf{Wrapper} & \textbf{Recommended roles} & \textbf{Default model behavior}\\
+\hline
+\path{codex} & Supervisor and workflow chat & Uses Codex model IDs such as \path{gpt-5.5} with a separate reasoning-effort control.\\
+\path{cursor-agent} & Worker and reviewers & Uses Cursor model IDs such as \path{gpt-5.5-high}, \path{gpt-5.3-codex-high}, and \path{claude-opus-4-7-thinking-high}.\\
+\end{longtable}
+
+The same wrappers can be selected for non-recommended roles when desired.  For
+example, the dashboard can launch a Codex CLI worker or a Cursor Agent
+supervisor.  Model dropdowns are populated from the selected wrapper metadata,
+which avoids mixing Codex model names with Cursor model names unless a wrapper
+explicitly advertises them.
+
+New wrappers, such as a future Claude Code integration, should be added by
+creating \path{agent\_wrappers/<wrapper-id>/wrapper.json} and either a command
+template or a built-in runner in \path{scripts/agent\_wrapper.py}.  The workflow
+loops call \path{scripts/agent\_wrapper.py run}; they do not hard-code a vendor
+command except inside the wrapper runner.
+
+\section{Dashboard}
+
+The local dashboard is served by \path{scripts/workflow\_gui.py}.  It provides:
+
+\begin{itemize}
+  \item launch and stop controls for worker and supervisor loops;
+  \item wrapper and model dropdowns for worker, reviewer A, reviewer B, and supervisor;
+  \item current run status, job state, milestone criteria, project tree, and ledger views;
+  \item bounded real-time log panels for worker, supervisor, reviewer, and GUI output;
+  \item a human milestone-review form with yes/no checklist answers, comments,
+        an approval comment, and a major-structural-change override;
+  \item workflow-aware chat panels for asking questions before submitting human review.
+\end{itemize}
+
+When a human gate exists, the worker loop pauses and the supervisor loop exits
+with \path{HUMAN\_REVIEW\_REQUIRED}.  This is intentional: the dashboard remains
+available for the human review, and after the review is submitted the workflow
+can restart the loops automatically according to the project configuration.
 
 \section{Overall Control Flow}
 
@@ -86,22 +142,22 @@ rather than relying on the worker report.
 Human design prompt
         |
         v
-Codex supervisor extracts brief, roadmap, and current milestone
+Supervisor extracts brief, roadmap, and current milestone
         |
         v
 Create exactly one small worker job in .ai/jobs/JNNNN/
         |
         v
-Cursor worker implements in .worktrees/JNNNN
+Selected worker wrapper implements in .worktrees/JNNNN
         |
         v
 Validation, commit docs, changed_files, diffstat, report
         |
         v
-Reviewer A and Reviewer B inspect the actual diff in parallel
+Selected reviewer wrappers inspect the actual diff in parallel
         |
         v
-Codex supervisor reviews worker artifacts plus reviewer artifacts
+Supervisor reviews worker artifacts plus reviewer artifacts
         |
         +-- reject --> feedback.md --> worker retry
         |
@@ -145,11 +201,11 @@ The worker loop performs deterministic steps before and after invoking Cursor:
   \item Create or reuse \path{.worktrees/JNNNN} on branch \path{ai/JNNNN}.
   \item Resolve and persist \path{base\_sha}; never use a moving ref for review.
   \item Run preflight checks: branch, worktree cleanliness, base ancestry, and
-        submodule initialization, including Kokkos when configured.
+        project-configured submodule requirements.
   \item Build a prompt containing only the job task, feedback, visible skills,
         validation command, and report contract.
-  \item Invoke \path{cursor-agent} with configurable model, timeout, and extra
-        local flags.
+  \item Invoke the selected worker wrapper with configurable model, timeout, and
+        extra local flags.
   \item Commit remaining changes if Cursor did not create commits.
   \item Run the job validation command, optionally bounded by \path{TEST\_TIMEOUT}.
   \item Record raw and filtered post-test dirty status.  Allowed generated files
@@ -161,7 +217,8 @@ The worker loop performs deterministic steps before and after invoking Cursor:
 
 \section{Reviewer Protocol}
 
-Reviewers run in parallel.  Each report must include a fenced YAML block:
+Reviewers run in parallel through the selected reviewer wrappers.  Each report
+must include a fenced YAML block:
 
 \begin{verbatim}
 diff_coverage:
@@ -202,11 +259,15 @@ worktree.
 \section{Human Gates}
 
 Human review is reserved for milestone boundaries, major structural changes, and
-decisions the supervisor cannot safely make.  Ordinary failed checklist items
-are routed through \path{HUMAN\_REVIEW\_ACTION\_REQUESTED.md}; the supervisor
-classifies them and creates a small revision job, updates planning records, or
-opens a clarification gate.  Major structural requests are handled by the
-supervisor first, then returned to the human as an updated milestone plan.
+decisions the supervisor cannot safely make.  The dashboard cycles through every
+checklist item, records yes/no answers and comments, and supports an optional
+approval comment.  Ordinary failed checklist items are routed through
+\path{HUMAN\_REVIEW\_ACTION\_REQUESTED.md}; the supervisor classifies them and
+creates a small revision job, updates planning records, or opens a clarification
+gate.  Major structural requests supersede the checklist outcome and are routed
+through \path{STRUCTURAL\_CHANGE\_REQUESTED.md}.  The supervisor must update the
+milestone plan first, then return to the human with a revised review gate before
+implementation continues.
 
 \section{Failure Handling}
 
@@ -235,27 +296,34 @@ pattern.
 
 \section{Metrics and Paper Reproducibility}
 
-Cursor worker and reviewer runs write per-agent metrics next to job artifacts,
-and supervisor runs write metrics under \path{.ai/metrics/supervisor/}.  All
-records are appended to \path{.ai/metrics/runs.jsonl}.  Workflow events such as
-failures, reviewer blocks, and human interventions are appended to
+Worker and reviewer runs write per-agent metrics next to job artifacts, and
+supervisor runs write metrics under \path{.ai/metrics/supervisor/}.  All records
+are appended to \path{.ai/metrics/runs.jsonl}.  Workflow events such as failures,
+reviewer blocks, wrapper crashes, and human interventions are appended to
 \path{.ai/metrics/events.jsonl}.  These records can support a later empirical
 study of agent reliability, failure modes, human-intervention frequency, token
-use, wall-clock time, and scientific-code review outcomes.
+use, wall-clock time, wrapper choice, model choice, and scientific-code review
+outcomes.
 
 \section{Minimal Commands}
 
 \begin{verbatim}
-python3 scripts/workflow_gui.py
+python3 scripts/workflow_gui.py --host 127.0.0.1 --port 8765 --project-root .
 
-CURSOR_MODEL=gpt-5.5-high \
+WORKER_AGENT_WRAPPER=cursor-agent \
+WORKER_MODEL=gpt-5.5-high \
+REVIEWER_A_AGENT_WRAPPER=cursor-agent \
 CURSOR_REVIEWER_A_MODEL=claude-opus-4-7-thinking-high \
+REVIEWER_B_AGENT_WRAPPER=cursor-agent \
 CURSOR_REVIEWER_B_MODEL=gpt-5.3-codex-high \
 ./scripts/worker_loop.sh
 
-CODEX_MODEL=gpt-5.5 CODEX_REASONING_EFFORT=high \
+SUPERVISOR_AGENT_WRAPPER=codex \
+CODEX_MODEL=gpt-5.5 \
+CODEX_REASONING_EFFORT=high \
 ./scripts/supervisor_loop.sh
 
+python3 scripts/agent_wrapper.py list --json
 python3 scripts/summarize_jobs.py
 python3 scripts/summarize_agent_metrics.py
 \end{verbatim}
