@@ -388,6 +388,7 @@ run_attempt_consistency_check() {
   local final_commit="$6"
   local test_log="$7"
   local report="$8"
+  local handoff_json="${9:-}"
   local out_file="$job/attempt_consistency.attempt-$attempt.md"
   local check_exit=0
 
@@ -400,6 +401,7 @@ run_attempt_consistency_check() {
     --commit "$final_commit" \
     --report "$report" \
     --test-log "$test_log" \
+    --handoff-json "$handoff_json" \
     --output "$out_file" >/dev/null 2>&1 || check_exit=$?
   update_status "$status_file" attempt_consistency_log="$out_file" attempt_consistency_exit="$check_exit"
   return "$check_exit"
@@ -438,6 +440,8 @@ write_reviewer_prompt() {
     echo "- Final worker commit: $final_commit"
     echo "- Task: $ROOT/$job/task.md"
     echo "- Worker report: $ROOT/$job/report.md"
+    echo "- Structured worker handoff: $ROOT/$job/worker_handoff.attempt-$attempt.json"
+    echo "- Raw worker transcript, audit only: $ROOT/$job/cursor_final.attempt-$attempt.md"
     echo "- Diffstat: $ROOT/$job/diffstat.attempt-$attempt.txt"
     echo "- Changed files: $ROOT/$changed_files_file"
     echo "- Patch: $ROOT/$job/diff.attempt-$attempt.patch"
@@ -456,6 +460,7 @@ write_reviewer_prompt() {
     fi
     echo
     echo "Read the actual diff comprehensively, not just the worker report. Start from the diffstat, then inspect every changed file in the patch and/or worktree."
+    echo "Treat the worker report and structured handoff as worker narrative. Treat status.json, changed_files, test logs, commit docs, and Git diff from base SHA to final commit as canonical. Do not rely on the raw transcript except when debugging an inconsistency."
     echo "Use commands such as 'git diff --name-only $base_sha..$final_commit', 'git diff $base_sha..$final_commit -- <path>', and direct source reads from the worktree."
     echo "If the diff is too large to review comprehensively within this reviewer pass, recommend revise/split; do not recommend acceptance for partially reviewed work."
     echo "Cross-check the worker report, test log, commit docs, and actual code. The actual diff and worktree are the source of truth."
@@ -773,7 +778,8 @@ process_job() {
     echo "- Run the requested tests."
     echo "- Break changes into meaningful commits where the task naturally separates into pieces."
     echo "- If files are changed and no meaningful commits exist, leave changes staged or unstaged; the worker loop will create a fallback attempt commit."
-    echo "- Return a concise report with summary, files changed, commits made, tests run and results, scientific assumptions, known limitations, suggested follow-up, workflow friction, and skill suggestions."
+    echo "- Finish with a clean structured report using these exact Markdown headings: Summary, Files Changed, Commits Made, Tests Run And Results, Scientific Assumptions, Known Limitations, Suggested Follow-Up, Workflow Friction, Skill Suggestions."
+    echo "- Put only final attempt facts in that structured report. Do not copy stale feedback, intermediate reasoning, old attempt claims, or raw tool transcripts into the final structured report."
     echo "- Include a Workflow Friction section. Say 'None' if the job instructions and workflow were clear. Otherwise list missing context, unclear requirements, duplicated/repeated work, painful manual steps, commands that were unavailable, or places where a template/checklist/script would have prevented confusion."
     echo "- Include a Skill Suggestions section. Say 'None' if no new skill is justified."
     echo "- Before proposing a skill, consult existing skills with 'python3 scripts/list_skills.py' when available."
@@ -902,40 +908,29 @@ process_job() {
   git -C "$worktree" diff --stat "$base_sha..HEAD" >"$job/diffstat.attempt-$attempt.txt" || true
   git -C "$worktree" diff "$base_sha..HEAD" >"$job/diff.attempt-$attempt.patch" || true
 
-  {
-    echo "# Worker Report: $id Attempt $attempt"
-    echo
-    echo "## Summary"
-    cat "$cursor_out"
-    echo
-    echo "## Worker exit"
-    echo "$worker_exit"
-    if [[ -n "$worker_error" ]]; then
-      echo
-      echo "## Worker error"
-      echo "$worker_error"
-    fi
-    echo
-    echo "## Test exit"
-    echo "$test_exit"
-    echo
-    echo "## Final commit"
-    echo "$final_commit"
-    echo
-    echo "## Base commit"
-    echo "$base_sha"
-    echo
-    echo "## Changed files"
-    cat "$job/changed_files.attempt-$attempt.txt"
-    echo
-    echo "## Workflow evolution inputs"
-    echo "The worker report above should include Workflow Friction and Skill Suggestions sections. Reviewers and the Codex supervisor evaluate these before any workflow change is made."
-    if [[ "$post_test_dirty" == true ]]; then
-      echo
-      echo "## Post-test dirty worktree"
-      echo "$post_test_dirty_error"
-    fi
-  } >"$job/report.md"
+  local handoff_json="$job/worker_handoff.attempt-$attempt.json"
+  python3 scripts/extract_worker_handoff.py \
+    --job-id "$id" \
+    --attempt "$attempt" \
+    --raw-output "$cursor_out" \
+    --output "$handoff_json" >/dev/null || true
+
+  python3 scripts/render_worker_report.py \
+    --job-id "$id" \
+    --attempt "$attempt" \
+    --worker-exit "$worker_exit" \
+    --worker-error "$worker_error" \
+    --test-command "$test_command" \
+    --test-exit "$test_exit" \
+    --test-log "$test_log" \
+    --final-commit "$final_commit" \
+    --base-sha "$base_sha" \
+    --changed-files "$job/changed_files.attempt-$attempt.txt" \
+    --handoff-json "$handoff_json" \
+    --raw-transcript "$cursor_out" \
+    --post-test-dirty "$post_test_dirty" \
+    --post-test-status "$post_test_status" \
+    --output "$job/report.md" >/dev/null
 
   local tests_passed=false
   if [[ "$test_exit" -eq 0 ]]; then
@@ -951,6 +946,7 @@ process_job() {
     post_test_status="$post_test_status" \
     post_test_status_raw="$post_test_status_raw" \
     allowed_artifacts="$allowed_artifacts" \
+    worker_handoff="$handoff_json" \
     report="$job/report.md"
 
   python3 scripts/create_commit_doc.py \
@@ -962,10 +958,11 @@ process_job() {
     --test-command "$test_command" \
     --test-exit "$test_exit" \
     --test-log "$test_log" \
-    --summary-file "$cursor_out" >/dev/null || true
+    --summary-file "$handoff_json" \
+    --handoff-json "$handoff_json" >/dev/null || true
 
   local consistency_exit=0
-  run_attempt_consistency_check "$job" "$status_file" "$attempt" "$worktree" "$base_sha" "$final_commit" "$test_log" "$job/report.md" || consistency_exit=$?
+  run_attempt_consistency_check "$job" "$status_file" "$attempt" "$worktree" "$base_sha" "$final_commit" "$test_log" "$job/report.md" "$handoff_json" || consistency_exit=$?
 
   local cursor_reported_success=false
   if grep -q '\[system success\]' "$cursor_out" 2>/dev/null; then
@@ -1104,7 +1101,8 @@ review_existing_job() {
   fi
 
   local existing_consistency_exit=0
-  run_attempt_consistency_check "$job" "$status_file" "$attempt" "$worktree" "$base_sha" "$final_commit" "$job/test.attempt-$attempt.log" "$job/report.md" || existing_consistency_exit=$?
+  local existing_handoff_json="$job/worker_handoff.attempt-$attempt.json"
+  run_attempt_consistency_check "$job" "$status_file" "$attempt" "$worktree" "$base_sha" "$final_commit" "$job/test.attempt-$attempt.log" "$job/report.md" "$existing_handoff_json" || existing_consistency_exit=$?
   if [[ "$existing_consistency_exit" -ne 0 ]]; then
     update_status "$status_file" \
       state=blocked \

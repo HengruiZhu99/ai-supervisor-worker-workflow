@@ -82,10 +82,10 @@ http://127.0.0.1:8765/
 ```
 
 The dashboard includes:
-- worker launch/stop controls with Cursor model, timeout, and force options
+- worker launch/stop controls with wrapper, model, timeout, and force options
 - wrapper and model selectors for worker, reviewer A, reviewer B, and supervisor agents
-- reviewer controls for two read-only Cursor reviewer passes after each worker attempt
-- supervisor launch/stop controls with Codex model, reasoning effort, poll interval, and verbose heartbeat options
+- reviewer controls for two read-only reviewer passes after each worker attempt
+- supervisor launch/stop controls with wrapper, model, reasoning effort, poll interval, and verbose heartbeat options
 - job status and logs
 - reviewer report display for the latest reviewed or actively reviewing job
 - expandable milestone criteria
@@ -127,6 +127,15 @@ Reviewer reports include a machine-checkable `diff_coverage` YAML block. The wor
 
 Reviewer reports also include a machine-checkable `review_decision` YAML block. The worker loop parses this with `scripts/analyze_reviewer_reports.py`; if either reviewer blocks acceptance, the job stays in `review_failed` for supervisor decision instead of silently becoming ready.
 
+Raw worker transcripts are audit artifacts only. After the worker wrapper exits,
+the loop extracts `worker_handoff.attempt-N.json` from the final structured
+worker report, then generates `report.md` and commit documentation from
+canonical workflow facts plus that structured handoff. Reviewers and the
+supervisor should use `status.json`, Git history, test logs, changed-file lists,
+diff artifacts, commit docs, and the generated `report.md` as review inputs;
+`cursor_final.attempt-N.md` and `cursor_stream.attempt-N.jsonl` are for debugging
+inconsistencies, not for canonical state.
+
 Worker validation can be bounded with `TEST_TIMEOUT`. After tests, the worker loop records both raw and filtered dirty-worktree status. A job may declare expected generated artifacts in `.ai/jobs/JNNNN/allowed_artifacts.txt`; all other post-test dirty files block the attempt.
 
 Before integrating an accepted job, the supervisor can run:
@@ -146,7 +155,7 @@ Agent wrappers are isolated under `agent_wrappers/<wrapper-id>/wrapper.json` and
 python3 scripts/agent_wrapper.py list --json
 ```
 
-The built-in wrappers are `cursor-agent` for worker/reviewer roles and `codex` for supervisor/chat roles. A future wrapper such as Claude Code can be added by creating a new wrapper directory with `wrapper.json` and either adding a built-in runner to `scripts/agent_wrapper.py` or providing a `command` template in the JSON file.
+The built-in wrappers are role-neutral: `cursor-agent` is recommended for worker/reviewer roles, and `codex` is recommended for supervisor/chat roles, but the dashboard can select either wrapper for any role. A future wrapper such as Claude Code can be added by creating a new wrapper directory with `wrapper.json` and either adding a built-in runner to `scripts/agent_wrapper.py` or providing a `command` template in the JSON file.
 
 If an older workflow leaves a completed attempt in a blocked state before reviewers run, set the job state to `implemented`; the worker loop will run only the reviewer stage for the existing `base_sha..commit` attempt and then move the job to `ready_for_review`, `review_failed`, or `review_timeout`.
 

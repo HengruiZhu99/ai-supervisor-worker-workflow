@@ -106,6 +106,7 @@ If a job is `ready_for_review`, inspect:
 
 - `status.json`
 - `report.md`
+- `worker_handoff.attempt-N.json`
 - reviewer reports under `reviews/`, when present
 - the worker's `Skill Suggestions` section, if present
 - reviewer assessments of skill suggestions, if present
@@ -149,7 +150,14 @@ review_decision:
 
 The supervisor should check reviewer diff coverage and machine-readable decisions before accepting. The worker loop runs `scripts/check_reviewer_coverage.py` against `changed_files.attempt-N.txt` and parses `review_decision` with `scripts/analyze_reviewer_reports.py`; if the reviewer stage fails or either reviewer blocks acceptance, jobs enter `review_failed` or `review_timeout` instead of `ready_for_review`. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
 
-The worker loop also runs `scripts/check_attempt_consistency.py` before reviewer handoff. If worker reports or commit documentation contradict canonical workflow facts from `status.json`, the attempt commit range, or `test.attempt-N.log`, the job should be blocked before reviewers run. The supervisor should inspect `attempt_consistency.attempt-N.md` and create workflow-maintenance feedback rather than accepting misleading audit records.
+The worker loop keeps raw agent transcripts as audit artifacts only. It extracts
+`worker_handoff.attempt-N.json` from the final structured worker report, then
+generates `report.md` and commit documentation from canonical workflow facts
+plus that structured handoff. Reviewers and the supervisor should not treat
+`cursor_final.attempt-N.md` or `cursor_stream.attempt-N.jsonl` as canonical
+state.
+
+The worker loop also runs `scripts/check_attempt_consistency.py` before reviewer handoff. If generated reports or commit documentation contradict canonical workflow facts from `status.json`, the attempt commit range, or `test.attempt-N.log`, the job should be blocked before reviewers run. The supervisor should inspect `attempt_consistency.attempt-N.md` and create workflow-maintenance feedback rather than accepting misleading audit records.
 
 After tests, the worker loop records raw and filtered dirty-worktree status. Jobs may declare expected generated files in `.ai/jobs/JNNNN/allowed_artifacts.txt`; undeclared post-test dirty files block the attempt. This prevents tests from silently creating source, build, cache, or generated artifacts after the worker commit.
 

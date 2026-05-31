@@ -38,17 +38,22 @@ If validation intentionally generates untracked or modified files, list the expe
 
 ## Worker report contract
 
-Return:
+Finish with a clean structured report using these exact Markdown headings:
 
 1. Summary
-2. Files changed
-3. Commits made
-4. Tests run and results
-5. Scientific assumptions
-6. Known limitations
-7. Suggested follow-up
-8. Workflow friction
-9. Skill suggestions
+2. Files Changed
+3. Commits Made
+4. Tests Run And Results
+5. Scientific Assumptions
+6. Known Limitations
+7. Suggested Follow-Up
+8. Workflow Friction
+9. Skill Suggestions
+
+Put only final attempt facts in the structured report. Do not copy stale
+feedback, intermediate reasoning, old attempt claims, or raw tool transcripts
+into the final structured report. The worker loop keeps the raw transcript
+separately and extracts `worker_handoff.attempt-N.json` from this final report.
 
 For workflow friction, return `None` if the task and workflow were clear. Otherwise list missing context, unclear instructions, repeated boilerplate, unavailable helper commands, painful manual steps, or places where a template/checklist/script would have prevented confusion.
 

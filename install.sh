@@ -77,6 +77,7 @@ files=(
   "scripts/commit_workflow_records.py"
   "scripts/check_reviewer_coverage.py"
   "scripts/cursor_stream_to_text.py"
+  "scripts/extract_worker_handoff.py"
   "scripts/filter_allowed_artifacts.py"
   "scripts/human_milestone_review.py"
   "scripts/integrate_job.py"
@@ -84,6 +85,7 @@ files=(
   "scripts/prune_accepted_job_refs.py"
   "scripts/record_workflow_event.py"
   "scripts/record_workflow_improvement.py"
+  "scripts/render_worker_report.py"
   "scripts/summarize_agent_metrics.py"
   "scripts/summarize_jobs.py"
   "scripts/supervisor_loop.sh"
@@ -112,9 +114,11 @@ chmod +x \
   "$TARGET_DIR/scripts/analyze_reviewer_reports.py" \
   "$TARGET_DIR/scripts/check_attempt_consistency.py" \
   "$TARGET_DIR/scripts/check_reviewer_coverage.py" \
+  "$TARGET_DIR/scripts/extract_worker_handoff.py" \
   "$TARGET_DIR/scripts/filter_allowed_artifacts.py" \
   "$TARGET_DIR/scripts/integrate_job.py" \
   "$TARGET_DIR/scripts/record_workflow_event.py" \
+  "$TARGET_DIR/scripts/render_worker_report.py" \
   "$TARGET_DIR/scripts/transition_job.py" \
   "$TARGET_DIR/scripts/worker_loop.sh" \
   "$TARGET_DIR/scripts/supervisor_loop.sh" \

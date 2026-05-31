@@ -212,8 +212,16 @@ The worker loop performs deterministic steps before and after invoking Cursor:
         may be declared in \path{allowed\_artifacts.txt}; undeclared dirty files
         block the attempt.
   \item Generate \path{changed\_files}, \path{diffstat}, \path{diff.patch},
-        \path{report.md}, commit docs, consistency checks, metrics, and events.
+        \path{worker\_handoff.attempt-N.json}, \path{report.md}, commit docs,
+        consistency checks, metrics, and events.
 \end{enumerate}
+
+The raw worker transcript is retained as audit evidence only.  The worker loop
+extracts a structured handoff from the final worker report and uses canonical
+workflow facts plus that handoff to render \path{report.md} and commit
+documentation.  Raw transcript files such as \path{cursor\_final.attempt-N.md}
+and \path{cursor\_stream.attempt-N.jsonl} are not embedded into canonical review
+artifacts.
 
 \section{Reviewer Protocol}
 
@@ -244,7 +252,7 @@ report.  It should inspect:
 
 \begin{itemize}
   \item \path{status.json}, including \path{base\_sha}, attempts, tests, and reviewer fields;
-  \item \path{report.md}, \path{test.attempt-N.log}, \path{diffstat}, and selected patch sections;
+  \item \path{worker\_handoff.attempt-N.json}, \path{report.md}, \path{test.attempt-N.log}, \path{diffstat}, and selected patch sections;
   \item \path{changed\_files.attempt-N.txt} and reviewer coverage;
   \item reviewer A and B reports and reviewer-decision analysis;
   \item commit documentation and the actual branch diff \path{base\_sha..HEAD};

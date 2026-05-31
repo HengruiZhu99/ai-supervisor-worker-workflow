@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 from pathlib import Path
 
@@ -59,6 +60,15 @@ def extract_section(summary: str, names: tuple[str, ...]) -> str:
     return "\n".join(captured).strip()
 
 
+def read_json(path: str | None) -> dict:
+    if not path:
+        return {}
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--job-id", required=True)
@@ -69,7 +79,8 @@ def main() -> int:
     parser.add_argument("--test-command", required=True)
     parser.add_argument("--test-exit", required=True, type=int)
     parser.add_argument("--test-log", required=True)
-    parser.add_argument("--summary-file", required=True)
+    parser.add_argument("--summary-file", default="")
+    parser.add_argument("--handoff-json", default="")
     args = parser.parse_args()
 
     commit = args.commit
@@ -82,8 +93,23 @@ def main() -> int:
     _, attempt_files = run_git(["diff", "--name-status", commit_range])
     _, attempt_stat = run_git(["diff", "--stat", commit_range])
 
-    summary = read_text(args.summary_file)
-    limitations = extract_section(summary, ("known limitations", "follow-up", "follow up"))
+    handoff = read_json(args.handoff_json)
+    if handoff:
+        summary = str(handoff.get("summary", "")).strip()
+        limitations = "\n\n".join(
+            value for value in [
+                str(handoff.get("known_limitations", "")).strip(),
+                str(handoff.get("suggested_follow_up", "")).strip(),
+            ]
+            if value
+        )
+        workflow_friction = str(handoff.get("workflow_friction", "")).strip() or "None reported."
+        skill_suggestions = str(handoff.get("skill_suggestions", "")).strip() or "None reported."
+    else:
+        summary = read_text(args.summary_file)
+        limitations = extract_section(summary, ("known limitations", "follow-up", "follow up"))
+        workflow_friction = "See legacy summary above."
+        skill_suggestions = "See legacy summary above."
     log_tail = tail_text(args.test_log)
 
     docs_dir = Path(".ai/commit_docs")
@@ -170,13 +196,26 @@ def main() -> int:
 {log_tail or "No test log available."}
 ```
 
-## Summary
+## Worker Handoff
 
-{summary or "No summary file available."}
+- Structured handoff: `{args.handoff_json or "not available"}`
+- Handoff quality: `{handoff.get("handoff_quality", "unknown") if handoff else "legacy raw summary"}`
+
+## Worker Handoff Summary
+
+{summary or "No structured summary available."}
 
 ## Known limitations / follow-up
 
-{limitations or "See summary above."}
+{limitations or "None reported."}
+
+## Workflow Friction
+
+{workflow_friction}
+
+## Skill Suggestions
+
+{skill_suggestions}
 """
     out_path.write_text(body, encoding="utf-8")
     print(out_path)

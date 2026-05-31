@@ -77,7 +77,17 @@ def consistency_claim_text(text: str) -> str:
     marker = "\n## Worker exit"
     index = text.rfind(marker)
     if index != -1:
-        return text[index:]
+        text = text[index:]
+
+    for marker in (
+        "\n## Worker Handoff",
+        "\n## Worker Handoff Summary",
+        "\n## Worker-Reported",
+        "\n## Raw Transcript Policy",
+    ):
+        marker_index = text.find(marker)
+        if marker_index != -1:
+            text = text[:marker_index]
     return text
 
 
@@ -91,6 +101,7 @@ def main() -> int:
     parser.add_argument("--commit", required=True)
     parser.add_argument("--report", required=True)
     parser.add_argument("--test-log", required=True)
+    parser.add_argument("--handoff-json", default="")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -138,6 +149,7 @@ def main() -> int:
         f"- Commits in attempt range: `{commits_in_attempt}`",
         f"- Test exit: `{status_test_exit}`",
         f"- Commit docs: `{', '.join(path.name for path in docs) or 'none'}`",
+        f"- Structured handoff: `{args.handoff_json or 'none'}`",
         "",
     ]
     if issues:
