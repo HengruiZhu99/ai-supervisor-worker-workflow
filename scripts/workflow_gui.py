@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -46,6 +47,8 @@ def env_int(name: str, default: int) -> int:
 
 
 LOG_DISPLAY_LINES = env_int("AI_WORKFLOW_GUI_LOG_LINES", DEFAULT_LOG_DISPLAY_LINES)
+DEFAULT_GUI_PORT = 8765
+GUI_PORT_SEARCH_LIMIT = 100
 
 
 def run(args: list[str], cwd: Path) -> tuple[int, str, str]:
@@ -99,6 +102,67 @@ def pid_file(root: Path, name: str) -> Path:
 
 def log_file(root: Path, name: str) -> Path:
     return runs_dir(root) / f"{name}.log"
+
+
+def gui_port_config_path(root: Path) -> Path:
+    runtime = root / ".ai" / "runtime"
+    runtime.mkdir(parents=True, exist_ok=True)
+    return runtime / "workflow_gui_port.json"
+
+
+def port_available(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
+def find_available_port(host: str, start_port: int) -> int:
+    for port in range(start_port, start_port + GUI_PORT_SEARCH_LIMIT):
+        if port_available(host, port):
+            return port
+    raise SystemExit(f"no available dashboard port found in {start_port}-{start_port + GUI_PORT_SEARCH_LIMIT - 1}")
+
+
+def load_stored_gui_port(root: Path) -> int | None:
+    data = read_json(gui_port_config_path(root))
+    try:
+        port = int(data.get("port", 0))
+    except (TypeError, ValueError):
+        return None
+    if 0 < port < 65536:
+        return port
+    return None
+
+
+def store_gui_port(root: Path, host: str, port: int) -> None:
+    payload = {
+        "host": host,
+        "port": port,
+        "url": f"http://{host}:{port}/",
+        "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+    }
+    gui_port_config_path(root).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def resolve_gui_port(root: Path, host: str, requested_port: int | None) -> tuple[int, str]:
+    if requested_port is not None:
+        store_gui_port(root, host, requested_port)
+        return requested_port, "explicit"
+
+    stored_port = load_stored_gui_port(root)
+    if stored_port is not None and port_available(host, stored_port):
+        return stored_port, "stored"
+
+    start_port = stored_port or DEFAULT_GUI_PORT
+    selected = find_available_port(host, start_port)
+    store_gui_port(root, host, selected)
+    if stored_port is not None and selected != stored_port:
+        return selected, f"stored port {stored_port} was busy; reassigned"
+    return selected, "auto"
 
 
 def workflow_package_commit() -> str:
@@ -1857,7 +1921,7 @@ class Handler(SimpleHTTPRequestHandler):
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", default=8765, type=int)
+    parser.add_argument("--port", default=None, type=int, help="dashboard port; when omitted, use or create the per-project stored port")
     parser.add_argument("--project-root", default=".")
     args = parser.parse_args()
 
@@ -1865,11 +1929,14 @@ def main() -> int:
     if not (project_root / ".git").exists():
         raise SystemExit(f"project root is not a Git repository root: {project_root}")
 
+    port, port_source = resolve_gui_port(project_root, args.host, args.port)
     os.chdir(GUI_ROOT)
     Handler.project_root = project_root
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
-    url = f"http://{args.host}:{args.port}/"
+    server = ThreadingHTTPServer((args.host, port), Handler)
+    url = f"http://{args.host}:{port}/"
     print(f"AI workflow dashboard: {url}")
+    print(f"Port source: {port_source}")
+    print(f"Port config: {gui_port_config_path(project_root)}")
     print(f"Project: {project_root}")
     try:
         server.serve_forever()

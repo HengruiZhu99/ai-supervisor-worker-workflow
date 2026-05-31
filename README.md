@@ -81,6 +81,13 @@ Then open:
 http://127.0.0.1:8765/
 ```
 
+The first launch stores the selected dashboard port in
+`.ai/runtime/workflow_gui_port.json`.  Later launches from the same project reuse
+that port automatically.  If the stored/default port is already in use by
+another project, the dashboard selects the next available port and updates that
+project-local file.  Pass `--port N` only when you want to override the stored
+port manually.
+
 The dashboard includes:
 - worker launch/stop controls with wrapper, model, timeout, and force options
 - wrapper and model selectors for worker, reviewer A, reviewer B, and supervisor agents

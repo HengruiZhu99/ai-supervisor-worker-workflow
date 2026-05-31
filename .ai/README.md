@@ -241,6 +241,13 @@ Then visit:
 http://127.0.0.1:8765/
 ```
 
+The first launch stores the selected dashboard port in
+`.ai/runtime/workflow_gui_port.json`. Later launches from the same project reuse
+that port automatically. If the stored/default port is already in use by another
+project, the dashboard selects the next available port and updates the
+project-local file. Use `--port N` only when you want to override the stored
+port manually.
+
 The dashboard can launch and stop the worker and supervisor loops, show job/worktree/project status, expand milestone criteria, process human milestone review checklists, and ask workflow-aware Codex chat questions. The Project Overview Workflow Chat is always available and defaults to read-only guidance; enable its edit checkbox only when you want the chat agent to change workflow files. After a successful human-review submission through the dashboard or `scripts/human_milestone_review.py`, the workflow automatically starts the supervisor and worker loops if either is offline. It also pushes the current branch to `origin` by default after recording the human review. Disable that push with `AI_WORKFLOW_PUSH_AFTER_HUMAN_REVIEW=0`, or choose a different target with `AI_WORKFLOW_PUSH_REMOTE` and `AI_WORKFLOW_PUSH_BRANCH`.
 
 Loops launched from the dashboard are wrapped with a small crash relaunch guard. The default is three process-level restarts; adjust with `AI_WORKFLOW_LOOP_MAX_RESTARTS` and `AI_WORKFLOW_LOOP_RESTART_DELAY`.

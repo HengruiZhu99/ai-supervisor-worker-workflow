@@ -131,6 +131,12 @@ The local dashboard is served by \path{scripts/workflow\_gui.py}.  It provides:
   \item workflow-aware chat panels for asking questions before submitting human review.
 \end{itemize}
 
+The dashboard stores a project-local port record in
+\path{.ai/runtime/workflow\_gui\_port.json}.  If no explicit \path{--port} is
+given, a project reuses its stored port; a new project chooses the first
+available port at or above 8765 and stores it.  This lets multiple project
+dashboards run at the same time without manual port bookkeeping.
+
 When a human gate exists, the worker loop pauses and the supervisor loop exits
 with \path{HUMAN\_REVIEW\_REQUIRED}.  This is intentional: the dashboard remains
 available for the human review, and after the review is submitted the workflow
@@ -316,7 +322,7 @@ outcomes.
 \section{Minimal Commands}
 
 \begin{verbatim}
-python3 scripts/workflow_gui.py --host 127.0.0.1 --port 8765 --project-root .
+python3 scripts/workflow_gui.py --host 127.0.0.1 --project-root .
 
 WORKER_AGENT_WRAPPER=cursor-agent \
 WORKER_MODEL=gpt-5.5-high \
