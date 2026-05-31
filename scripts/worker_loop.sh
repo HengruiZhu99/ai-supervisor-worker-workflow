@@ -151,7 +151,7 @@ run_worker_agent() {
       --prompt-file "$prompt_file" \
       --output-format "$CURSOR_OUTPUT_FORMAT" \
       "${stream_args[@]}" \
-      --extra-args "$WORKER_AGENT_EXTRA_ARGS"
+      --extra-args="$WORKER_AGENT_EXTRA_ARGS"
 }
 
 run_reviewer_agent() {
@@ -173,7 +173,7 @@ run_reviewer_agent() {
       --prompt-file "$prompt_file" \
       --output-format "$CURSOR_OUTPUT_FORMAT" \
       "${stream_args[@]}" \
-      --extra-args "$REVIEWER_AGENT_EXTRA_ARGS"
+      --extra-args="$REVIEWER_AGENT_EXTRA_ARGS"
 }
 
 update_status() {

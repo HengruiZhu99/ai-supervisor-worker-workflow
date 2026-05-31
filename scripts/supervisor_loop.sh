@@ -284,7 +284,7 @@ PROMPT
     --workspace "$ROOT" \
     --prompt-file "$prompt_file" \
     --reasoning-effort "$CODEX_REASONING_EFFORT" \
-    --extra-args "$CODEX_EXTRA_ARGS" >"$log_file" 2>&1
+    --extra-args="$CODEX_EXTRA_ARGS" >"$log_file" 2>&1
   local codex_exit=$?
   supervisor_finished_at="$(utc_now)"
   set -e
