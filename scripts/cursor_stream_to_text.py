@@ -56,6 +56,13 @@ def main() -> int:
             previous_text = ""
             continue
 
+        if isinstance(data, dict):
+            if data.get("type") == "user":
+                continue
+            message = data.get("message")
+            if isinstance(message, dict) and message.get("role") == "user":
+                continue
+
         texts = list(iter_text(data))
         if texts:
             for text in texts:

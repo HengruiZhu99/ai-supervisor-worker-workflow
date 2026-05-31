@@ -22,6 +22,8 @@ WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-0}"
 WORKER_MAX_TIMEOUT_RESUMES="${WORKER_MAX_TIMEOUT_RESUMES:-1}"
 WORKER_AUTO_RELAUNCH_FAILURE="${WORKER_AUTO_RELAUNCH_FAILURE:-1}"
 WORKER_MAX_FAILURE_RESUMES="${WORKER_MAX_FAILURE_RESUMES:-2}"
+WORKER_INIT_SUBMODULES="${WORKER_INIT_SUBMODULES:-1}"
+WORKER_SUBMODULE_PATHS="${WORKER_SUBMODULE_PATHS:-}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
 CURRENT_LOCK=""
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
@@ -130,6 +132,116 @@ json_field() {
   local status_file="$1"
   local field="$2"
   jq -r --arg field "$field" '.[$field] // ""' "$status_file"
+}
+
+run_worker_preflight() {
+  local job="$1"
+  local status_file="$2"
+  local id="$3"
+  local attempt="$4"
+  local worktree="$5"
+  local branch="$6"
+  local base_sha="$7"
+  local starting_state="$8"
+  local preflight_log="$job/preflight.attempt-$attempt.log"
+  local preflight_exit=0
+  local current_branch
+
+  {
+    echo "# Worker preflight for $id attempt $attempt"
+    echo "workflow_commit=$workflow_commit"
+    echo "worktree=$worktree"
+    echo "branch=$branch"
+    echo "base_sha=$base_sha"
+    echo
+
+    if ! git -C "$worktree" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      echo "ERROR: invalid Git worktree: $worktree"
+      exit 10
+    fi
+
+    current_branch="$(git -C "$worktree" symbolic-ref --quiet --short HEAD || true)"
+    echo "current_branch=$current_branch"
+    if [[ "$current_branch" != "$branch" ]]; then
+      echo "ERROR: current branch '$current_branch' does not match expected '$branch'"
+      exit 11
+    fi
+
+    if ! git -C "$worktree" merge-base --is-ancestor "$base_sha" HEAD >/dev/null 2>&1; then
+      echo "ERROR: base_sha is not an ancestor of worktree HEAD"
+      exit 12
+    fi
+
+    echo
+    echo "## Initial status"
+    git -C "$worktree" status --short
+    if [[ "$starting_state" != "rejected" && -n "$(git -C "$worktree" status --porcelain)" ]]; then
+      echo "ERROR: worktree is dirty before a non-retry attempt"
+      exit 13
+    fi
+
+    if [[ "$WORKER_INIT_SUBMODULES" == "1" && -f "$worktree/.gitmodules" ]]; then
+      echo
+      echo "## Submodule initialization"
+      if [[ -n "$WORKER_SUBMODULE_PATHS" ]]; then
+        # shellcheck disable=SC2086
+        git -C "$worktree" submodule update --init --recursive $WORKER_SUBMODULE_PATHS
+      else
+        git -C "$worktree" submodule update --init --recursive
+      fi
+      git -C "$worktree" submodule status --recursive || true
+    else
+      echo
+      echo "## Submodule initialization"
+      echo "Skipped: WORKER_INIT_SUBMODULES=$WORKER_INIT_SUBMODULES or no .gitmodules file."
+    fi
+
+    if git -C "$worktree" config --file .gitmodules --get-regexp '^submodule\\..*\\.path$' 2>/dev/null | awk '{print $2}' | grep -qx 'external/kokkos'; then
+      echo
+      echo "## Kokkos submodule check"
+      if [[ ! -f "$worktree/external/kokkos/CMakeLists.txt" ]]; then
+        echo "ERROR: external/kokkos is configured as a submodule but external/kokkos/CMakeLists.txt is missing after submodule initialization"
+        exit 14
+      fi
+      echo "external/kokkos is initialized."
+    fi
+
+    echo
+    echo "Preflight passed."
+  } >"$preflight_log" 2>&1 || preflight_exit=$?
+
+  update_status "$status_file" preflight_log="$preflight_log" preflight_exit="$preflight_exit"
+  if [[ "$preflight_exit" -ne 0 ]]; then
+    update_status "$status_file" state=blocked worker_error="worker preflight failed; see $preflight_log"
+    return "$preflight_exit"
+  fi
+  return 0
+}
+
+run_attempt_consistency_check() {
+  local job="$1"
+  local status_file="$2"
+  local attempt="$3"
+  local worktree="$4"
+  local base_sha="$5"
+  local final_commit="$6"
+  local test_log="$7"
+  local report="$8"
+  local out_file="$job/attempt_consistency.attempt-$attempt.md"
+  local check_exit=0
+
+  python3 scripts/check_attempt_consistency.py \
+    --job "$job" \
+    --status "$status_file" \
+    --worktree "$worktree" \
+    --attempt "$attempt" \
+    --base-sha "$base_sha" \
+    --commit "$final_commit" \
+    --report "$report" \
+    --test-log "$test_log" \
+    --output "$out_file" >/dev/null 2>&1 || check_exit=$?
+  update_status "$status_file" attempt_consistency_log="$out_file" attempt_consistency_exit="$check_exit"
+  return "$check_exit"
 }
 
 write_reviewer_prompt() {
@@ -366,13 +478,14 @@ process_job() {
   fi
   CURRENT_LOCK="$lock_dir"
 
-  local id base_ref base_sha branch test_command attempt worktree current_branch
+  local id base_ref base_sha branch test_command attempt worktree current_branch starting_state
   id="$(json_field "$status_file" id)"
   base_ref="$(json_field "$status_file" base_ref)"
   base_sha="$(json_field "$status_file" base_sha)"
   branch="$(json_field "$status_file" branch)"
   test_command="$(json_field "$status_file" test_command)"
   attempt="$(jq -r '(.attempt // 0) + 1' "$status_file")"
+  starting_state="$(jq -r '.state // ""' "$status_file")"
   worktree=".worktrees/$id"
 
   if [[ -z "$id" || -z "$base_ref" || -z "$branch" ]]; then
@@ -411,6 +524,11 @@ process_job() {
   fi
 
   update_status "$status_file" state=running attempt="$attempt" branch="$branch" base_sha="$base_sha" workflow_commit="$workflow_commit"
+
+  if ! run_worker_preflight "$job" "$status_file" "$id" "$attempt" "$worktree" "$branch" "$base_sha" "$starting_state"; then
+    cleanup_current_lock
+    return 0
+  fi
 
   local prompt_file="$job/worker_prompt.attempt-$attempt.md"
   {
@@ -550,6 +668,19 @@ process_job() {
     fi
   } >"$job/report.md"
 
+  local tests_passed=false
+  if [[ "$test_exit" -eq 0 ]]; then
+    tests_passed=true
+  fi
+
+  update_status "$status_file" \
+    commit="$final_commit" \
+    test_exit="$test_exit" \
+    tests_passed="$tests_passed" \
+    post_test_dirty="$post_test_dirty" \
+    post_test_status="$post_test_status" \
+    report="$job/report.md"
+
   python3 scripts/create_commit_doc.py \
     --job-id "$id" \
     --attempt "$attempt" \
@@ -561,10 +692,8 @@ process_job() {
     --test-log "$test_log" \
     --summary-file "$cursor_out" >/dev/null || true
 
-  local tests_passed=false
-  if [[ "$test_exit" -eq 0 ]]; then
-    tests_passed=true
-  fi
+  local consistency_exit=0
+  run_attempt_consistency_check "$job" "$status_file" "$attempt" "$worktree" "$base_sha" "$final_commit" "$test_log" "$job/report.md" || consistency_exit=$?
 
   local cursor_reported_success=false
   if grep -q '\[system success\]' "$cursor_out" 2>/dev/null; then
@@ -581,6 +710,10 @@ process_job() {
   if [[ "$post_test_dirty" == true ]]; then
     next_state=blocked
     worker_error="${worker_error:+$worker_error; }$post_test_dirty_error"
+  fi
+  if [[ "$consistency_exit" -ne 0 ]]; then
+    next_state=blocked
+    worker_error="${worker_error:+$worker_error; }attempt consistency check failed; see $job/attempt_consistency.attempt-$attempt.md"
   fi
   if [[ "$worker_exit" -ne 0 && "$timed_out" != true && "$post_test_dirty" != true && "$WORKER_AUTO_RELAUNCH_FAILURE" == "1" && "$attempt" -lt "$WORKER_MAX_FAILURE_RESUMES" ]]; then
     next_state=queued
@@ -615,6 +748,8 @@ process_job() {
     tests_passed="$tests_passed" \
     post_test_dirty="$post_test_dirty" \
     post_test_status="$post_test_status" \
+    attempt_consistency_exit="$consistency_exit" \
+    attempt_consistency_log="$job/attempt_consistency.attempt-$attempt.md" \
     changed_files="$job/changed_files.attempt-$attempt.txt" \
     commit="$final_commit" \
     report="$job/report.md"
@@ -664,6 +799,18 @@ review_existing_job() {
   fi
   if [[ ! -s "$job/diff.attempt-$attempt.patch" ]]; then
     git -C "$worktree" diff "$base_sha..$final_commit" >"$job/diff.attempt-$attempt.patch" || true
+  fi
+
+  local existing_consistency_exit=0
+  run_attempt_consistency_check "$job" "$status_file" "$attempt" "$worktree" "$base_sha" "$final_commit" "$job/test.attempt-$attempt.log" "$job/report.md" || existing_consistency_exit=$?
+  if [[ "$existing_consistency_exit" -ne 0 ]]; then
+    update_status "$status_file" \
+      state=blocked \
+      workflow_commit="$workflow_commit" \
+      worker_error="attempt consistency check failed; see $job/attempt_consistency.attempt-$attempt.md" \
+      report="$job/report.md"
+    cleanup_current_lock
+    return 0
   fi
 
   reviewer_status=0

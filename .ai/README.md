@@ -69,6 +69,10 @@ diff_coverage:
 
 The worker loop writes `changed_files.attempt-N.txt` from the immutable `base_sha..HEAD` range and checks reviewer coverage before a job becomes ready for supervisor review.
 
+Before invoking Cursor, the worker loop runs a deterministic preflight. By default it initializes Git submodules with `git submodule update --init --recursive`, verifies the expected branch and base SHA, records `preflight.attempt-N.log`, and checks that a configured `external/kokkos` submodule has its `CMakeLists.txt`. Set `WORKER_INIT_SUBMODULES=0` to disable submodule initialization, or `WORKER_SUBMODULE_PATHS="external/kokkos"` to restrict the initialized paths.
+
+After Cursor and validation finish, the worker loop runs `scripts/check_attempt_consistency.py` before reviewer handoff. This compares worker reports and commit docs against canonical workflow facts such as `status.json`, the attempt commit range, and `test.attempt-N.log`. Contradictions like "no commit" when the worker loop created a commit, or "tests did not run" when the canonical test log contains the validation command, block the attempt before reviewer time is spent.
+
 Worker reports should include `Workflow Friction` and `Skill Suggestions` sections. Friction covers unclear instructions, missing context, repeated boilerplate, unavailable helper commands, painful manual steps, or places where a template/checklist/script would have avoided confusion. Reviewers assess those suggestions, and the supervisor checks existing skills before creating anything:
 
 ```bash
@@ -230,6 +234,6 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
+python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/check_attempt_consistency.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
 python3 scripts/summarize_jobs.py
 ```

@@ -14,6 +14,7 @@
 - [ ] Did reviewer reports list the changed files they reviewed?
 - [ ] Did reviewer reports include the required `diff_coverage` YAML block?
 - [ ] Does `scripts/check_reviewer_coverage.py` pass against `changed_files.attempt-N.txt`?
+- [ ] Does `scripts/check_attempt_consistency.py` pass against the worker report, commit docs, status, and test log?
 - [ ] Were all changed files reviewed, or were unreviewed paths explicitly listed?
 - [ ] If the full diff was not reviewable, was the job rejected or split instead of accepted?
 

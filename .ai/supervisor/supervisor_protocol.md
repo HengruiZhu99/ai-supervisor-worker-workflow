@@ -84,6 +84,20 @@ Terminal job states:
 
 The worker loop must not retry terminal states. Use `rejected` only when actionable feedback should be retried by the worker.
 
+## Worker preflight protocol
+
+Before invoking Cursor for a queued or rejected job, the worker loop must run deterministic preflight checks and write `.ai/jobs/JNNNN/preflight.attempt-N.log`.
+
+Preflight should:
+
+- verify the isolated worktree is valid and on the expected branch;
+- verify `base_sha` is an ancestor of the worktree `HEAD`;
+- initialize configured Git submodules by default;
+- verify `external/kokkos/CMakeLists.txt` exists when `external/kokkos` is a configured submodule;
+- block before spending an agent attempt if deterministic environment setup fails.
+
+Do not rely on a worker prompt to initialize required build submodules. Deterministic repository setup belongs to the workflow scripts.
+
 ## Review protocol
 
 If a job is `ready_for_review`, inspect:
@@ -128,6 +142,8 @@ diff_coverage:
 ```
 
 The supervisor should check reviewer diff coverage before accepting. The worker loop runs `scripts/check_reviewer_coverage.py` against `changed_files.attempt-N.txt`; if the reviewer stage fails, jobs enter `review_failed` or `review_timeout` instead of `ready_for_review`. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
+
+The worker loop also runs `scripts/check_attempt_consistency.py` before reviewer handoff. If worker reports or commit documentation contradict canonical workflow facts from `status.json`, the attempt commit range, or `test.attempt-N.log`, the job should be blocked before reviewers run. The supervisor should inspect `attempt_consistency.attempt-N.md` and create workflow-maintenance feedback rather than accepting misleading audit records.
 
 Accept only if:
 - scope is correct
