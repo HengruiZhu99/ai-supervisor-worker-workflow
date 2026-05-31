@@ -98,6 +98,8 @@ Preflight should:
 
 Do not rely on a worker prompt to initialize required build submodules. Deterministic repository setup belongs to the workflow scripts.
 
+Worker lock directories should contain an owner PID. If the worker loop restarts and finds a `running` or `reviewing` job whose lock owner is gone, it may recover the stale state automatically: use `implemented` when a commit and report already exist, otherwise requeue the job for a fresh attempt. Legacy lock directories without owner metadata require explicit opt-in via `WORKER_RECOVER_LEGACY_STALE_LOCKS=1`.
+
 ## Review protocol
 
 If a job is `ready_for_review`, inspect:

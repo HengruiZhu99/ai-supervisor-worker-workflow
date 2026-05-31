@@ -24,6 +24,8 @@ WORKER_AUTO_RELAUNCH_FAILURE="${WORKER_AUTO_RELAUNCH_FAILURE:-1}"
 WORKER_MAX_FAILURE_RESUMES="${WORKER_MAX_FAILURE_RESUMES:-2}"
 WORKER_INIT_SUBMODULES="${WORKER_INIT_SUBMODULES:-1}"
 WORKER_SUBMODULE_PATHS="${WORKER_SUBMODULE_PATHS:-}"
+WORKER_RECOVER_STALE_RUNNING="${WORKER_RECOVER_STALE_RUNNING:-1}"
+WORKER_RECOVER_LEGACY_STALE_LOCKS="${WORKER_RECOVER_LEGACY_STALE_LOCKS:-0}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
 CURRENT_LOCK=""
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
@@ -50,8 +52,16 @@ CURSOR_REVIEWER_B_MODEL="$(normalize_cursor_model "$CURSOR_REVIEWER_B_MODEL")"
 
 cleanup_current_lock() {
   if [[ -n "${CURRENT_LOCK:-}" ]]; then
+    rm -f "$CURRENT_LOCK/pid" "$CURRENT_LOCK/started_at" 2>/dev/null || true
     rmdir "$CURRENT_LOCK" 2>/dev/null || true
     CURRENT_LOCK=""
+  fi
+}
+
+mark_current_lock_owned() {
+  if [[ -n "${CURRENT_LOCK:-}" ]]; then
+    printf '%s\n' "$$" >"$CURRENT_LOCK/pid"
+    date -u +"%Y-%m-%dT%H:%M:%SZ" >"$CURRENT_LOCK/started_at"
   fi
 }
 
@@ -132,6 +142,68 @@ json_field() {
   local status_file="$1"
   local field="$2"
   jq -r --arg field "$field" '.[$field] // ""' "$status_file"
+}
+
+lock_pid_alive() {
+  local lock_dir="$1"
+  local pid
+  [[ -s "$lock_dir/pid" ]] || return 1
+  pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+clear_known_stale_lock() {
+  local lock_dir="$1"
+  rm -f "$lock_dir/pid" "$lock_dir/started_at" 2>/dev/null || true
+  rmdir "$lock_dir" 2>/dev/null
+}
+
+recover_stale_running_jobs() {
+  [[ "$WORKER_RECOVER_STALE_RUNNING" == "1" ]] || return 0
+
+  local status_file job lock_dir state attempt commit report reason next_state
+  shopt -s nullglob
+  for status_file in .ai/jobs/J*/status.json; do
+    state="$(jq -r '.state // ""' "$status_file")"
+    [[ "$state" == "running" || "$state" == "reviewing" ]] || continue
+
+    job="$(dirname "$status_file")"
+    lock_dir="$job/.lock"
+    reason=""
+
+    if [[ -d "$lock_dir" ]]; then
+      if lock_pid_alive "$lock_dir"; then
+        continue
+      fi
+      if [[ -s "$lock_dir/pid" ]]; then
+        reason="lock owner pid $(cat "$lock_dir/pid" 2>/dev/null || echo unknown) is not running"
+      elif [[ "$WORKER_RECOVER_LEGACY_STALE_LOCKS" == "1" ]]; then
+        reason="legacy lock has no owner pid"
+      else
+        continue
+      fi
+      if ! clear_known_stale_lock "$lock_dir"; then
+        continue
+      fi
+    else
+      reason="job is $state but has no lock directory"
+    fi
+
+    attempt="$(jq -r '.attempt // 0' "$status_file")"
+    commit="$(json_field "$status_file" commit)"
+    report="$(json_field "$status_file" report)"
+    next_state="queued"
+    if [[ "$attempt" != "0" && -n "$commit" && -n "$report" && -f "$report" ]]; then
+      next_state="implemented"
+    fi
+    update_status "$status_file" \
+      state="$next_state" \
+      stale_recovered=true \
+      worker_error="recovered stale $state job: $reason"
+    echo "Recovered stale $state job $(basename "$job") as $next_state: $reason"
+  done
+  shopt -u nullglob
 }
 
 run_worker_preflight() {
@@ -477,6 +549,7 @@ process_job() {
     return 0
   fi
   CURRENT_LOCK="$lock_dir"
+  mark_current_lock_owned
 
   local id base_ref base_sha branch test_command attempt worktree current_branch starting_state
   id="$(json_field "$status_file" id)"
@@ -766,6 +839,7 @@ review_existing_job() {
     return 0
   fi
   CURRENT_LOCK="$lock_dir"
+  mark_current_lock_owned
 
   local id branch attempt worktree base_sha final_commit reviewer_status next_state
   id="$(json_field "$status_file" id)"
@@ -835,6 +909,8 @@ while true; do
     sleep "$POLL_SECONDS"
     continue
   fi
+
+  recover_stale_running_jobs
 
   found=0
   shopt -s nullglob
