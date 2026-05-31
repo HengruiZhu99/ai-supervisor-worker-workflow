@@ -8,9 +8,16 @@ const state = {
   supervisorChatBusy: false,
   workflowChatHistory: [],
   workflowChatBusy: false,
+  workflowChatRenderSignature: "",
+  workflowChatAtBottom: true,
 };
 
 const $ = (id) => document.getElementById(id);
+
+function isNearBottom(element, threshold = 24) {
+  if (!element) return true;
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= threshold;
+}
 
 function badgeClass(status) {
   const value = String(status || "unknown").toLowerCase();
@@ -201,10 +208,26 @@ function renderSupervisorChat() {
   }
 }
 
-function renderWorkflowChat() {
+function renderWorkflowChat(options = {}) {
   const log = $("workflowChatLog");
   const meta = $("workflowChatMeta");
   if (!log) return;
+  const metaText = state.workflowChatBusy
+    ? "Working..."
+    : (meta?.dataset.last || "Read-only guidance");
+  const signature = JSON.stringify({
+    history: state.workflowChatHistory,
+    busy: state.workflowChatBusy,
+    meta: metaText,
+  });
+  if (!options.force && signature === state.workflowChatRenderSignature) {
+    if (meta) meta.textContent = metaText;
+    return;
+  }
+
+  const shouldStickToBottom = state.workflowChatAtBottom || isNearBottom(log);
+  const previousScrollTop = log.scrollTop;
+  const previousScrollHeight = log.scrollHeight;
   if (!state.workflowChatHistory.length) {
     log.innerHTML = '<div class="chat-empty">Ask about the workflow, current run, or request a workflow edit.</div>';
   } else {
@@ -214,13 +237,17 @@ function renderWorkflowChat() {
         ${escapeHtml(message.content || "")}
       </div>
     `).join("");
-    log.scrollTop = log.scrollHeight;
+    if (shouldStickToBottom) {
+      log.scrollTop = log.scrollHeight;
+    } else {
+      log.scrollTop = previousScrollTop + (log.scrollHeight - previousScrollHeight);
+    }
   }
   if (meta) {
-    meta.textContent = state.workflowChatBusy
-      ? "Working..."
-      : (meta.dataset.last || "Read-only guidance");
+    meta.textContent = metaText;
   }
+  state.workflowChatAtBottom = isNearBottom(log);
+  state.workflowChatRenderSignature = signature;
 }
 
 function renderJobs(jobs, data) {
@@ -616,8 +643,9 @@ $("workflowChatForm").addEventListener("submit", async (event) => {
   state.workflowChatHistory.push({ role: "user", content: message });
   input.value = "";
   state.workflowChatBusy = true;
+  state.workflowChatAtBottom = true;
   $("workflowChatMeta").dataset.last = allowEdits ? "Edit mode" : "Read-only guidance";
-  renderWorkflowChat();
+  renderWorkflowChat({ force: true });
 
   try {
     const result = await postJson("/api/workflow-chat", {
@@ -644,13 +672,14 @@ $("workflowChatForm").addEventListener("submit", async (event) => {
     $("workflowChatMeta").dataset.last = allowEdits ? "Edit mode" : "Read-only guidance";
   } finally {
     state.workflowChatBusy = false;
-    renderWorkflowChat();
+    renderWorkflowChat({ force: true });
   }
 });
 $("clearWorkflowChatButton").addEventListener("click", () => {
   state.workflowChatHistory = [];
+  state.workflowChatAtBottom = true;
   $("workflowChatMeta").dataset.last = "Read-only guidance";
-  renderWorkflowChat();
+  renderWorkflowChat({ force: true });
 });
 $("workflowChatInput").addEventListener("keydown", (event) => {
   if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
@@ -659,6 +688,12 @@ $("workflowChatInput").addEventListener("keydown", (event) => {
   event.preventDefault();
   $("workflowChatForm").requestSubmit();
 });
+const workflowChatLog = $("workflowChatLog");
+if (workflowChatLog) {
+  workflowChatLog.addEventListener("scroll", () => {
+    state.workflowChatAtBottom = isNearBottom(workflowChatLog);
+  });
+}
 refresh({ refreshStaticPanels: true }).catch((error) => {
   $("healthPill").textContent = "Error";
   $("healthPill").className = "health gate";
