@@ -1023,6 +1023,48 @@ def commit_workflow_records(root: Path, message: str) -> tuple[bool, str]:
     return result.returncode == 0, output or "No workflow record changes to commit."
 
 
+def push_after_human_review(root: Path) -> tuple[bool, str]:
+    if os.environ.get("AI_WORKFLOW_PUSH_AFTER_HUMAN_REVIEW", "1") == "0":
+        return True, "Push skipped: AI_WORKFLOW_PUSH_AFTER_HUMAN_REVIEW=0"
+    remote = os.environ.get("AI_WORKFLOW_PUSH_REMOTE", "origin")
+    branch = os.environ.get("AI_WORKFLOW_PUSH_BRANCH", "")
+    if not branch:
+        branch_result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=str(root),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if branch_result.returncode != 0:
+            output = "\n".join(part for part in [branch_result.stdout.strip(), branch_result.stderr.strip()] if part)
+            return False, output or "Push skipped: failed to determine current branch."
+        branch = branch_result.stdout.strip()
+    if not branch:
+        return False, "Push skipped: current Git checkout is detached or branch is unknown."
+    remote_result = subprocess.run(
+        ["git", "remote", "get-url", remote],
+        cwd=str(root),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if remote_result.returncode != 0:
+        return False, f"Push skipped: remote '{remote}' is not configured."
+    result = subprocess.run(
+        ["git", "push", "-u", remote, branch],
+        cwd=str(root),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    output = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+    return result.returncode == 0, output or f"Pushed {branch} to {remote}."
+
+
 def compact_history(history: object, limit: int = 12) -> str:
     if not isinstance(history, list):
         return "No prior chat in this dashboard session."
@@ -1633,6 +1675,7 @@ def write_human_review(
         with ledger.open("a", encoding="utf-8") as handle:
             handle.write(f"- Major structural change requested. Supervisor structural request: `{request_path.relative_to(root)}`.\n")
         commit_ok, commit_output = commit_workflow_records(root, "workflow: record major structural change request")
+        push_ok, push_output = push_after_human_review(root)
         return {
             "ok": True,
             "message": "Major structural change requested. The supervisor must update the milestones itself and open a follow-up human review gate before implementation resumes.",
@@ -1641,6 +1684,8 @@ def write_human_review(
             "archived_gate": str(archived_gate.relative_to(root)),
             "commit_ok": commit_ok,
             "commit_output": commit_output,
+            "push_ok": push_ok,
+            "push_output": push_output,
         }
 
     if not failed:
@@ -1654,6 +1699,7 @@ def write_human_review(
             for line in prune_output.splitlines():
                 handle.write(f"  - {line}\n")
         commit_ok, commit_output = commit_workflow_records(root, "workflow: record human milestone approval")
+        push_ok, push_output = push_after_human_review(root)
         return {
             "ok": True,
             "message": "Human review approved. Gate archived.",
@@ -1663,6 +1709,8 @@ def write_human_review(
             "prune_output": prune_output,
             "commit_ok": commit_ok,
             "commit_output": commit_output,
+            "push_ok": push_ok,
+            "push_output": push_output,
         }
 
     request_path = create_human_review_action_request(
@@ -1671,6 +1719,7 @@ def write_human_review(
     with ledger.open("a", encoding="utf-8") as handle:
         handle.write(f"- Human milestone review requested changes. Supervisor action request: `{request_path.relative_to(root)}`.\n")
     commit_ok, commit_output = commit_workflow_records(root, "workflow: record human milestone review action request")
+    push_ok, push_output = push_after_human_review(root)
     return {
         "ok": True,
         "message": "Changes requested. Supervisor action request created; the supervisor will decide the next worker job or gate.",
@@ -1679,6 +1728,8 @@ def write_human_review(
         "archived_gate": str(archived_gate.relative_to(root)),
         "commit_ok": commit_ok,
         "commit_output": commit_output,
+        "push_ok": push_ok,
+        "push_output": push_output,
     }
 
 
