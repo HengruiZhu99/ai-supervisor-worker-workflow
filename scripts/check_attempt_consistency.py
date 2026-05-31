@@ -10,7 +10,13 @@ import subprocess
 from pathlib import Path
 
 
-NO_COMMIT_RE = re.compile(r"\b(no|without)\s+(new\s+)?(commit|commits)\b|\buncommitted\b", re.I)
+NO_COMMIT_RE = re.compile(
+    r"\b(no|without)\s+(new\s+)?commits?\b"
+    r"|\bno\s+(retry\s+)?commit\s+(was\s+)?created\b"
+    r"|\bchanges\s+are\s+left\s+unstaged/uncommitted\b"
+    r"|\buncommitted-only\s+work\b",
+    re.I,
+)
 NO_TEST_RE = re.compile(r"\b(no|without)\s+(tests?|validation)\s+(ran|run|executed)\b|tests?\s+not\s+run", re.I)
 
 
@@ -58,6 +64,23 @@ def test_log_has_command(text: str) -> bool:
     return any(line.startswith("$ ") for line in text.splitlines())
 
 
+def consistency_claim_text(text: str) -> str:
+    """Return report/doc text worth scanning for attempt-level claims.
+
+    Cursor report capture can include raw token streams, prompt text, old
+    rejected attempts, and large copied file contents before the final report.
+    The worker loop appends canonical facts after ``## Worker exit``; prefer
+    that suffix when available so stale transcript noise does not override
+    status.json, the Git attempt range, and the test log.
+    """
+
+    marker = "\n## Worker exit"
+    index = text.rfind(marker)
+    if index != -1:
+        return text[index:]
+    return text
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--job", required=True, help="job directory, for example .ai/jobs/J0001")
@@ -74,10 +97,10 @@ def main() -> int:
     root = git_root()
     job_dir = root / args.job
     status = read_json(root / args.status)
-    report_text = read_text(root / args.report)
+    report_text = consistency_claim_text(read_text(root / args.report))
     test_log_text = read_text(root / args.test_log)
     docs = sorted((root / ".ai" / "commit_docs").glob(f"{job_dir.name}_attempt-{args.attempt}_*.md"))
-    doc_text = "\n\n".join(read_text(path) for path in docs)
+    doc_text = "\n\n".join(consistency_claim_text(read_text(path)) for path in docs)
     docs_names = "\n".join(path.name for path in docs)
 
     issues: list[str] = []
