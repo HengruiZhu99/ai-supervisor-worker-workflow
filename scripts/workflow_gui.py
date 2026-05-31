@@ -1478,7 +1478,7 @@ The user wants to chat about the supervisor/worker workflow, the current run, or
     timeout_seconds = max(30, env_int("AI_WORKFLOW_CHAT_TIMEOUT", 600 if allow_edits else 300))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = runs_dir(root) / f"workflow_chat_{stamp}.log"
-    sandbox = "workspace-write" if allow_edits else "read-only"
+    sandbox = "danger-full-access" if allow_edits else "read-only"
     args = [
         "codex",
         "--ask-for-approval",
