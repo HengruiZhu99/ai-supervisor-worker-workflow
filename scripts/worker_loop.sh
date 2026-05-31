@@ -8,15 +8,18 @@ export AI_WORKFLOW_PACKAGE_ROOT="${AI_WORKFLOW_PACKAGE_ROOT:-$WORKFLOW_PACKAGE_R
 cd "$ROOT"
 
 CURSOR_TIMEOUT="${CURSOR_TIMEOUT:-3600}"
-CURSOR_MODEL="${CURSOR_MODEL:-gpt-5.5-high}"
-CURSOR_AGENT_EXTRA_ARGS="${CURSOR_AGENT_EXTRA_ARGS:-}"
+WORKER_AGENT_WRAPPER="${WORKER_AGENT_WRAPPER:-${CURSOR_AGENT_WRAPPER:-cursor-agent}}"
+WORKER_MODEL="${WORKER_MODEL:-${CURSOR_MODEL:-gpt-5.5-high}}"
+WORKER_AGENT_EXTRA_ARGS="${WORKER_AGENT_EXTRA_ARGS:-${CURSOR_AGENT_EXTRA_ARGS:-}}"
 CURSOR_OUTPUT_FORMAT="${CURSOR_OUTPUT_FORMAT:-stream-json}"
 CURSOR_STREAM_PARTIAL_OUTPUT="${CURSOR_STREAM_PARTIAL_OUTPUT:-1}"
 CURSOR_REVIEWERS_ENABLED="${CURSOR_REVIEWERS_ENABLED:-1}"
 CURSOR_REVIEW_TIMEOUT="${CURSOR_REVIEW_TIMEOUT:-2400}"
-CURSOR_REVIEWER_A_MODEL="${CURSOR_REVIEWER_A_MODEL:-claude-opus-4-7-thinking-high}"
-CURSOR_REVIEWER_B_MODEL="${CURSOR_REVIEWER_B_MODEL:-gpt-5.3-codex-high}"
-CURSOR_REVIEWER_EXTRA_ARGS="${CURSOR_REVIEWER_EXTRA_ARGS:-}"
+REVIEWER_A_AGENT_WRAPPER="${REVIEWER_A_AGENT_WRAPPER:-${CURSOR_REVIEWER_A_WRAPPER:-cursor-agent}}"
+REVIEWER_B_AGENT_WRAPPER="${REVIEWER_B_AGENT_WRAPPER:-${CURSOR_REVIEWER_B_WRAPPER:-cursor-agent}}"
+REVIEWER_A_MODEL="${REVIEWER_A_MODEL:-${CURSOR_REVIEWER_A_MODEL:-claude-opus-4-7-thinking-high}}"
+REVIEWER_B_MODEL="${REVIEWER_B_MODEL:-${CURSOR_REVIEWER_B_MODEL:-gpt-5.3-codex-high}}"
+REVIEWER_AGENT_EXTRA_ARGS="${REVIEWER_AGENT_EXTRA_ARGS:-${CURSOR_REVIEWER_EXTRA_ARGS:-}}"
 CURSOR_REVIEWER_MAX_RELAUNCHES="${CURSOR_REVIEWER_MAX_RELAUNCHES:-1}"
 TEST_TIMEOUT="${TEST_TIMEOUT:-0}"
 WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-0}"
@@ -50,9 +53,9 @@ normalize_cursor_model() {
   esac
 }
 
-CURSOR_MODEL="$(normalize_cursor_model "$CURSOR_MODEL")"
-CURSOR_REVIEWER_A_MODEL="$(normalize_cursor_model "$CURSOR_REVIEWER_A_MODEL")"
-CURSOR_REVIEWER_B_MODEL="$(normalize_cursor_model "$CURSOR_REVIEWER_B_MODEL")"
+WORKER_MODEL="$(normalize_cursor_model "$WORKER_MODEL")"
+REVIEWER_A_MODEL="$(normalize_cursor_model "$REVIEWER_A_MODEL")"
+REVIEWER_B_MODEL="$(normalize_cursor_model "$REVIEWER_B_MODEL")"
 
 cleanup_current_lock() {
   if [[ -n "${CURRENT_LOCK:-}" ]]; then
@@ -105,15 +108,18 @@ require_command() {
   }
 }
 
-for cmd in git jq python3 timeout cursor-agent; do
+for cmd in git jq python3 timeout; do
   require_command "$cmd"
 done
 
 workflow_commit="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo "workflow_commit=$workflow_commit"
-echo "cursor_model=$CURSOR_MODEL"
-echo "cursor_reviewer_a_model=$CURSOR_REVIEWER_A_MODEL"
-echo "cursor_reviewer_b_model=$CURSOR_REVIEWER_B_MODEL"
+echo "worker_agent_wrapper=$WORKER_AGENT_WRAPPER"
+echo "worker_model=$WORKER_MODEL"
+echo "reviewer_a_agent_wrapper=$REVIEWER_A_AGENT_WRAPPER"
+echo "reviewer_a_model=$REVIEWER_A_MODEL"
+echo "reviewer_b_agent_wrapper=$REVIEWER_B_AGENT_WRAPPER"
+echo "reviewer_b_model=$REVIEWER_B_MODEL"
 
 write_available_skills() {
   echo "## Available Skills"
@@ -127,40 +133,46 @@ write_available_skills() {
   echo '```'
 }
 
-run_cursor_agent() {
+run_worker_agent() {
   local worktree="$1"
   local prompt_file="$2"
 
-  # Edit only this function if `cursor-agent --help` shows different flags.
-  # The workflow protocol around this invocation is intentionally filesystem-based.
-  # Set CURSOR_MODEL to choose a model, for example:
-  #   CURSOR_MODEL=gpt-5.5-high ./scripts/worker_loop.sh
-  # The default stream-json mode lets the dashboard show partial model output.
-  # Set CURSOR_OUTPUT_FORMAT=text to restore Cursor's plain final-output mode.
-  # Set CURSOR_AGENT_EXTRA_ARGS for local flags such as --force if desired.
-  local output_args=(--output-format "$CURSOR_OUTPUT_FORMAT")
-  if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" && "$CURSOR_STREAM_PARTIAL_OUTPUT" == "1" ]]; then
-    output_args+=(--stream-partial-output)
+  local stream_args=()
+  if [[ "$CURSOR_STREAM_PARTIAL_OUTPUT" == "1" ]]; then
+    stream_args=(--stream-partial-output)
   fi
-  # shellcheck disable=SC2086
   timeout "$CURSOR_TIMEOUT" \
-    cursor-agent -p --trust --workspace "$worktree" "${output_args[@]}" --model "$CURSOR_MODEL" $CURSOR_AGENT_EXTRA_ARGS "$(cat "$prompt_file")"
+    python3 scripts/agent_wrapper.py run \
+      --role worker \
+      --wrapper "$WORKER_AGENT_WRAPPER" \
+      --model "$WORKER_MODEL" \
+      --workspace "$worktree" \
+      --prompt-file "$prompt_file" \
+      --output-format "$CURSOR_OUTPUT_FORMAT" \
+      "${stream_args[@]}" \
+      --extra-args "$WORKER_AGENT_EXTRA_ARGS"
 }
 
-run_cursor_reviewer() {
+run_reviewer_agent() {
   local worktree="$1"
   local prompt_file="$2"
-  local model="$3"
+  local wrapper="$3"
+  local model="$4"
 
-  local output_args=(--output-format "$CURSOR_OUTPUT_FORMAT")
-  if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" && "$CURSOR_STREAM_PARTIAL_OUTPUT" == "1" ]]; then
-    output_args+=(--stream-partial-output)
+  local stream_args=()
+  if [[ "$CURSOR_STREAM_PARTIAL_OUTPUT" == "1" ]]; then
+    stream_args=(--stream-partial-output)
   fi
-  # Reviewers run in Cursor ask mode so their role is critique only. If your
-  # local cursor-agent changes read-only mode flags, edit only this function.
-  # shellcheck disable=SC2086
   timeout "$CURSOR_REVIEW_TIMEOUT" \
-    cursor-agent -p --trust --mode ask --workspace "$worktree" "${output_args[@]}" --model "$model" $CURSOR_REVIEWER_EXTRA_ARGS "$(cat "$prompt_file")"
+    python3 scripts/agent_wrapper.py run \
+      --role reviewer \
+      --wrapper "$wrapper" \
+      --model "$model" \
+      --workspace "$worktree" \
+      --prompt-file "$prompt_file" \
+      --output-format "$CURSOR_OUTPUT_FORMAT" \
+      "${stream_args[@]}" \
+      --extra-args "$REVIEWER_AGENT_EXTRA_ARGS"
 }
 
 update_status() {
@@ -481,13 +493,14 @@ write_reviewer_prompt() {
 
 run_one_reviewer() {
   local role="$1"
-  local model="$2"
-  local job="$3"
-  local id="$4"
-  local attempt="$5"
-  local worktree="$6"
-  local base_sha="$7"
-  local final_commit="$8"
+  local wrapper="$2"
+  local model="$3"
+  local job="$4"
+  local id="$5"
+  local attempt="$6"
+  local worktree="$7"
+  local base_sha="$8"
+  local final_commit="$9"
   local reviews_dir="$job/reviews"
 
   mkdir -p "$reviews_dir"
@@ -505,13 +518,13 @@ run_one_reviewer() {
   set +e
   reviewer_started_at="$(utc_now)"
   if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" ]]; then
-    run_cursor_reviewer "$ROOT/$worktree" "$ROOT/$prompt_file" "$model" \
+    run_reviewer_agent "$ROOT/$worktree" "$ROOT/$prompt_file" "$wrapper" "$model" \
       2> >(tee "$review_err" >&2) \
       | tee "$review_stream" \
       | python3 "$SCRIPT_DIR/cursor_stream_to_text.py" \
       | tee "$review_out"
   else
-    run_cursor_reviewer "$ROOT/$worktree" "$ROOT/$prompt_file" "$model" 2> >(tee "$review_err" >&2) | tee "$review_out"
+    run_reviewer_agent "$ROOT/$worktree" "$ROOT/$prompt_file" "$wrapper" "$model" 2> >(tee "$review_err" >&2) | tee "$review_out"
   fi
   reviewer_exit=${PIPESTATUS[0]}
   reviewer_finished_at="$(utc_now)"
@@ -542,20 +555,21 @@ run_one_reviewer() {
 
 run_reviewer_with_retries() {
   local role="$1"
-  local model="$2"
-  local job="$3"
-  local id="$4"
-  local attempt="$5"
-  local worktree="$6"
-  local base_sha="$7"
-  local final_commit="$8"
-  local exit_file="$9"
+  local wrapper="$2"
+  local model="$3"
+  local job="$4"
+  local id="$5"
+  local attempt="$6"
+  local worktree="$7"
+  local base_sha="$8"
+  local final_commit="$9"
+  local exit_file="${10}"
   local try reviewer_exit
 
   reviewer_exit=0
   for ((try = 0; try <= CURSOR_REVIEWER_MAX_RELAUNCHES; try++)); do
     reviewer_exit=0
-    run_one_reviewer "$role" "$model" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_exit=$?
+    run_one_reviewer "$role" "$wrapper" "$model" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_exit=$?
     [[ "$reviewer_exit" -eq 0 ]] && break
     if [[ "$try" -lt "$CURSOR_REVIEWER_MAX_RELAUNCHES" ]]; then
       echo "Relaunching $role after exit $reviewer_exit (retry $((try + 1))/${CURSOR_REVIEWER_MAX_RELAUNCHES})"
@@ -586,8 +600,10 @@ run_reviewers() {
     state=reviewing \
     reviewers_enabled=true \
     reviewers_parallel=true \
-    reviewer_a_model="$CURSOR_REVIEWER_A_MODEL" \
-    reviewer_b_model="$CURSOR_REVIEWER_B_MODEL"
+    reviewer_a_wrapper="$REVIEWER_A_AGENT_WRAPPER" \
+    reviewer_b_wrapper="$REVIEWER_B_AGENT_WRAPPER" \
+    reviewer_a_model="$REVIEWER_A_MODEL" \
+    reviewer_b_model="$REVIEWER_B_MODEL"
 
   local reviews_dir="$job/reviews"
   local reviewer_a_exit_file="$reviews_dir/reviewer-a.exit.attempt-$attempt.txt"
@@ -600,10 +616,10 @@ run_reviewers() {
 
   echo "Launching reviewer-a and reviewer-b in parallel for $id attempt $attempt"
   run_reviewer_with_retries \
-    "reviewer-a" "$CURSOR_REVIEWER_A_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" "$reviewer_a_exit_file" &
+    "reviewer-a" "$REVIEWER_A_AGENT_WRAPPER" "$REVIEWER_A_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" "$reviewer_a_exit_file" &
   reviewer_a_pid=$!
   run_reviewer_with_retries \
-    "reviewer-b" "$CURSOR_REVIEWER_B_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" "$reviewer_b_exit_file" &
+    "reviewer-b" "$REVIEWER_B_AGENT_WRAPPER" "$REVIEWER_B_MODEL" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" "$reviewer_b_exit_file" &
   reviewer_b_pid=$!
 
   wait "$reviewer_a_pid" || true
@@ -779,13 +795,13 @@ process_job() {
   set +e
   worker_started_at="$(utc_now)"
   if [[ "$CURSOR_OUTPUT_FORMAT" == "stream-json" ]]; then
-    run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" \
+    run_worker_agent "$ROOT/$worktree" "$ROOT/$prompt_file" \
       2> >(tee "$cursor_err" >&2) \
       | tee "$cursor_stream" \
       | python3 "$SCRIPT_DIR/cursor_stream_to_text.py" \
       | tee "$cursor_out"
   else
-    run_cursor_agent "$ROOT/$worktree" "$ROOT/$prompt_file" 2> >(tee "$cursor_err" >&2) | tee "$cursor_out"
+    run_worker_agent "$ROOT/$worktree" "$ROOT/$prompt_file" 2> >(tee "$cursor_err" >&2) | tee "$cursor_out"
   fi
   worker_exit=${PIPESTATUS[0]}
   worker_finished_at="$(utc_now)"
@@ -810,7 +826,7 @@ process_job() {
     --role worker \
     --job-id "$id" \
     --attempt "$attempt" \
-    --model "$CURSOR_MODEL" \
+    --model "$WORKER_AGENT_WRAPPER:$WORKER_MODEL" \
     --stream "$cursor_stream" \
     --stdout "$cursor_out" \
     --stderr "$cursor_err" \

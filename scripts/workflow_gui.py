@@ -797,8 +797,29 @@ def state(root: Path) -> dict:
         "controls": controls,
         "activity": activity_state(job_rows, processes, controls, supervisor),
         "reviewers": reviewer_state(root, job_rows),
+        "agent_wrappers": agent_wrapper_catalog(root),
         "tree": project_tree(root),
     }
+
+
+def agent_wrapper_catalog(root: Path) -> dict:
+    script = PACKAGE_ROOT / "scripts" / "agent_wrapper.py"
+    if not script.exists():
+        return {"wrappers": [], "error": f"missing {script}"}
+    result = subprocess.run(
+        ["python3", str(script), "list", "--json"],
+        cwd=str(root),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        return {"wrappers": [], "error": result.stderr.strip() or result.stdout.strip() or "failed to list wrappers"}
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        return {"wrappers": [], "error": f"invalid wrapper catalog JSON: {exc}"}
 
 
 def json_response(handler: SimpleHTTPRequestHandler, status: HTTPStatus, payload: dict) -> None:
@@ -876,11 +897,18 @@ def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
     if payload.get("force") and "--force" not in extra_args:
         extra_args = (extra_args + " --force").strip()
     return {
+        "WORKER_AGENT_WRAPPER": str(payload.get("wrapper", "cursor-agent")),
+        "WORKER_MODEL": str(payload.get("model", "gpt-5.5-high")),
         "CURSOR_MODEL": str(payload.get("model", "gpt-5.5-high")),
         "CURSOR_TIMEOUT": str(payload.get("timeout", "3600")),
+        "WORKER_AGENT_EXTRA_ARGS": extra_args,
         "CURSOR_AGENT_EXTRA_ARGS": extra_args,
         "CURSOR_REVIEWERS_ENABLED": "1" if payload.get("reviewers_enabled", True) else "0",
         "CURSOR_REVIEW_TIMEOUT": str(payload.get("review_timeout", "2400")),
+        "REVIEWER_A_AGENT_WRAPPER": str(payload.get("reviewer_a_wrapper", "cursor-agent")),
+        "REVIEWER_B_AGENT_WRAPPER": str(payload.get("reviewer_b_wrapper", "cursor-agent")),
+        "REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "claude-opus-4-7-thinking-high")),
+        "REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.3-codex-high")),
         "CURSOR_REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "claude-opus-4-7-thinking-high")),
         "CURSOR_REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.3-codex-high")),
         "CURSOR_REVIEWER_MAX_RELAUNCHES": str(payload.get("reviewer_max_relaunches", "1")),
@@ -894,6 +922,7 @@ def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
 def supervisor_loop_env(payload: dict | None = None) -> dict[str, str]:
     payload = payload or {}
     return {
+        "SUPERVISOR_AGENT_WRAPPER": str(payload.get("wrapper", "codex")),
         "CODEX_MODEL": str(payload.get("model", "gpt-5.5")),
         "CODEX_REASONING_EFFORT": str(payload.get("reasoning", "high")),
         "SUPERVISOR_POLL_SECONDS": str(payload.get("poll_seconds", "10")),

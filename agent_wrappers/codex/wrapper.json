@@ -1,0 +1,16 @@
+{
+  "id": "codex",
+  "label": "Codex CLI",
+  "description": "Use codex exec for supervisor and workflow-chat roles.",
+  "roles": ["supervisor", "chat"],
+  "executable": "codex",
+  "default_models": {
+    "supervisor": "gpt-5.5",
+    "chat": "gpt-5.5"
+  },
+  "models": [
+    "gpt-5.5",
+    "gpt-5.3-codex"
+  ],
+  "supports_reasoning_effort": true
+}

@@ -7,6 +7,7 @@ cd "$ROOT"
 SUPERVISOR_POLL_SECONDS="${SUPERVISOR_POLL_SECONDS:-10}"
 SUPERVISOR_RUNS_DIR="${SUPERVISOR_RUNS_DIR:-.ai/supervisor_runs}"
 SUPERVISOR_VERBOSE="${SUPERVISOR_VERBOSE:-0}"
+SUPERVISOR_AGENT_WRAPPER="${SUPERVISOR_AGENT_WRAPPER:-${CODEX_AGENT_WRAPPER:-codex}}"
 CODEX_MODEL="${CODEX_MODEL:-gpt-5.5}"
 CODEX_REASONING_EFFORT="${CODEX_REASONING_EFFORT:-high}"
 CODEX_EXTRA_ARGS="${CODEX_EXTRA_ARGS:-}"
@@ -26,7 +27,7 @@ require_command() {
   }
 }
 
-for cmd in git codex python3; do
+for cmd in git python3; do
   require_command "$cmd"
 done
 
@@ -36,6 +37,8 @@ WORKFLOW_PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export AI_WORKFLOW_PACKAGE_ROOT="${AI_WORKFLOW_PACKAGE_ROOT:-$WORKFLOW_PACKAGE_ROOT}"
 workflow_commit="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo "workflow_commit=$workflow_commit"
+echo "supervisor_agent_wrapper=$SUPERVISOR_AGENT_WRAPPER"
+echo "supervisor_model=$CODEX_MODEL"
 supervisor_failure_relaunches=0
 
 lock_pid_alive() {
@@ -199,20 +202,11 @@ PY
 }
 
 run_codex_supervisor() {
-  local timestamp log_file metrics_file supervisor_started_at supervisor_finished_at
+  local timestamp log_file prompt_file metrics_file supervisor_started_at supervisor_finished_at
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   log_file="$SUPERVISOR_RUNS_DIR/supervisor.$timestamp.log"
+  prompt_file="$SUPERVISOR_RUNS_DIR/supervisor.$timestamp.prompt.md"
   metrics_file=".ai/metrics/supervisor/supervisor.$timestamp.metrics.json"
-
-  local model_args=()
-  if [[ -n "$CODEX_MODEL" ]]; then
-    model_args=(-m "$CODEX_MODEL")
-  fi
-
-  local config_args=()
-  if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
-    config_args=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
-  fi
 
   set +e
   supervisor_started_at="$(utc_now)"
@@ -282,7 +276,15 @@ Rules:
 
 Return a concise summary of what you reviewed, accepted/rejected/dispatched, and whether the workflow is waiting for worker or human review.
 PROMPT
-  } | codex --ask-for-approval never --sandbox danger-full-access exec -C "$ROOT" "${model_args[@]}" "${config_args[@]}" $CODEX_EXTRA_ARGS - >"$log_file" 2>&1
+  } >"$prompt_file"
+  python3 scripts/agent_wrapper.py run \
+    --role supervisor \
+    --wrapper "$SUPERVISOR_AGENT_WRAPPER" \
+    --model "$CODEX_MODEL" \
+    --workspace "$ROOT" \
+    --prompt-file "$prompt_file" \
+    --reasoning-effort "$CODEX_REASONING_EFFORT" \
+    --extra-args "$CODEX_EXTRA_ARGS" >"$log_file" 2>&1
   local codex_exit=$?
   supervisor_finished_at="$(utc_now)"
   set -e

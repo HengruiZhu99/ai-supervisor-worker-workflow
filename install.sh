@@ -59,12 +59,16 @@ files=(
   ".ai/supervisor/supervisor_protocol.md"
   ".ai/supervisor/workflow_improvement_queue.md"
   ".ai/supervisor_runs/.gitkeep"
+  "agent_wrappers/README.md"
+  "agent_wrappers/codex/wrapper.json"
+  "agent_wrappers/cursor-agent/wrapper.json"
   "docs/ai_supervisor_worker_workflow.tex"
   "gui/app.css"
   "gui/app.js"
   "gui/index.html"
   "scripts/_workflow_wrapper.py"
   "scripts/_workflow_wrapper.sh"
+  "scripts/agent_wrapper.py"
   "scripts/analyze_reviewer_reports.py"
   "scripts/check_attempt_consistency.py"
   "scripts/create_commit_doc.py"
@@ -103,6 +107,7 @@ merge_gitignore
 chmod +x \
   "$TARGET_DIR/scripts/_workflow_wrapper.sh" \
   "$TARGET_DIR/scripts/_workflow_wrapper.py" \
+  "$TARGET_DIR/scripts/agent_wrapper.py" \
   "$TARGET_DIR/scripts/commit_workflow_records.py" \
   "$TARGET_DIR/scripts/analyze_reviewer_reports.py" \
   "$TARGET_DIR/scripts/check_attempt_consistency.py" \

@@ -11,6 +11,7 @@ It provides:
 - separate workflow-state commits for `.ai` audit records after supervisor or human-review updates
 - structured workflow event records for failures, reviewer blocks, and human interventions
 - guarded job integration from immutable `base_sha` boundaries
+- pluggable agent wrapper registry for worker, reviewer, supervisor, and chat roles
 - reusable scientific coding skills
 - dependency-free Python helper scripts
 - generic `.ai/` templates
@@ -63,7 +64,7 @@ external/ai-supervisor-worker-workflow/install.sh .
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/human_milestone_review.py scripts/list_skills.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
+python3 -m py_compile scripts/agent_wrapper.py scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/human_milestone_review.py scripts/list_skills.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
 ```
 
 ## Dashboard
@@ -82,6 +83,7 @@ http://127.0.0.1:8765/
 
 The dashboard includes:
 - worker launch/stop controls with Cursor model, timeout, and force options
+- wrapper and model selectors for worker, reviewer A, reviewer B, and supervisor agents
 - reviewer controls for two read-only Cursor reviewer passes after each worker attempt
 - supervisor launch/stop controls with Codex model, reasoning effort, poll interval, and verbose heartbeat options
 - job status and logs
@@ -137,6 +139,14 @@ python3 scripts/integrate_job.py JNNNN --apply
 The guard checks immutable `base_sha`, reviewer completion, tests, post-test cleanliness, and attempt consistency before merging the worker branch.
 
 The worker loop normalizes common accidental Codex-style Cursor model ids, for example `gpt-5.5` to `gpt-5.5-high`, before invoking `cursor-agent`. If Cursor returns nonzero after emitting `[system success]`, tests pass, and the post-test worktree is clean, the attempt proceeds to reviewer review while recording the nonzero exit in `status.json`.
+
+Agent wrappers are isolated under `agent_wrappers/<wrapper-id>/wrapper.json` and invoked through `scripts/agent_wrapper.py`. List available wrappers with:
+
+```bash
+python3 scripts/agent_wrapper.py list --json
+```
+
+The built-in wrappers are `cursor-agent` for worker/reviewer roles and `codex` for supervisor/chat roles. A future wrapper such as Claude Code can be added by creating a new wrapper directory with `wrapper.json` and either adding a built-in runner to `scripts/agent_wrapper.py` or providing a `command` template in the JSON file.
 
 If an older workflow leaves a completed attempt in a blocked state before reviewers run, set the job state to `implemented`; the worker loop will run only the reviewer stage for the existing `base_sha..commit` attempt and then move the job to `ready_for_review`, `review_failed`, or `review_timeout`.
 

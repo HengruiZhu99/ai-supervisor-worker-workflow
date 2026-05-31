@@ -4,6 +4,8 @@ This repository uses a two-role AI coding workflow for scientific software devel
 
 ## Roles
 
+Agent wrappers are selected independently from model names. Built-in wrappers are `cursor-agent` for worker/reviewer roles and `codex` for supervisor/chat roles. Wrapper metadata lives under `agent_wrappers/<wrapper-id>/wrapper.json`; new wrappers should extend that registry instead of hard-coding commands directly in the workflow loops.
+
 ### Codex supervisor
 
 Codex acts as the supervisor and reviewer.

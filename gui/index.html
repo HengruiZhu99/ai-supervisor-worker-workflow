@@ -90,8 +90,13 @@
             <div class="panel-title"><span>Worker</span><span id="workerState" class="state-dot">Idle</span></div>
             <form id="workerForm" class="control-form">
               <label>
-                Cursor model
-                <input name="model" value="gpt-5.5-high" />
+                Worker wrapper
+                <select name="wrapper" data-agent-wrapper data-role="worker" data-model-input="workerModel"></select>
+              </label>
+              <label>
+                Worker model
+                <input id="workerModel" name="model" list="workerModelOptions" value="gpt-5.5-high" />
+                <datalist id="workerModelOptions"></datalist>
               </label>
               <label>
                 Timeout seconds
@@ -114,12 +119,22 @@
                 <span>Run two Cursor reviewers after worker finishes</span>
               </label>
               <label>
+                Reviewer A wrapper
+                <select name="reviewer_a_wrapper" data-agent-wrapper data-role="reviewer" data-model-input="reviewerAModel"></select>
+              </label>
+              <label>
                 Reviewer A model
-                <input name="reviewer_a_model" value="claude-opus-4-7-thinking-high" />
+                <input id="reviewerAModel" name="reviewer_a_model" list="reviewerAModelOptions" value="claude-opus-4-7-thinking-high" />
+                <datalist id="reviewerAModelOptions"></datalist>
+              </label>
+              <label>
+                Reviewer B wrapper
+                <select name="reviewer_b_wrapper" data-agent-wrapper data-role="reviewer" data-model-input="reviewerBModel"></select>
               </label>
               <label>
                 Reviewer B model
-                <input name="reviewer_b_model" value="gpt-5.3-codex-high" />
+                <input id="reviewerBModel" name="reviewer_b_model" list="reviewerBModelOptions" value="gpt-5.3-codex-high" />
+                <datalist id="reviewerBModelOptions"></datalist>
               </label>
               <label>
                 Reviewer timeout seconds
@@ -137,8 +152,13 @@
             <div class="panel-title"><span>Supervisor</span><span id="supervisorState" class="state-dot">Idle</span></div>
             <form id="supervisorForm" class="control-form">
               <label>
-                Codex model
-                <input name="model" value="gpt-5.5" />
+                Supervisor wrapper
+                <select name="wrapper" data-agent-wrapper data-role="supervisor" data-model-input="supervisorModel"></select>
+              </label>
+              <label>
+                Supervisor model
+                <input id="supervisorModel" name="model" list="supervisorModelOptions" value="gpt-5.5" />
+                <datalist id="supervisorModelOptions"></datalist>
               </label>
               <label>
                 Reasoning effort

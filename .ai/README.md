@@ -158,6 +158,14 @@ Nonzero Cursor worker exits are requeued once by default when the failure is not
 
 The worker loop normalizes common accidental Codex-style Cursor model ids, such as `gpt-5.5` to `gpt-5.5-high`. If Cursor exits nonzero after emitting `[system success]`, tests pass, and the post-test worktree is clean, the attempt is still sent to reviewers while the nonzero Cursor exit remains documented.
 
+Agent wrappers are selected independently from model names. The built-in worker/reviewer wrapper is `cursor-agent`; the built-in supervisor/chat wrapper is `codex`. List wrappers and suggested models with:
+
+```bash
+python3 scripts/agent_wrapper.py list --json
+```
+
+The dashboard exposes wrapper and model controls for the worker, reviewer A, reviewer B, and supervisor. To add a future wrapper such as Claude Code, create `agent_wrappers/<wrapper-id>/wrapper.json` and either add a built-in runner to `scripts/agent_wrapper.py` or provide a `command` template in the wrapper JSON.
+
 For recovery, a completed attempt can be marked `implemented`; the worker loop then runs only reviewers for the existing attempt and moves the job to `ready_for_review`, `review_failed`, or `review_timeout`.
 
 ### Step 4
@@ -285,7 +293,7 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/check_attempt_consistency.py scripts/collect_agent_metrics.py scripts/summarize_agent_metrics.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
+python3 -m py_compile scripts/agent_wrapper.py scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/check_attempt_consistency.py scripts/collect_agent_metrics.py scripts/summarize_agent_metrics.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
 python3 scripts/summarize_jobs.py
 python3 scripts/summarize_agent_metrics.py
 ```

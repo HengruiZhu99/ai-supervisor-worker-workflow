@@ -1,0 +1,18 @@
+{
+  "id": "cursor-agent",
+  "label": "Cursor Agent",
+  "description": "Use cursor-agent for worker or read-only reviewer roles.",
+  "roles": ["worker", "reviewer"],
+  "executable": "cursor-agent",
+  "default_models": {
+    "worker": "gpt-5.5-high",
+    "reviewer": "gpt-5.3-codex-high"
+  },
+  "models": [
+    "gpt-5.5-high",
+    "gpt-5.3-codex-high",
+    "claude-opus-4-7-thinking-high"
+  ],
+  "supports_stream_json": true,
+  "supports_read_only_review": true
+}

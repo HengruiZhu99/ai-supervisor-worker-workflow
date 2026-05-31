@@ -1,6 +1,7 @@
 const state = {
   data: null,
   timer: null,
+  wrapperControlsInitialized: false,
   humanReviewSignature: "",
   supervisorChatSignature: "",
   supervisorChatHistory: [],
@@ -77,6 +78,51 @@ function formValues(form) {
     else data[element.name] = element.value;
   }
   return data;
+}
+
+function wrappersForRole(role) {
+  const wrappers = state.data?.agent_wrappers?.wrappers || [];
+  return wrappers.filter((wrapper) => (wrapper.roles || []).includes(role));
+}
+
+function defaultModelFor(wrapper, role) {
+  return wrapper?.default_models?.[role] || wrapper?.models?.[0] || "";
+}
+
+function populateModelOptions(input, wrapper, role) {
+  if (!input || !wrapper) return;
+  const datalist = input.list;
+  if (datalist) {
+    datalist.innerHTML = (wrapper.models || []).map((model) => `<option value="${escapeHtml(model)}"></option>`).join("");
+  }
+  if (!input.value || !(wrapper.models || []).includes(input.value)) {
+    const value = defaultModelFor(wrapper, role);
+    if (value) input.value = value;
+  }
+}
+
+function populateAgentControls() {
+  if (!state.data?.agent_wrappers || state.wrapperControlsInitialized) return;
+  document.querySelectorAll("[data-agent-wrapper]").forEach((select) => {
+    const role = select.dataset.role;
+    const modelInput = $(select.dataset.modelInput);
+    const wrappers = wrappersForRole(role);
+    const preferred = select.value || (role === "supervisor" ? "codex" : "cursor-agent");
+    select.innerHTML = wrappers.map((wrapper) => `
+      <option value="${escapeHtml(wrapper.id)}" ${wrapper.id === preferred ? "selected" : ""}>
+        ${escapeHtml(wrapper.label || wrapper.id)}${wrapper.available === false ? " (not in PATH)" : ""}
+      </option>
+    `).join("");
+    if (!select.value && wrappers.length) select.value = wrappers[0].id;
+    const selected = wrappers.find((wrapper) => wrapper.id === select.value) || wrappers[0];
+    populateModelOptions(modelInput, selected, role);
+    select.addEventListener("change", () => {
+      const next = wrappersForRole(role).find((wrapper) => wrapper.id === select.value);
+      if (modelInput) modelInput.value = "";
+      populateModelOptions(modelInput, next, role);
+    });
+  });
+  state.wrapperControlsInitialized = true;
 }
 
 function collectHumanReviewDraft() {
@@ -344,6 +390,7 @@ function renderHumanReview(supervisor) {
 function render(data, options = {}) {
   const refreshStaticPanels = options.refreshStaticPanels ?? false;
   state.data = data;
+  populateAgentControls();
   $("projectName").textContent = data.project.name;
   $("projectRoot").textContent = data.project.root;
   $("updatedAt").textContent = `Updated ${data.generated_at}`;
