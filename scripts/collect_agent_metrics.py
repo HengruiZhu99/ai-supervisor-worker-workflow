@@ -43,6 +43,14 @@ def iso_or_now(value: str | None) -> str:
     return parsed.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def iso_from_timestamp_ms(value: int | None) -> str | None:
+    if value is None:
+        return None
+    return datetime.fromtimestamp(value / 1000.0, tz=timezone.utc).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
+
+
 def elapsed_ms(started_at: str | None, finished_at: str | None) -> int | None:
     start = parse_time(started_at)
     finish = parse_time(finished_at)
@@ -113,8 +121,10 @@ def cursor_metrics(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if len(event_timestamps) >= 2:
         event_wall_ms = max(event_timestamps) - min(event_timestamps)
 
-    started_at = iso_or_now(args.started_at)
-    finished_at = iso_or_now(args.finished_at)
+    inferred_started_at = iso_from_timestamp_ms(min(event_timestamps)) if event_timestamps else None
+    inferred_finished_at = iso_from_timestamp_ms(max(event_timestamps)) if event_timestamps else None
+    started_at = iso_or_now(args.started_at or inferred_started_at)
+    finished_at = iso_or_now(args.finished_at or inferred_finished_at)
     wall_ms = elapsed_ms(started_at, finished_at)
     if wall_ms is None:
         wall_ms = event_wall_ms
