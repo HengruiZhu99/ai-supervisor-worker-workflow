@@ -721,9 +721,15 @@ process_job() {
   attempt="$(jq -r '(.attempt // 0) + 1' "$status_file")"
   starting_state="$(jq -r '.state // ""' "$status_file")"
   worktree=".worktrees/$id"
+  local task_file="$job/task.md"
 
   if [[ -z "$id" || -z "$base_ref" || -z "$branch" ]]; then
     update_status "$status_file" state=blocked worker_error="missing id, base_ref, or branch"
+    cleanup_current_lock
+    return 0
+  fi
+  if [[ ! -s "$task_file" ]]; then
+    echo "Skipping $id: task file is not ready yet: $task_file"
     cleanup_current_lock
     return 0
   fi
@@ -765,6 +771,11 @@ process_job() {
   fi
 
   local prompt_file="$job/worker_prompt.attempt-$attempt.md"
+  if [[ ! -s "$task_file" ]]; then
+    update_status "$status_file" state=blocked worker_error="task file disappeared or is empty before prompt generation: $task_file"
+    cleanup_current_lock
+    return 0
+  fi
   {
     echo "# Cursor Worker Instructions"
     echo
@@ -790,7 +801,7 @@ process_job() {
     write_available_skills
     echo
     echo "## Task"
-    cat "$job/task.md"
+    cat "$task_file"
     if [[ -f "$job/feedback.md" ]]; then
       echo
       echo "## Supervisor Feedback"
