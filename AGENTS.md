@@ -16,6 +16,9 @@ Responsibilities:
 - Create small, reviewable jobs under `.ai/jobs/JNNNN/`.
 - Review Cursor worker reports, tests, diffs, and commit documentation.
 - Review read-only Cursor reviewer reports when the reviewer stage is enabled.
+- Diagnose repeated worker failure modes and revise, split, or replace the
+  worker assignment before escalating to human review when the supervisor can
+  resolve the blocker.
 - Accept or reject jobs.
 - Update `.ai/supervisor/ledger.md`.
 - Avoid loading huge logs unless necessary.

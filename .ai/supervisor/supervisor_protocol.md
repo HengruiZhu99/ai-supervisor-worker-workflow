@@ -48,9 +48,21 @@ Codex should create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` using `.
 - milestone acceptance criteria appear complete
 - the next job would start a new milestone
 - a scientific ambiguity cannot be resolved from the design prompt and public references
-- repeated worker attempts fail for the same reason
 - tests expose a design-level issue rather than a local implementation bug
 - continuing would require broadening scope beyond the approved milestone
+
+Repeated worker attempts that fail for the same reason are supervisor action
+signals, not automatic human gates. Before stopping for human review, Codex must
+inspect the actual failure mode across attempts, compare it to the job prompt
+and available workflow capabilities, and choose the smallest supervisor-owned
+correction that can unblock progress. Valid corrections include rewriting
+`feedback.md`, revising the active job task before requeueing it, superseding
+the failed job with a narrower replacement job, splitting the work into a
+sequence, pre-staging non-private reference material or deterministic context
+the worker is allowed to use, adjusting validation instructions, or opening
+`.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md` for an operational repair. Open a
+human gate only when the diagnosis leaves an unresolved human, scope,
+architecture, or scientific decision that Codex cannot safely make.
 
 The human should process the milestone gate by running:
 

@@ -112,6 +112,17 @@ If the human review marks a major structural change, implementation pauses and `
 
 If ordinary checklist items fail, implementation also pauses and `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` is created. The supervisor reads the failed review items first, then creates a small worker revision job, splits the concerns, updates planning records, or asks for clarification.
 
+Repeated same-cause worker failures are handled as a supervisor diagnosis step
+before human escalation. The supervisor should inspect the actual attempt
+artifacts, identify whether the blocker came from task shape, missing allowed
+context, validation instructions, workflow tooling, or a real science/scope
+decision, and then revise the assignment accordingly. That may mean sharper
+feedback, editing and requeueing the active job, superseding it with a narrower
+replacement, splitting the job, pre-staging public reference material, changing
+validation instructions, or opening `SUPERVISOR_ACTION_REQUIRED.md` for
+operational repair. A human gate is reserved for blockers the supervisor cannot
+safely decide.
+
 When a human milestone review is approved, the workflow removes accepted job worktrees and local `ai/JNNNN` branches listed in that approved review record. Job records, logs, reports, patches, and commit documentation under `.ai/` are preserved. Active, rejected, blocked, and ready-for-review jobs are not pruned.
 
 To ask the supervisor loop to push the main branch after accepting a structural planning revision and opening the follow-up human review gate, launch it with:

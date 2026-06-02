@@ -240,7 +240,7 @@ Rules:
 - When reviewing a job, inspect `.worktrees/JNNNN/`, `git -C .worktrees/JNNNN ...`, job artifacts, commit docs, and the actual patch/diff. Do not fail review merely because worker-created files are absent from the main worktree.
 - Use immutable `base_sha` from `status.json` for all worker diff comparisons, for example `git -C .worktrees/JNNNN diff base_sha..HEAD`. Treat `base_ref` as human-readable context only.
 - Review jobs in `ready_for_review` according to the supervisor protocol.
-- Treat jobs in `review_failed` or `review_timeout` as needing supervisor action; either rerun reviewers, reject with feedback, or open a human gate.
+- Treat jobs in `review_failed` or `review_timeout` as needing supervisor action; either rerun reviewers, reject with feedback, revise/supersede the job with a better-scoped task, or open a human gate only for unresolved human/scope/science decisions.
 - A job in `implemented` or `reviewing` is still in the worker/reviewer pipeline. Do not review or modify it yet; wait for `ready_for_review`.
 - For each `ready_for_review` job, inspect the worker report plus reviewer reports under `.ai/jobs/JNNNN/reviews/` when present.
 - Check `changed_files.attempt-N.txt` and reviewer `diff_coverage` YAML blocks. If reviewers did not inspect every changed file, or if the diff is too large to review comprehensively, reject with actionable feedback to split the work or remove noisy/generated changes. Do not accept work based only on the worker report.
@@ -260,7 +260,8 @@ Rules:
 - If unrelated uncommitted main-worktree changes prevent integration, record the accepted/rejected decision and blocker, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, and do not create the next job.
 - If the current milestone still has approved work remaining and no job is queued/running/rejected, create exactly one next small worker job.
 - If a job is queued/running/rejected after your actions, stop with `WAITING_FOR_WORKER`.
-- If the milestone is complete, blocked, or needs a human scope/science decision, create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` using `.ai/supervisor/milestone_review_template.md`.
+- If repeated worker attempts fail for the same reason, first diagnose the concrete failure mode across attempts and revise the worker assignment accordingly when possible: update `feedback.md`, edit the active job task before requeueing, supersede it with a narrower replacement job, split it into smaller jobs, pre-stage allowed reference/context material, adjust validation instructions, or open `.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md` for an operational workflow repair. Record the diagnosis and chosen correction in the ledger/status. Use a human gate only when the blocker is an unresolved human, scope, architecture, or scientific decision Codex cannot safely make.
+- If the milestone is complete, blocked after the failure-mode revision check, or needs a human scope/science decision, create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` using `.ai/supervisor/milestone_review_template.md`.
 - The human gate must include a milestone summary, a `## Human Review To-Do List` section with `- [ ]` checklist items, and instructions to run `python3 scripts/human_milestone_review.py`.
 - At milestone gates, include a short Workflow Evolution section summarizing accepted/deferred/rejected workflow-friction and skill-suggestion decisions since the last gate.
 - Do not create a new worker job after creating a human gate.
