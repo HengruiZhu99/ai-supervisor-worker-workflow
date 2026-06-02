@@ -70,7 +70,19 @@ async function postJson(path, payload = {}) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const data = await response.json();
+  const text = await response.text();
+  const contentType = response.headers.get("content-type") || "";
+  let data = {};
+  if (contentType.includes("application/json")) {
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (error) {
+      throw new Error(`Invalid JSON response from ${path}: ${error.message}`);
+    }
+  } else {
+    const snippet = text.trim().replace(/\s+/g, " ").slice(0, 220);
+    throw new Error(`Expected JSON from ${path}, got ${response.status}${snippet ? `: ${snippet}` : ""}`);
+  }
   if (!response.ok || data.ok === false) {
     throw new Error(data.message || `Request failed: ${response.status}`);
   }

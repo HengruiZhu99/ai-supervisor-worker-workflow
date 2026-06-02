@@ -337,11 +337,16 @@ run_worker_preflight() {
     if [[ "$WORKER_INIT_SUBMODULES" == "1" && -f "$worktree/.gitmodules" ]]; then
       echo
       echo "## Submodule initialization"
+      local submodule_exit=0
       if [[ -n "$WORKER_SUBMODULE_PATHS" ]]; then
         # shellcheck disable=SC2086
-        git -C "$worktree" submodule update --init --recursive $WORKER_SUBMODULE_PATHS
+        git -C "$worktree" submodule update --init --recursive $WORKER_SUBMODULE_PATHS || submodule_exit=$?
       else
-        git -C "$worktree" submodule update --init --recursive
+        git -C "$worktree" submodule update --init --recursive || submodule_exit=$?
+      fi
+      if [[ "$submodule_exit" -ne 0 ]]; then
+        echo "WARNING: submodule update exited with status $submodule_exit."
+        echo "Continuing unless WORKER_REQUIRED_SUBMODULE_PATHS declares a missing required path."
       fi
       git -C "$worktree" submodule status --recursive || true
     else
@@ -757,9 +762,22 @@ process_job() {
       return 0
     fi
     if git show-ref --verify --quiet "refs/heads/$branch"; then
-      git worktree add "$worktree" "$branch"
+      if ! git worktree add "$worktree" "$branch"; then
+        update_status "$status_file" state=blocked worker_error="failed to create worktree $worktree from branch $branch"
+        cleanup_current_lock
+        return 0
+      fi
     else
-      git worktree add -b "$branch" "$worktree" "$base_sha"
+      if ! git rev-parse --verify "${base_sha}^{commit}" >/dev/null 2>&1; then
+        update_status "$status_file" state=blocked worker_error="base_sha is not available in this checkout: $base_sha"
+        cleanup_current_lock
+        return 0
+      fi
+      if ! git worktree add -b "$branch" "$worktree" "$base_sha"; then
+        update_status "$status_file" state=blocked worker_error="failed to create worktree $worktree from base_sha $base_sha"
+        cleanup_current_lock
+        return 0
+      fi
     fi
   fi
 

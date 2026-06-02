@@ -893,7 +893,10 @@ def json_response(handler: SimpleHTTPRequestHandler, status: HTTPStatus, payload
     handler.send_header("Cache-Control", "no-store")
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
-    handler.wfile.write(body)
+    try:
+        handler.wfile.write(body)
+    except (BrokenPipeError, ConnectionResetError):
+        return
 
 
 def read_request_json(handler: SimpleHTTPRequestHandler) -> dict:
@@ -1841,7 +1844,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(payload)
+            try:
+                self.wfile.write(payload)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+        if parsed.path.startswith("/api/"):
+            json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "message": f"unknown endpoint: {parsed.path}"})
             return
         if parsed.path == "/":
             self.path = "/index.html"
