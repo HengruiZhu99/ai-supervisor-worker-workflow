@@ -29,6 +29,8 @@ WORKER_MAX_FAILURE_RESUMES="${WORKER_MAX_FAILURE_RESUMES:-2}"
 WORKER_INIT_SUBMODULES="${WORKER_INIT_SUBMODULES:-1}"
 WORKER_SUBMODULE_PATHS="${WORKER_SUBMODULE_PATHS:-}"
 WORKER_REQUIRED_SUBMODULE_PATHS="${WORKER_REQUIRED_SUBMODULE_PATHS:-}"
+WORKER_CLEAN_UNDECLARED_SUBMODULES="${WORKER_CLEAN_UNDECLARED_SUBMODULES:-1}"
+WORKER_ALLOW_SUBMODULE_CHANGES="${WORKER_ALLOW_SUBMODULE_CHANGES:-0}"
 WORKER_RECOVER_STALE_RUNNING="${WORKER_RECOVER_STALE_RUNNING:-1}"
 WORKER_RECOVER_LEGACY_STALE_LOCKS="${WORKER_RECOVER_LEGACY_STALE_LOCKS:-0}"
 WORKER_RUNS_DIR="${WORKER_RUNS_DIR:-.ai/supervisor_runs}"
@@ -194,6 +196,29 @@ utc_now() {
 
 collect_cursor_metrics() {
   python3 scripts/collect_agent_metrics.py cursor "$@" >/dev/null || true
+}
+
+clean_worker_submodules() {
+  local job="$1"
+  local worktree="$2"
+  local attempt="$3"
+  local phase="$4"
+  local allowed_submodules="$job/allowed_submodule_paths.txt"
+  local log="$job/submodule_cleanliness.${phase}.attempt-$attempt.log"
+
+  if [[ "$WORKER_CLEAN_UNDECLARED_SUBMODULES" != "1" || "$WORKER_ALLOW_SUBMODULE_CHANGES" == "1" ]]; then
+    return 0
+  fi
+  if [[ ! -f "$worktree/.gitmodules" ]]; then
+    return 0
+  fi
+
+  python3 scripts/clean_worker_submodules.py \
+    --worktree "$worktree" \
+    --phase "$phase" \
+    --allowed-paths-file "$allowed_submodules" \
+    --required-paths "$WORKER_REQUIRED_SUBMODULE_PATHS" \
+    --output "$log" >/dev/null 2>&1 || true
 }
 
 lock_pid_alive() {
@@ -883,6 +908,8 @@ process_job() {
   pre_commit_head="$(git -C "$worktree" rev-parse HEAD)"
   post_cursor_head="$pre_commit_head"
 
+  clean_worker_submodules "$job" "$worktree" "$attempt" precommit
+
   if [[ -n "$(git -C "$worktree" status --porcelain)" ]]; then
     git -C "$worktree" add -A
     git -C "$worktree" commit -m "worker($id): attempt $attempt"
@@ -921,6 +948,7 @@ process_job() {
   local post_test_status="$job/post_test_status.attempt-$attempt.txt"
   local post_test_status_raw="$job/post_test_status_raw.attempt-$attempt.txt"
   local allowed_artifacts="$job/allowed_artifacts.txt"
+  clean_worker_submodules "$job" "$worktree" "$attempt" posttest
   git -C "$worktree" status --porcelain >"$post_test_status_raw"
   python3 scripts/filter_allowed_artifacts.py \
     --status "$post_test_status_raw" \

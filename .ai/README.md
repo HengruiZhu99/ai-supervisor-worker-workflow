@@ -97,6 +97,14 @@ TEST_TIMEOUT=7200 ./scripts/worker_loop.sh
 
 If tests intentionally generate local artifacts, declare them in `.ai/jobs/JNNNN/allowed_artifacts.txt` using shell-style glob patterns. Any undeclared dirty files after tests block the attempt and are recorded in `post_test_status.attempt-N.txt`.
 
+By default, the worker loop also repairs undeclared Git submodule dirt before
+the generated attempt commit and before post-test dirty filtering. This prevents
+submodule initialization, cleanup, or validation side effects from becoming
+accidental superproject gitlink commits. Jobs that intentionally maintain
+submodules must declare those paths in `.ai/jobs/JNNNN/allowed_submodule_paths.txt`
+or run with `WORKER_ALLOW_SUBMODULE_CHANGES=1`. Set
+`WORKER_CLEAN_UNDECLARED_SUBMODULES=0` to disable this repair path.
+
 ## Agent Metrics
 
 The workflow records per-agent usage metrics under `.ai/metrics/`.
@@ -309,7 +317,7 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/agent_wrapper.py scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/check_attempt_consistency.py scripts/collect_agent_metrics.py scripts/summarize_agent_metrics.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
+python3 -m py_compile scripts/agent_wrapper.py scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/clean_worker_submodules.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/check_attempt_consistency.py scripts/collect_agent_metrics.py scripts/summarize_agent_metrics.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
 python3 scripts/summarize_jobs.py
 python3 scripts/summarize_agent_metrics.py
 ```
