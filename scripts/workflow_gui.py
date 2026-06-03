@@ -12,17 +12,21 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from uuid import uuid4
+from urllib.parse import parse_qs, urlparse
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 GUI_ROOT = PACKAGE_ROOT / "gui"
+WORKFLOW_CHAT_JOBS: dict[str, dict] = {}
+WORKFLOW_CHAT_JOBS_LOCK = threading.Lock()
 DEFAULT_LOG_DISPLAY_LINES = 10_000
 ACTIVE_JOB_STATES = {
     "queued",
@@ -1565,6 +1569,73 @@ The user wants to chat about the supervisor/worker workflow, the current run, or
     }
 
 
+def prune_workflow_chat_jobs() -> None:
+    cutoff = time.time() - env_int("AI_WORKFLOW_CHAT_JOB_TTL_SECONDS", 3600)
+    with WORKFLOW_CHAT_JOBS_LOCK:
+        for chat_id, job in list(WORKFLOW_CHAT_JOBS.items()):
+            if float(job.get("created_monotonic", 0)) < cutoff:
+                WORKFLOW_CHAT_JOBS.pop(chat_id, None)
+
+
+def start_workflow_chat_job(
+    root: Path,
+    message: str,
+    history: object,
+    allow_edits: bool,
+    model_override: str = "",
+) -> dict:
+    message = message.strip()
+    if not message:
+        return {"ok": False, "message": "Enter a question for the workflow chat."}
+    prune_workflow_chat_jobs()
+    chat_id = uuid4().hex
+    created_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    with WORKFLOW_CHAT_JOBS_LOCK:
+        WORKFLOW_CHAT_JOBS[chat_id] = {
+            "ok": True,
+            "chat_id": chat_id,
+            "state": "running",
+            "created_at": created_at,
+            "created_monotonic": time.time(),
+            "allow_edits": allow_edits,
+        }
+
+    def run_chat() -> None:
+        try:
+            result = workflow_chat(root, message, history, allow_edits, model_override)
+        except Exception as exc:  # Keep API responses JSON even on unexpected agent failure.
+            result = {"ok": False, "message": f"Workflow chat failed before completion: {exc}"}
+        with WORKFLOW_CHAT_JOBS_LOCK:
+            current = WORKFLOW_CHAT_JOBS.get(chat_id, {})
+            current.update(
+                {
+                    "state": "done",
+                    "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+                    "result": result,
+                }
+            )
+            WORKFLOW_CHAT_JOBS[chat_id] = current
+
+    threading.Thread(target=run_chat, name=f"workflow-chat-{chat_id[:8]}", daemon=True).start()
+    return {"ok": True, "state": "running", "chat_id": chat_id, "message": "Workflow chat started."}
+
+
+def workflow_chat_result(chat_id: str) -> dict:
+    prune_workflow_chat_jobs()
+    with WORKFLOW_CHAT_JOBS_LOCK:
+        job = dict(WORKFLOW_CHAT_JOBS.get(chat_id, {}))
+    if not job:
+        return {"ok": False, "message": f"Unknown workflow chat id: {chat_id}"}
+    if job.get("state") != "done":
+        return {"ok": True, "state": "running", "chat_id": chat_id, "created_at": job.get("created_at", "")}
+    result = dict(job.get("result") or {})
+    result.setdefault("ok", False)
+    result["state"] = "done"
+    result["chat_id"] = chat_id
+    result["finished_at"] = job.get("finished_at", "")
+    return result
+
+
 def create_structural_change_request(
     root: Path,
     reviews_dir: Path,
@@ -1849,6 +1920,12 @@ class Handler(SimpleHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 pass
             return
+        if parsed.path == "/api/workflow-chat-result":
+            query = parse_qs(parsed.query)
+            chat_id = (query.get("id") or [""])[0]
+            result = workflow_chat_result(chat_id)
+            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.NOT_FOUND, result)
+            return
         if parsed.path.startswith("/api/"):
             json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "message": f"unknown endpoint: {parsed.path}"})
             return
@@ -1909,14 +1986,14 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/workflow-chat":
-            result = workflow_chat(
+            result = start_workflow_chat_job(
                 self.project_root,
                 str(payload.get("message", "")),
                 payload.get("history", []),
                 bool(payload.get("allow_edits", False)),
                 str(payload.get("model", "")),
             )
-            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            json_response(self, HTTPStatus.ACCEPTED if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return
 
         if parsed.path == "/api/open-file":

@@ -70,6 +70,15 @@ async function postJson(path, payload = {}) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  return parseJsonResponse(response, path);
+}
+
+async function getJson(path) {
+  const response = await fetch(path, { method: "GET" });
+  return parseJsonResponse(response, path);
+}
+
+async function parseJsonResponse(response, path) {
   const text = await response.text();
   const contentType = response.headers.get("content-type") || "";
   let data = {};
@@ -87,6 +96,19 @@ async function postJson(path, payload = {}) {
     throw new Error(data.message || `Request failed: ${response.status}`);
   }
   return data;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function pollWorkflowChat(chatId) {
+  for (let attempt = 0; attempt < 720; attempt += 1) {
+    const result = await getJson(`/api/workflow-chat-result?id=${encodeURIComponent(chatId)}`);
+    if (result.state === "done") return result;
+    await delay(2000);
+  }
+  throw new Error("Workflow chat is still running after 24 minutes; check the workflow chat log.");
 }
 
 function formValues(form) {
@@ -660,12 +682,20 @@ $("workflowChatForm").addEventListener("submit", async (event) => {
   renderWorkflowChat({ force: true });
 
   try {
-    const result = await postJson("/api/workflow-chat", {
+    const started = await postJson("/api/workflow-chat", {
       message,
       history: state.workflowChatHistory.slice(-12),
       allow_edits: allowEdits,
       model: $("workflowChatModel")?.value || "",
     });
+    $("workflowChatMeta").dataset.last = [
+      allowEdits ? "Edit mode" : "Read-only guidance",
+      started.chat_id ? `job ${started.chat_id.slice(0, 8)}` : "working",
+    ].filter(Boolean).join(" · ");
+    renderWorkflowChat({ force: true });
+    const result = started.state === "running" && started.chat_id
+      ? await pollWorkflowChat(started.chat_id)
+      : started;
     state.workflowChatHistory.push({
       role: "assistant",
       content: result.answer || result.message || "(No answer returned.)",
