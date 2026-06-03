@@ -19,6 +19,10 @@ Responsibilities:
 - Diagnose repeated worker failure modes and revise, split, or replace the
   worker assignment before escalating to human review when the supervisor can
   resolve the blocker.
+- Avoid repeated audit-only or literature-review jobs. Once a bounded formula,
+  convention, or readiness slice is accepted, dispatch a small
+  implementation/test job over the verified slice unless a new exact source
+  target or human-approved decision blocks implementation.
 - Accept or reject jobs.
 - Update `.ai/supervisor/ledger.md`.
 - Avoid loading huge logs unless necessary.

@@ -31,6 +31,31 @@ A job should usually be small enough to produce a concise, meaningful diff and o
 
 Do not create multiple worker jobs at the same time unless the user explicitly asks.
 
+### Audit-to-implementation pivot
+
+Discovery, literature-review, provenance, and convention-checking jobs are
+allowed only when they answer a specific blocker needed for implementation.
+They must not become the default next-job shape.
+
+After the supervisor has an accepted readiness gate or an accepted bounded
+formula/convention slice, the next job should normally be a small
+implementation/test job over that verified slice. Additional audit-only jobs
+must name a new exact source target, equation/convention gap, or human-approved
+decision point that blocks the next implementation step.
+
+If two consecutive accepted audit/readiness jobs for the same subsystem produce
+the same outcome, such as preserving the same `TODO_REF_REQUIRED` boundary or
+recording the same missing evidence, Codex should stop dispatching more audits
+for that subsystem. It should instead choose one of:
+- dispatch a bounded implementation/test job using only already verified pieces;
+- create a supervisor-owned human gate asking for the missing convention or
+  source target;
+- defer that subsystem and move to another approved implementation slice.
+
+Audit-only jobs must include an `Implementation unblock criterion` in the task:
+what concrete implementation job becomes allowed if the audit succeeds. If no
+such criterion can be stated, do not dispatch the audit.
+
 ## Milestone-gated autonomous protocol
 
 The default project workflow is milestone-gated autonomy:
