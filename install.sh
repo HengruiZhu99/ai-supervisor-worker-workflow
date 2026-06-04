@@ -71,6 +71,7 @@ files=(
   "scripts/agent_wrapper.py"
   "scripts/analyze_reviewer_reports.py"
   "scripts/check_attempt_consistency.py"
+  "scripts/check_job_progress_gate.py"
   "scripts/create_commit_doc.py"
   "scripts/create_job.py"
   "scripts/collect_agent_metrics.py"
@@ -87,8 +88,13 @@ files=(
   "scripts/record_workflow_improvement.py"
   "scripts/render_worker_report.py"
   "scripts/summarize_agent_metrics.py"
+  "scripts/summarize_progress_accounting.py"
   "scripts/summarize_jobs.py"
   "scripts/supervisor_loop.sh"
+  "scripts/test_analyze_reviewer_reports.py"
+  "scripts/test_check_job_progress_gate.py"
+  "scripts/test_summarize_progress_accounting.py"
+  "scripts/test_update_job_status.py"
   "scripts/transition_job.py"
   "scripts/update_job_status.py"
   "scripts/worker_loop.sh"
@@ -113,12 +119,14 @@ chmod +x \
   "$TARGET_DIR/scripts/commit_workflow_records.py" \
   "$TARGET_DIR/scripts/analyze_reviewer_reports.py" \
   "$TARGET_DIR/scripts/check_attempt_consistency.py" \
+  "$TARGET_DIR/scripts/check_job_progress_gate.py" \
   "$TARGET_DIR/scripts/check_reviewer_coverage.py" \
   "$TARGET_DIR/scripts/extract_worker_handoff.py" \
   "$TARGET_DIR/scripts/filter_allowed_artifacts.py" \
   "$TARGET_DIR/scripts/integrate_job.py" \
   "$TARGET_DIR/scripts/record_workflow_event.py" \
   "$TARGET_DIR/scripts/render_worker_report.py" \
+  "$TARGET_DIR/scripts/summarize_progress_accounting.py" \
   "$TARGET_DIR/scripts/transition_job.py" \
   "$TARGET_DIR/scripts/worker_loop.sh" \
   "$TARGET_DIR/scripts/supervisor_loop.sh" \

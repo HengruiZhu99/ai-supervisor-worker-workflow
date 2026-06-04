@@ -26,6 +26,17 @@ REQUIRED_FIELDS = {
     "unlocks_next",
     "metadata_only",
 }
+STATUS_FIELD_KEYS = {
+    "progress_job_type",
+    "progress_subsystem",
+    "progress_validation_class",
+    "progress_metadata_only",
+    "progress_new_executable_behavior",
+    "progress_capability_target",
+    "progress_unlocks_next",
+    "progress_exception_type",
+    "progress_exception_record",
+}
 
 JOB_TYPES = {
     "implementation",
@@ -61,6 +72,8 @@ VALIDATION_CLASSES = {
 }
 
 METADATA_LIKE_TYPES = {"audit", "metadata", "docs", "visualization", "planning"}
+EXCEPTION_TYPES = {"none", "human_approved_planning_source", "subsystem_deferred"}
+METADATA_VALIDATION_CLASSES = {"none", "schema", "construction"}
 HISTORY_STATES = {"accepted", "ready_for_review", "implemented"}
 VAGUE_UNLOCKS = {
     "",
@@ -98,11 +111,41 @@ class Progress:
     validation_class: str
     unlocks_next: str
     metadata_only: bool
+    exception_type: str
+    exception_record: str
     source: str
 
     @property
     def metadata_like(self) -> bool:
         return self.metadata_only or self.job_type in METADATA_LIKE_TYPES
+
+    def to_dict(self) -> dict[str, str | bool]:
+        return {
+            "job_type": self.job_type,
+            "subsystem": self.subsystem,
+            "capability_target": self.capability_target,
+            "new_executable_behavior": self.new_executable_behavior,
+            "validation_class": self.validation_class,
+            "unlocks_next": self.unlocks_next,
+            "metadata_only": self.metadata_only,
+            "progress_exception_type": self.exception_type,
+            "progress_exception_record": self.exception_record,
+            "metadata_like": self.metadata_like,
+            "source": self.source,
+        }
+
+    def status_fields(self) -> dict[str, str | bool]:
+        return {
+            "progress_job_type": self.job_type,
+            "progress_subsystem": self.subsystem,
+            "progress_validation_class": self.validation_class,
+            "progress_metadata_only": self.metadata_only,
+            "progress_new_executable_behavior": self.new_executable_behavior,
+            "progress_capability_target": self.capability_target,
+            "progress_unlocks_next": self.unlocks_next,
+            "progress_exception_type": self.exception_type,
+            "progress_exception_record": self.exception_record,
+        }
 
 
 def unquote(value: str) -> str:
@@ -164,6 +207,8 @@ def progress_from_block(block: dict[str, str], source: str) -> tuple[Progress | 
     validation_class = block.get("validation_class", "")
     new_executable = parse_bool(block.get("new_executable_behavior", ""))
     metadata_only = parse_bool(block.get("metadata_only", ""))
+    exception_type = block.get("progress_exception_type", "none").strip() or "none"
+    exception_record = block.get("progress_exception_record", "").strip()
 
     if job_type and job_type not in JOB_TYPES:
         errors.append(f"{source}: invalid job_type {job_type!r}")
@@ -175,6 +220,15 @@ def progress_from_block(block: dict[str, str], source: str) -> tuple[Progress | 
         errors.append(f"{source}: new_executable_behavior must be true or false")
     if block.get("metadata_only") is not None and metadata_only is None:
         errors.append(f"{source}: metadata_only must be true or false")
+    if exception_type not in EXCEPTION_TYPES:
+        errors.append(f"{source}: invalid progress_exception_type {exception_type!r}")
+    if exception_type != "none" and vague_unlock(exception_record):
+        errors.append(
+            f"{source}: progress_exception_record is required when "
+            f"progress_exception_type={exception_type!r}"
+        )
+    if exception_type == "none" and exception_record:
+        errors.append(f"{source}: progress_exception_record requires a non-none progress_exception_type")
 
     capability_target = block.get("capability_target", "").strip()
     unlocks_next = block.get("unlocks_next", "").strip()
@@ -191,6 +245,21 @@ def progress_from_block(block: dict[str, str], source: str) -> tuple[Progress | 
         errors.append(f"{source}: metadata_only=true conflicts with job_type={job_type!r}")
     if job_type == "implementation" and new_executable is False:
         errors.append(f"{source}: implementation jobs must set new_executable_behavior=true")
+    if job_type == "implementation" and validation_class == "none":
+        errors.append(f"{source}: implementation jobs must not use validation_class=none")
+    if job_type == "numerical_test" and validation_class not in {"identity", "convergence"}:
+        errors.append(f"{source}: numerical_test jobs must use validation_class identity or convergence")
+    if job_type == "backend_test" and validation_class not in {"backend_matrix", "mpi_device"}:
+        errors.append(f"{source}: backend_test jobs must use validation_class backend_matrix or mpi_device")
+    if (
+        metadata_like
+        and validation_class not in METADATA_VALIDATION_CLASSES
+        and exception_type == "none"
+    ):
+        errors.append(
+            f"{source}: metadata-like jobs must use validation_class none, schema, "
+            "or construction unless progress_exception_type documents the exception"
+        )
 
     if errors:
         return None, errors
@@ -204,6 +273,8 @@ def progress_from_block(block: dict[str, str], source: str) -> tuple[Progress | 
             validation_class=validation_class,
             unlocks_next=unlocks_next,
             metadata_only=bool(metadata_only),
+            exception_type=exception_type,
+            exception_record=exception_record,
             source=source,
         ),
         [],
@@ -269,6 +340,8 @@ def infer_legacy_progress(job_dir: Path, status: dict[str, object]) -> Progress:
         validation_class="none",
         unlocks_next="legacy inferred progress classification",
         metadata_only=metadata_only,
+        exception_type="none",
+        exception_record="",
         source=f"{job_dir}/task.md (legacy inferred)",
     )
 
@@ -345,7 +418,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=Path(".ai/jobs"),
         help="job history directory, default: .ai/jobs",
     )
+    parser.add_argument("--json", action="store_true", help="emit machine-readable gate result")
     return parser.parse_args(argv)
+
+
+def result_payload(progress: Progress | None, errors: list[str]) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "ok": not errors,
+        "errors": errors,
+        "progress": progress.to_dict() if progress is not None else None,
+        "status_fields": progress.status_fields() if progress is not None and not errors else {},
+    }
+    return payload
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -368,6 +452,10 @@ def main(argv: list[str] | None = None) -> int:
                 "numerical_test, backend_test, open a human decision gate, or defer "
                 "the subsystem instead."
             )
+
+    if args.json:
+        print(json.dumps(result_payload(progress, errors), indent=2, sort_keys=True))
+        return 1 if errors else 0
 
     if errors:
         print("progress gate: failed")

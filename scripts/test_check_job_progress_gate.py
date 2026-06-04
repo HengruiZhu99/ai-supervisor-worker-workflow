@@ -120,6 +120,93 @@ class ProgressGateTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("unlocks_next", result.stdout)
 
+    def test_implementation_with_no_validation_class_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jobs_dir = root / ".ai" / "jobs"
+            task = root / "task.md"
+            task.write_text(progress_block(validation_class="none"), encoding="utf-8")
+            result = self.run_gate(task, jobs_dir)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("implementation jobs must not use validation_class=none", result.stdout)
+
+    def test_numerical_test_requires_identity_or_convergence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jobs_dir = root / ".ai" / "jobs"
+            task = root / "task.md"
+            task.write_text(
+                progress_block(
+                    job_type="numerical_test",
+                    capability_target="Chebyshev derivative identity test",
+                    validation_class="schema",
+                    unlocks_next="Use the identity test as the operator validation gate",
+                ),
+                encoding="utf-8",
+            )
+            result = self.run_gate(task, jobs_dir)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("numerical_test jobs must use validation_class identity or convergence", result.stdout)
+
+    def test_backend_test_requires_backend_validation_class(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jobs_dir = root / ".ai" / "jobs"
+            task = root / "task.md"
+            task.write_text(
+                progress_block(
+                    job_type="backend_test",
+                    subsystem="backend",
+                    capability_target="Kokkos backend parity test",
+                    validation_class="convergence",
+                    unlocks_next="Run the backend matrix parity validation job",
+                ),
+                encoding="utf-8",
+            )
+            result = self.run_gate(task, jobs_dir)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("backend_test jobs must use validation_class backend_matrix or mpi_device", result.stdout)
+
+    def test_metadata_validation_exception_requires_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jobs_dir = root / ".ai" / "jobs"
+            task = root / "task.md"
+            text = progress_block(
+                job_type="metadata",
+                subsystem="domain",
+                capability_target="BBH domain interface manifest",
+                new_executable_behavior="false",
+                validation_class="identity",
+                unlocks_next="Implement the BBH domain construction test from this manifest",
+                metadata_only="true",
+            ).replace(
+                "  metadata_only: true\n",
+                "  metadata_only: true\n  progress_exception_type: human_approved_planning_source\n",
+            )
+            task.write_text(text, encoding="utf-8")
+            result = self.run_gate(task, jobs_dir)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("progress_exception_record is required", result.stdout)
+
+    def test_json_output_contains_status_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jobs_dir = root / ".ai" / "jobs"
+            task = root / "task.md"
+            task.write_text(progress_block(), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), str(task), "--jobs-dir", str(jobs_dir), "--json"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["status_fields"]["progress_job_type"], "implementation")
+
     def test_missing_progress_block_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

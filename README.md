@@ -64,7 +64,11 @@ external/ai-supervisor-worker-workflow/install.sh .
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/agent_wrapper.py scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/human_milestone_review.py scripts/list_skills.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
+python3 -m py_compile scripts/agent_wrapper.py scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/summarize_progress_accounting.py scripts/check_job_progress_gate.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/human_milestone_review.py scripts/list_skills.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
+python3 scripts/test_check_job_progress_gate.py
+python3 scripts/test_update_job_status.py
+python3 scripts/test_analyze_reviewer_reports.py
+python3 scripts/test_summarize_progress_accounting.py
 ```
 
 ## Dashboard
@@ -143,7 +147,13 @@ Reviewer A is tuned for scientific/numerical review. Reviewer B is tuned for bui
 
 Reviewer reports include a machine-checkable `diff_coverage` YAML block. The worker loop writes `changed_files.attempt-N.txt` from `base_sha..HEAD` and runs `scripts/check_reviewer_coverage.py`; reviewer failure leaves the job in `review_failed` or `review_timeout` for supervisor action.
 
-Reviewer reports also include a machine-checkable `review_decision` YAML block. The worker loop parses this with `scripts/analyze_reviewer_reports.py`; if either reviewer blocks acceptance, the job stays in `review_failed` for supervisor decision instead of silently becoming ready.
+Reviewer reports also include machine-checkable `review_decision` and `progress_review` YAML blocks. The worker loop parses these with `scripts/analyze_reviewer_reports.py`; if either reviewer blocks acceptance or marks progress value as blocking, the job stays in `review_failed` for supervisor decision instead of silently becoming ready.
+
+Every worker task must include a machine-checkable `progress:` block. The worker loop and `scripts/integrate_job.py` run `scripts/check_job_progress_gate.py`; successful gates persist compact `progress_*` fields in `status.json`. Milestone reviews should include:
+
+```bash
+python3 scripts/summarize_progress_accounting.py --from-job JNNNN --to-job JNNNN
+```
 
 Raw worker transcripts are audit artifacts only. After the worker wrapper exits,
 the loop extracts `worker_handoff.attempt-N.json` from the final structured
@@ -163,7 +173,7 @@ python3 scripts/integrate_job.py JNNNN
 python3 scripts/integrate_job.py JNNNN --apply
 ```
 
-The guard checks immutable `base_sha`, reviewer completion, tests, post-test cleanliness, and attempt consistency before merging the worker branch.
+The guard checks immutable `base_sha`, the task progress gate, stored progress fields, reviewer completion, tests, post-test cleanliness, and attempt consistency before merging the worker branch.
 
 The worker loop normalizes common accidental Codex-style Cursor model ids, for example `gpt-5.5` to `gpt-5.5-high`, before invoking `cursor-agent`. If Cursor returns nonzero after emitting `[system success]`, tests pass, and the post-test worktree is clean, the attempt proceeds to reviewer review while recording the nonzero exit in `status.json`.
 

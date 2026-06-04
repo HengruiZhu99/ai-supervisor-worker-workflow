@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -35,6 +36,31 @@ def require_clean_main(root: Path) -> list[str]:
     if result.stdout.strip():
         return ["main worktree has uncommitted changes; integrate only from a clean checkout"]
     return []
+
+
+def progress_gate(root: Path, job: Path) -> tuple[dict | None, list[str]]:
+    task = job / "task.md"
+    if not task.exists():
+        return None, [f"{job.name}: missing task.md for progress gate"]
+    script = root / "scripts" / "check_job_progress_gate.py"
+    result = run(
+        [sys.executable, str(script), str(task), "--jobs-dir", str(root / ".ai" / "jobs"), "--json"],
+        root,
+    )
+    output = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+    try:
+        payload = json.loads(result.stdout) if result.stdout.strip() else {}
+    except json.JSONDecodeError:
+        payload = {}
+    if result.returncode != 0:
+        errors = payload.get("errors") if isinstance(payload, dict) else None
+        if isinstance(errors, list) and errors:
+            return payload, [str(error) for error in errors]
+        return payload, [output or f"{job.name}: progress gate failed"]
+    fields = payload.get("status_fields") if isinstance(payload, dict) else None
+    if not isinstance(fields, dict) or not fields:
+        return payload, [f"{job.name}: progress gate did not emit status_fields"]
+    return payload, []
 
 
 def verify(root: Path, job: Path, status: dict) -> list[str]:
@@ -76,6 +102,17 @@ def verify(root: Path, job: Path, status: dict) -> list[str]:
         ]:
             if not required.exists():
                 errors.append(f"{job_id}: missing artifact {required}")
+    progress_payload, progress_errors = progress_gate(root, job)
+    errors.extend(progress_errors)
+    if progress_payload:
+        fields = progress_payload.get("status_fields", {})
+        if isinstance(fields, dict):
+            for key, value in fields.items():
+                if key in status and status.get(key) != value:
+                    errors.append(
+                        f"{job_id}: stored {key}={status.get(key)!r} does not match "
+                        f"progress gate value {value!r}"
+                    )
     return errors
 
 
@@ -89,6 +126,20 @@ def print_summary(root: Path, job: Path, status: dict) -> None:
     print(f"branch={branch}")
     print(f"base_sha={base_sha}")
     print(f"commit={commit}")
+    progress_fields = {
+        key: status.get(key, "")
+        for key in [
+            "progress_job_type",
+            "progress_subsystem",
+            "progress_validation_class",
+            "progress_new_executable_behavior",
+            "progress_metadata_only",
+            "progress_exception_type",
+        ]
+        if key in status
+    }
+    if progress_fields:
+        print("progress=" + json.dumps(progress_fields, sort_keys=True))
     if base_sha and commit:
         stat = run(["git", "diff", "--stat", f"{base_sha}..{commit}"], root)
         if stat.stdout:

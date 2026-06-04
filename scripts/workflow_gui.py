@@ -40,6 +40,15 @@ ACTIVE_JOB_STATES = {
     "review_timeout",
 }
 TERMINAL_JOB_STATES = {"accepted", "cancelled", "superseded"}
+DEFAULT_HUMAN_REVIEW_ITEMS = [
+    "Milestone summary is accurate.",
+    "Accepted jobs and commits are reviewable.",
+    "Progress accounting shows executable, numerical, or backend validation progress, or this is explicitly approved as a planning/source-only milestone.",
+    "Tests and validation are acceptable.",
+    "Scientific assumptions, risks, and limitations are acceptable.",
+    "Workflow evolution decisions are acceptable.",
+    "Recommended next milestone is acceptable.",
+]
 
 
 def env_int(name: str, default: int) -> int:
@@ -235,7 +244,7 @@ def parse_gate_checklist(gate_text: str) -> list[str]:
             in_section = False
         if (in_section or not saw_section) and stripped.startswith("- [ ] "):
             items.append(stripped[6:].strip())
-    return items
+    return items or DEFAULT_HUMAN_REVIEW_ITEMS
 
 
 def git_info(root: Path) -> dict:
@@ -1823,6 +1832,7 @@ def create_human_review_action_request(
         "- Do not pass the raw failed checklist directly to Cursor.",
         "- Decide whether each concern is implementation work, test/validation work, documentation work, supervisor-owned planning/scope work, or a human clarification need.",
         "- If implementation is needed, create exactly one small, self-contained worker job for the next actionable piece.",
+        "- Any created worker job must include a valid `Progress Classification` block that passes `python3 scripts/check_job_progress_gate.py`.",
         "- If concerns should be split, create only the first small worker job and record the planned sequence in the ledger.",
         "- If supervisor-owned planning records must change, update them yourself and open a new human review gate before dispatching implementation.",
         "- If the concern is ambiguous, open a human review/clarification gate instead of guessing.",

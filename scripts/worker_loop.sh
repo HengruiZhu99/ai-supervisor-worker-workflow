@@ -181,7 +181,15 @@ run_reviewer_agent() {
 update_status() {
   local status_file="$1"
   shift
-  python3 scripts/update_job_status.py "$status_file" "$@" >/dev/null
+  local allow_state=()
+  local item
+  for item in "$@"; do
+    if [[ "$item" == state=* ]]; then
+      allow_state=(--allow-state)
+      break
+    fi
+  done
+  python3 scripts/update_job_status.py "${allow_state[@]}" "$status_file" "$@" >/dev/null
 }
 
 run_progress_gate() {
@@ -190,14 +198,25 @@ run_progress_gate() {
   local task_file="$3"
   local attempt="$4"
   local log="$job/progress_gate.attempt-$attempt.log"
+  local json="$job/progress_gate.attempt-$attempt.json"
+  local stderr_log="$job/progress_gate.attempt-$attempt.stderr.log"
   local gate_exit=0
 
-  python3 scripts/check_job_progress_gate.py "$task_file" --jobs-dir .ai/jobs >"$log" 2>&1 || gate_exit=$?
-  update_status "$status_file" progress_gate_log="$log" progress_gate_exit="$gate_exit"
+  python3 scripts/check_job_progress_gate.py "$task_file" --jobs-dir .ai/jobs --json >"$json" 2>"$stderr_log" || gate_exit=$?
+  {
+    if [[ -s "$stderr_log" ]]; then
+      cat "$stderr_log"
+      echo
+    fi
+    cat "$json" 2>/dev/null || true
+  } >"$log"
+  rm -f "$stderr_log"
+  update_status "$status_file" progress_gate_log="$log" progress_gate_json="$json" progress_gate_exit="$gate_exit"
   if [[ "$gate_exit" -ne 0 ]]; then
     update_status "$status_file" state=blocked worker_error="job progress gate failed; see $log"
     return "$gate_exit"
   fi
+  update_status "$status_file" --merge-status-fields "$json"
   return 0
 }
 
@@ -533,6 +552,12 @@ write_reviewer_prompt() {
     echo "  recommendation: accept  # one of: accept, revise, needs-supervisor-judgment"
     echo "  blocks_acceptance: false"
     echo "  blocking_reasons: []"
+    echo "progress_review:"
+    echo "  adds_executable_or_validation_value: true"
+    echo "  metadata_unlock_is_credible: true"
+    echo "  continues_metadata_streak: false"
+    echo "  blocks_acceptance: false"
+    echo "  blocking_reasons: []"
     echo '```'
     echo
     echo "## Output Format"
@@ -704,8 +729,11 @@ run_reviewers() {
     >"$reviewer_decision_log" 2>&1 || decision_exit=$?
 
   local reviewer_a_blocks reviewer_b_blocks reviewer_blocked_by reviewer_a_recommendation reviewer_b_recommendation
+  local reviewer_a_progress_blocks reviewer_b_progress_blocks
   reviewer_a_blocks="$(jq -r '.reviewer_a_blocks // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
   reviewer_b_blocks="$(jq -r '.reviewer_b_blocks // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
+  reviewer_a_progress_blocks="$(jq -r '.reviewer_a_progress_blocks // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
+  reviewer_b_progress_blocks="$(jq -r '.reviewer_b_progress_blocks // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
   reviewer_a_recommendation="$(jq -r '.reviewer_a_recommendation // "unknown"' "$reviewer_decision_file" 2>/dev/null || echo unknown)"
   reviewer_b_recommendation="$(jq -r '.reviewer_b_recommendation // "unknown"' "$reviewer_decision_file" 2>/dev/null || echo unknown)"
   reviewer_blocked_by="$(jq -r '(.blocked_by // []) | join(",")' "$reviewer_decision_file" 2>/dev/null || echo "")"
@@ -722,6 +750,8 @@ run_reviewers() {
     reviewer_b_recommendation="$reviewer_b_recommendation" \
     reviewer_a_blocks="$reviewer_a_blocks" \
     reviewer_b_blocks="$reviewer_b_blocks" \
+    reviewer_a_progress_blocks="$reviewer_a_progress_blocks" \
+    reviewer_b_progress_blocks="$reviewer_b_progress_blocks" \
     review_blocked_by="$reviewer_blocked_by" \
     reviewer_a_report="$job/reviews/reviewer-a.attempt-$attempt.md" \
     reviewer_b_report="$job/reviews/reviewer-b.attempt-$attempt.md" \
@@ -1166,6 +1196,10 @@ review_existing_job() {
   fi
   if ! git -C "$worktree" merge-base --is-ancestor "$base_sha" "$final_commit" >/dev/null 2>&1; then
     update_status "$status_file" state=blocked worker_error="implemented job commit is not reachable from base_sha: $base_sha..$final_commit"
+    cleanup_current_lock
+    return 0
+  fi
+  if ! run_progress_gate "$job" "$status_file" "$job/task.md" "$attempt"; then
     cleanup_current_lock
     return 0
   fi

@@ -21,6 +21,16 @@ Choose one:
 
 ## Progress accounting
 
+Include the output of:
+
+```bash
+python3 scripts/summarize_progress_accounting.py --from-job JNNNN --to-job JNNNN
+```
+
+Use `--strict` for the current milestone job range before opening the human
+review gate. If the selected milestone is intentionally planning/source-only,
+record the human-approved exception and the next non-metadata job.
+
 - Implementation jobs accepted:
 - Numerical test jobs accepted:
 - Backend/device/MPI test jobs accepted:

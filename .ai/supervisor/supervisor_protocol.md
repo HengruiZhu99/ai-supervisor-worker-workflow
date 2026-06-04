@@ -51,6 +51,8 @@ progress:
   validation_class: none | schema | construction | identity | convergence | backend_matrix | mpi_device
   unlocks_next: "specific implementation, numerical-test, or backend-test job this enables"
   metadata_only: true | false
+  progress_exception_type: none | human_approved_planning_source | subsystem_deferred
+  progress_exception_record: ""
 ```
 
 Metadata-like jobs are `audit`, `metadata`, `docs`, `visualization`, and
@@ -68,6 +70,17 @@ planning/source milestone exception. A milestone cannot be completed by
 metadata-only work unless the milestone gate explicitly states that the human
 approved a planning/source-only milestone and names the first non-metadata job
 that follows.
+
+`progress_exception_type` defaults to `none`. If it is
+`human_approved_planning_source` or `subsystem_deferred`,
+`progress_exception_record` must identify the human review, gate, or supervisor
+decision record authorizing the exception.
+
+The worker loop stores the parsed progress fields in `status.json`.
+`scripts/integrate_job.py` reruns the progress gate before integration and
+checks stored progress fields against the task. Do not accept or integrate a
+job whose progress gate fails, whose stored progress fields contradict the
+task, or whose reviewer progress judgment blocks acceptance.
 
 ### Audit-to-implementation pivot
 
@@ -234,9 +247,15 @@ review_decision:
   recommendation: accept
   blocks_acceptance: false
   blocking_reasons: []
+progress_review:
+  adds_executable_or_validation_value: true
+  metadata_unlock_is_credible: true
+  continues_metadata_streak: false
+  blocks_acceptance: false
+  blocking_reasons: []
 ```
 
-The supervisor should check reviewer diff coverage and machine-readable decisions before accepting. The worker loop runs `scripts/check_reviewer_coverage.py` against `changed_files.attempt-N.txt` and parses `review_decision` with `scripts/analyze_reviewer_reports.py`; if the reviewer stage fails or either reviewer blocks acceptance, jobs enter `review_failed` or `review_timeout` instead of `ready_for_review`. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
+The supervisor should check reviewer diff coverage and machine-readable decisions before accepting. The worker loop runs `scripts/check_reviewer_coverage.py` against `changed_files.attempt-N.txt` and parses `review_decision` plus `progress_review` with `scripts/analyze_reviewer_reports.py`; if the reviewer stage fails, if either reviewer blocks acceptance, or if either reviewer marks the progress value as blocking, jobs enter `review_failed` or `review_timeout` instead of `ready_for_review`. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
 
 The worker loop keeps raw agent transcripts as audit artifacts only. It extracts
 `worker_handoff.attempt-N.json` from the final structured worker report, then
