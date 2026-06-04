@@ -36,6 +36,14 @@
 - [ ] Are convergence tests included where relevant?
 - [ ] Are regression or analytic validation tests included where relevant?
 
+## Progress value
+
+- [ ] Does this job add executable behavior, numerical validation, backend validation, or unblock a named implementation/test job?
+- [ ] If this job is audit, metadata, docs, visualization, planning, or `metadata_only: true`, is `unlocks_next` specific and credible?
+- [ ] If `progress_exception_type` is not `none`, does `progress_exception_record` point to the human review, gate, or supervisor decision authorizing the exception?
+- [ ] Would accepting this job continue a metadata-like streak for the same subsystem?
+- [ ] If accepting this job would leave the milestone metadata-only, is there an explicit human-approved planning/source milestone exception and a named next non-metadata job?
+
 ## Git and commit quality
 
 - [ ] Are changes broken into meaningful commits where appropriate?

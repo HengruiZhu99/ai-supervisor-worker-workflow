@@ -40,6 +40,15 @@ ACTIVE_JOB_STATES = {
     "review_timeout",
 }
 TERMINAL_JOB_STATES = {"accepted", "cancelled", "superseded"}
+DEFAULT_HUMAN_REVIEW_ITEMS = [
+    "Milestone summary is accurate.",
+    "Accepted jobs and commits are reviewable.",
+    "Progress accounting shows executable, numerical, or backend validation progress, or this is explicitly approved as a planning/source-only milestone.",
+    "Tests and validation are acceptable.",
+    "Scientific assumptions, risks, and limitations are acceptable.",
+    "Workflow evolution decisions are acceptable.",
+    "Recommended next milestone is acceptable.",
+]
 
 
 def env_int(name: str, default: int) -> int:
@@ -67,12 +76,12 @@ def run(args: list[str], cwd: Path) -> tuple[int, str, str]:
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
-def read_text(path: Path, limit: int = 80_000) -> str:
+def read_text(path: Path, limit: int | None = 80_000) -> str:
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return ""
-    if len(text) > limit:
+    if limit is not None and len(text) > limit:
         return text[:limit] + "\n\n[truncated]\n"
     return text
 
@@ -235,7 +244,7 @@ def parse_gate_checklist(gate_text: str) -> list[str]:
             in_section = False
         if (in_section or not saw_section) and stripped.startswith("- [ ] "):
             items.append(stripped[6:].strip())
-    return items
+    return items or DEFAULT_HUMAN_REVIEW_ITEMS
 
 
 def git_info(root: Path) -> dict:
@@ -334,6 +343,51 @@ def criterion_is_active(item_text: str, active_contexts: list[str]) -> bool:
     return False
 
 
+def milestone_key(text: str) -> str:
+    match = re.match(r"^\s*(?:#+\s*)?(M\d+(?:\.\d+)?)\b", text, re.IGNORECASE)
+    return match.group(1).upper() if match else ""
+
+
+def milestone_label_hint(line: str) -> tuple[str, str] | None:
+    match = re.match(r"^(M\d+(?:\.\d+)?)\s+([^:]{1,120}):\s*$", line.strip(), re.IGNORECASE)
+    if not match:
+        return None
+    return match.group(1).upper(), match.group(2).strip()
+
+
+def add_milestone_hint(
+    hints: dict[str, dict],
+    key: str,
+    subtitle: str,
+    source_line: int,
+) -> None:
+    if not subtitle:
+        return
+    subtitle = subtitle.strip().rstrip(".")
+    record = hints.setdefault(key, {"source_line": source_line, "subtitles": []})
+    record["source_line"] = min(record["source_line"], source_line)
+    subtitles_lower = {str(value).lower() for value in record["subtitles"]}
+    if subtitle.lower() not in subtitles_lower:
+        record["subtitles"].append(subtitle)
+
+
+def milestone_title_from_hint(key: str, hint: dict) -> str:
+    subtitles = [str(value).strip() for value in hint.get("subtitles", []) if str(value).strip()]
+    if not subtitles:
+        return key
+    normalized = [subtitles[0][:1].upper() + subtitles[0][1:]]
+    normalized.extend(subtitle[:1].lower() + subtitle[1:] for subtitle in subtitles[1:])
+    return f"{key}: {' and '.join(normalized)}"
+
+
+def milestone_subtitle_from_item(key: str, item_text: str) -> str:
+    subtitle = item_text[len(key) :].strip(" :-")
+    subtitle = re.split(r"\s+(?:before|after)\s+", subtitle, maxsplit=1)[0]
+    subtitle = re.sub(r"\s+are\s+approved\b.*$", "", subtitle, flags=re.IGNORECASE)
+    subtitle = re.sub(r"\s+is\s+approved\b.*$", "", subtitle, flags=re.IGNORECASE)
+    return subtitle.strip()
+
+
 def human_gate_milestone(gate_text: str) -> str:
     lines = gate_text.splitlines()
     for index, line in enumerate(lines):
@@ -342,7 +396,7 @@ def human_gate_milestone(gate_text: str) -> str:
                 value = value.strip()
                 if value:
                     return value.rstrip(".")
-        match = re.match(r"^##\s+(M\d+:.+)$", line.strip())
+        match = re.match(r"^##\s+(M\d+(?:\.\d+)?:.+)$", line.strip())
         if match:
             return match.group(1).rstrip(".")
     return ""
@@ -355,9 +409,9 @@ def same_milestone(left: str, right: str) -> bool:
     right = right.strip().rstrip(".").lower()
     if left == right:
         return True
-    left_id = re.match(r"^(m\d+)\b", left)
-    right_id = re.match(r"^(m\d+)\b", right)
-    return bool(left_id and right_id and left_id.group(1) == right_id.group(1))
+    left_id = milestone_key(left)
+    right_id = milestone_key(right)
+    return bool(left_id and right_id and left_id == right_id)
 
 
 def parse_roadmap(
@@ -368,12 +422,24 @@ def parse_roadmap(
     active_contexts = active_contexts or []
     milestones = []
     current: dict | None = None
-    for line in text.splitlines():
+    synthetic_hints: dict[str, dict] = {}
+    synthetic_items: dict[str, list[dict]] = {}
+    for line_index, line in enumerate(text.splitlines()):
         if line.startswith("## "):
             if current:
                 milestones.append(current)
-            current = {"title": line[3:].strip(), "items": [], "done": 0, "total": 0}
+            current = {
+                "title": line[3:].strip(),
+                "items": [],
+                "done": 0,
+                "total": 0,
+                "_source_line": line_index,
+            }
             continue
+        label_hint = milestone_label_hint(line)
+        if label_hint:
+            key, subtitle = label_hint
+            add_milestone_hint(synthetic_hints, key, subtitle, line_index)
         if current and re.match(r"^-\s+\[[ xX]\]", line.strip()):
             roadmap_done = "[x]" in line.lower()
             item_text = line.strip()[6:].strip()
@@ -394,8 +460,37 @@ def parse_roadmap(
                 current["done"] += 1
             if active:
                 current["active"] = current.get("active", 0) + 1
+            item_key = milestone_key(item_text)
+            if item_key:
+                synthetic_items.setdefault(item_key, []).append(current["items"][-1].copy())
+                if item_key not in synthetic_hints:
+                    add_milestone_hint(
+                        synthetic_hints,
+                        item_key,
+                        milestone_subtitle_from_item(item_key, item_text),
+                        line_index,
+                    )
     if current:
         milestones.append(current)
+    existing_keys = {milestone_key(str(milestone.get("title", ""))) for milestone in milestones}
+    for key, hint in synthetic_hints.items():
+        if key in existing_keys:
+            continue
+        items = synthetic_items.get(key, [])
+        synthetic = {
+            "title": milestone_title_from_hint(key, hint),
+            "items": items,
+            "done": sum(1 for item in items if item.get("done")),
+            "total": len(items),
+            "_source_line": hint.get("source_line", len(milestones) + 1),
+        }
+        active_count = sum(1 for item in items if item.get("active"))
+        if active_count:
+            synthetic["active"] = active_count
+        milestones.append(synthetic)
+    milestones.sort(key=lambda milestone: int(milestone.get("_source_line", 0)))
+    for milestone in milestones:
+        milestone.pop("_source_line", None)
     return milestones
 
 
@@ -420,6 +515,7 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
     job_rows = job_rows or []
     supervisor = root / ".ai" / "supervisor"
     roadmap = read_text(supervisor / "roadmap.md")
+    roadmap_for_milestones = read_text(supervisor / "roadmap.md", None)
     ledger = read_text(supervisor / "ledger.md")
     project_brief = read_text(supervisor / "project_brief.md")
     gate_path = supervisor / "HUMAN_REVIEW_REQUIRED.md"
@@ -444,7 +540,7 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
     return {
         "roadmap": roadmap,
         "milestones": parse_roadmap(
-            roadmap,
+            roadmap_for_milestones,
             active_job_contexts(job_rows),
             human_gate_milestone(gate_text) if gate_path.exists() else "",
         ),
@@ -1736,6 +1832,7 @@ def create_human_review_action_request(
         "- Do not pass the raw failed checklist directly to Cursor.",
         "- Decide whether each concern is implementation work, test/validation work, documentation work, supervisor-owned planning/scope work, or a human clarification need.",
         "- If implementation is needed, create exactly one small, self-contained worker job for the next actionable piece.",
+        "- Any created worker job must include a valid `Progress Classification` block that passes `python3 scripts/check_job_progress_gate.py`.",
         "- If concerns should be split, create only the first small worker job and record the planned sequence in the ledger.",
         "- If supervisor-owned planning records must change, update them yourself and open a new human review gate before dispatching implementation.",
         "- If the concern is ambiguous, open a human review/clarification gate instead of guessing.",

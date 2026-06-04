@@ -19,6 +19,26 @@ Choose one:
 
 ## Tests and validation
 
+## Progress accounting
+
+Include the output of:
+
+```bash
+python3 scripts/summarize_progress_accounting.py --from-job JNNNN --to-job JNNNN
+```
+
+Use `--strict` for the current milestone job range before opening the human
+review gate. If the selected milestone is intentionally planning/source-only,
+record the human-approved exception and the next non-metadata job.
+
+- Implementation jobs accepted:
+- Numerical test jobs accepted:
+- Backend/device/MPI test jobs accepted:
+- Metadata/audit/docs/visualization/planning jobs accepted:
+- New executable capability produced:
+- Remaining blockers:
+- Next non-metadata job:
+
 ## Scientific assumptions
 
 ## Known limitations
@@ -35,6 +55,7 @@ Summarize worker-reported friction, reviewer assessments, skill suggestions, and
 
 - [ ] Milestone summary is accurate.
 - [ ] Accepted jobs and commits are reviewable.
+- [ ] Progress accounting shows executable, numerical, or backend validation progress, or this is explicitly approved as a planning/source-only milestone.
 - [ ] Tests and validation are acceptable.
 - [ ] Scientific assumptions, risks, and limitations are acceptable.
 - [ ] Workflow evolution decisions are acceptable.

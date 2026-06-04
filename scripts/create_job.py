@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -58,6 +59,28 @@ def resolve_ref(ref: str, root: Path) -> str:
     return result.stdout.strip()
 
 
+def run_progress_gate(root: Path, task_source: Path, jobs_dir: Path) -> dict[str, object]:
+    gate = root / "scripts" / "check_job_progress_gate.py"
+    result = subprocess.run(
+        [sys.executable, str(gate), str(task_source), "--jobs-dir", str(jobs_dir), "--json"],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(result.stdout.rstrip() or "job progress gate failed")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"job progress gate emitted invalid JSON: {exc}") from exc
+    fields = payload.get("status_fields")
+    if not isinstance(fields, dict) or not fields:
+        raise SystemExit("job progress gate did not emit status_fields")
+    return fields
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--title", required=True)
@@ -73,6 +96,7 @@ def main() -> int:
         raise SystemExit(f"task file does not exist: {task_source}")
 
     jobs_dir = root / ".ai" / "jobs"
+    progress_fields = run_progress_gate(root, task_source, jobs_dir)
     job_id = next_job_id(jobs_dir)
     job_dir = jobs_dir / job_id
     job_dir.mkdir()
@@ -92,7 +116,10 @@ def main() -> int:
         "test_command": args.test_command,
         "created_at": now,
         "updated_at": now,
+        "progress_gate_exit": 0,
+        "progress_gate_checked_at": now,
     }
+    status.update(progress_fields)
     (job_dir / "status.json").write_text(
         json.dumps(status, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )

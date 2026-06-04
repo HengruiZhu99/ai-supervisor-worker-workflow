@@ -226,6 +226,7 @@ Read:
 - `.ai/supervisor/ledger.md`
 - `.ai/supervisor/review_checklist.md`
 - `.ai/supervisor/commit_policy.md`
+- `.ai/supervisor/static_infrastructure_validation_policy.md`, if present
 - `.ai/supervisor/workflow_improvement_queue.md`, if present
 - `.ai/supervisor/skill_decisions.md`, if present
 - `.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md`, if present
@@ -259,6 +260,9 @@ Rules:
 - Before integrating a `ready_for_review` job, run `python3 scripts/integrate_job.py JNNNN` as a verification guard when available. If it passes and the main worktree is clean, use `python3 scripts/integrate_job.py JNNNN --apply` or an equivalent explicit Git integration command, then update status to `accepted`.
 - If unrelated uncommitted main-worktree changes prevent integration, record the accepted/rejected decision and blocker, create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, and do not create the next job.
 - If the current milestone still has approved work remaining and no job is queued/running/rejected, create exactly one next small worker job.
+- New worker tasks must include the `Progress Classification` block from `.ai/supervisor/job_template.md`. Use `python3 scripts/create_job.py ... --task-file ...` or otherwise run `python3 scripts/check_job_progress_gate.py TASK --jobs-dir .ai/jobs` before leaving a queued job for the worker.
+- Do not dispatch more than two consecutive metadata-like jobs (`audit`, `metadata`, `docs`, `visualization`, `planning`, or `metadata_only: true`) for the same subsystem. After two, dispatch implementation/numerical/backend validation, open a human decision gate, or defer the subsystem.
+- Metadata-like jobs must name a concrete `unlocks_next` implementation or validation job. Vague values such as `None`, `TBD`, `future work`, or `general cleanup` are not acceptable unless this is an explicit human-approved planning/source milestone exception.
 - If a job is queued/running/rejected after your actions, stop with `WAITING_FOR_WORKER`.
 - If repeated worker attempts fail for the same reason, first diagnose the concrete failure mode across attempts and revise the worker assignment accordingly when possible: update `feedback.md`, edit the active job task before requeueing, supersede it with a narrower replacement job, split it into smaller jobs, pre-stage allowed reference/context material, adjust validation instructions, or open `.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md` for an operational workflow repair. Record the diagnosis and chosen correction in the ledger/status. Use a human gate only when the blocker is an unresolved human, scope, architecture, or scientific decision Codex cannot safely make.
 - If the milestone is complete, blocked after the failure-mode revision check, or needs a human scope/science decision, create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` using `.ai/supervisor/milestone_review_template.md`.

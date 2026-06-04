@@ -11,6 +11,7 @@ Codex is the supervisor for this scientific coding project.
 - `.ai/supervisor/ledger.md`
 - `.ai/supervisor/review_checklist.md`
 - `.ai/supervisor/commit_policy.md`
+- `.ai/supervisor/static_infrastructure_validation_policy.md`, if present
 - `.ai/supervisor/workflow_improvement_queue.md`, if present
 - `.ai/supervisor/skill_decisions.md`, if present
 
@@ -30,6 +31,56 @@ Use small, reviewable jobs.
 A job should usually be small enough to produce a concise, meaningful diff and one to three logical commits.
 
 Do not create multiple worker jobs at the same time unless the user explicitly asks.
+
+### Progress classification gate
+
+Every worker task must include a machine-checkable `progress:` block following
+`.ai/supervisor/job_template.md`. Before a worker is launched, the workflow
+must run `python3 scripts/check_job_progress_gate.py TASK --jobs-dir .ai/jobs`.
+The gate is mandatory for both supervisor-created jobs and hand-created queued
+jobs.
+
+Required progress fields:
+
+```yaml
+progress:
+  job_type: implementation | numerical_test | backend_test | audit | metadata | docs | visualization | planning
+  subsystem: domain | geometry | operators | gh | xcts | backend | mpi | workflow | other
+  capability_target: "specific runtime or numerical capability"
+  new_executable_behavior: true | false
+  validation_class: none | schema | construction | identity | convergence | backend_matrix | mpi_device
+  unlocks_next: "specific implementation, numerical-test, or backend-test job this enables"
+  metadata_only: true | false
+  progress_exception_type: none | human_approved_planning_source | subsystem_deferred
+  progress_exception_record: ""
+```
+
+Metadata-like jobs are `audit`, `metadata`, `docs`, `visualization`, and
+`planning`, plus any job with `metadata_only: true`. No more than two
+consecutive metadata-like jobs may target the same subsystem. After two such
+jobs, Codex must choose one of:
+- dispatch a bounded `implementation`, `numerical_test`, or `backend_test` job;
+- create a supervisor-owned human decision gate;
+- explicitly defer that subsystem and move to another approved implementation
+  slice.
+
+A metadata-like job without a concrete `unlocks_next` implementation or
+validation target is invalid unless it records an explicit human-approved
+planning/source milestone exception. A milestone cannot be completed by
+metadata-only work unless the milestone gate explicitly states that the human
+approved a planning/source-only milestone and names the first non-metadata job
+that follows.
+
+`progress_exception_type` defaults to `none`. If it is
+`human_approved_planning_source` or `subsystem_deferred`,
+`progress_exception_record` must identify the human review, gate, or supervisor
+decision record authorizing the exception.
+
+The worker loop stores the parsed progress fields in `status.json`.
+`scripts/integrate_job.py` reruns the progress gate before integration and
+checks stored progress fields against the task. Do not accept or integrate a
+job whose progress gate fails, whose stored progress fields contradict the
+task, or whose reviewer progress judgment blocks acceptance.
 
 ### Audit-to-implementation pivot
 
@@ -55,6 +106,13 @@ for that subsystem. It should instead choose one of:
 Audit-only jobs must include an `Implementation unblock criterion` in the task:
 what concrete implementation job becomes allowed if the audit succeeds. If no
 such criterion can be stated, do not dispatch the audit.
+
+`TODO_REF_REQUIRED` is allowed only in explicitly classified audit, metadata,
+docs, visualization, planning, or provenance slices. If a later job touches the
+same unresolved formula or convention boundary, Codex must resolve the
+reference, open a human convention/source gate, implement only a verified
+formula-free slice, or defer the subsystem. Do not use repeated
+`TODO_REF_REQUIRED` markers as a reason to avoid implementation indefinitely.
 
 ## Milestone-gated autonomous protocol
 
@@ -96,6 +154,12 @@ python3 scripts/human_milestone_review.py
 ```
 
 The script asks for `yes` or `no` on every checklist item, collects comments for each failed item, records the review under `.ai/supervisor/human_reviews/`, archives the gate, and creates `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` if any ordinary checklist item fails. The Codex supervisor must read that request and decide whether to create a small worker revision job, split work into a sequence, update supervisor-owned plans, or open a clarification gate.
+
+For static infrastructure jobs that prepare generalized harmonic, XCTS, domain,
+geometry, operator, tensor, backend, or MPI work, Codex must apply
+`.ai/supervisor/static_infrastructure_validation_policy.md` when present. The
+task must state the relevant validation class and concrete construction,
+identity, convergence, backend, or MPI/device checks before dispatch.
 
 ## Waiting protocol
 
@@ -183,9 +247,15 @@ review_decision:
   recommendation: accept
   blocks_acceptance: false
   blocking_reasons: []
+progress_review:
+  adds_executable_or_validation_value: true
+  metadata_unlock_is_credible: true
+  continues_metadata_streak: false
+  blocks_acceptance: false
+  blocking_reasons: []
 ```
 
-The supervisor should check reviewer diff coverage and machine-readable decisions before accepting. The worker loop runs `scripts/check_reviewer_coverage.py` against `changed_files.attempt-N.txt` and parses `review_decision` with `scripts/analyze_reviewer_reports.py`; if the reviewer stage fails or either reviewer blocks acceptance, jobs enter `review_failed` or `review_timeout` instead of `ready_for_review`. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
+The supervisor should check reviewer diff coverage and machine-readable decisions before accepting. The worker loop runs `scripts/check_reviewer_coverage.py` against `changed_files.attempt-N.txt` and parses `review_decision` plus `progress_review` with `scripts/analyze_reviewer_reports.py`; if the reviewer stage fails, if either reviewer blocks acceptance, or if either reviewer marks the progress value as blocking, jobs enter `review_failed` or `review_timeout` instead of `ready_for_review`. If reviewers did not inspect the full actual diff, or if the supervisor cannot reasonably review the risky parts of the diff, reject the job with feedback to split it into smaller closed-form jobs or to separate generated/noisy artifacts from implementation. Large jobs should be accepted only when the review record explains how the full changed-file set was covered.
 
 The worker loop keeps raw agent transcripts as audit artifacts only. It extracts
 `worker_handoff.attempt-N.json` from the final structured worker report, then

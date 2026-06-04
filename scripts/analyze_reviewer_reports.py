@@ -19,9 +19,10 @@ def read_text(path: Path) -> str:
 
 
 def extract_block(text: str) -> str:
-    blocks = re.findall(r"```(?:yaml|yml)\s*\n(.*?review_decision:.*?)```", text, re.S | re.I)
-    if blocks:
-        return blocks[-1]
+    blocks = re.findall(r"```(?:yaml|yml)?\s*\n(.*?)```", text, re.S | re.I)
+    for block in reversed(blocks):
+        if "review_decision:" in block:
+            return block
     marker = text.rfind("review_decision:")
     return text[marker:] if marker >= 0 else ""
 
@@ -58,6 +59,37 @@ def parse_list(block: str, key: str) -> list[str]:
     return values
 
 
+def section_block(block: str, section: str) -> str:
+    lines = block.splitlines()
+    for index, line in enumerate(lines):
+        match = re.match(rf"^(\s*){re.escape(section)}\s*:\s*(?:#.*)?$", line)
+        if not match:
+            continue
+        base_indent = len(match.group(1))
+        selected = []
+        for raw in lines[index + 1 :]:
+            stripped = raw.strip()
+            if not stripped:
+                selected.append(raw)
+                continue
+            indent = len(raw) - len(raw.lstrip(" "))
+            if indent <= base_indent and re.match(r"^[A-Za-z_][\w-]*\s*:", stripped):
+                break
+            selected.append(raw)
+        return "\n".join(selected)
+    return ""
+
+
+def parse_scalar_in_section(block: str, section: str, key: str) -> str:
+    scoped = section_block(block, section)
+    return parse_scalar(scoped, key) if scoped else ""
+
+
+def parse_list_in_section(block: str, section: str, key: str) -> list[str]:
+    scoped = section_block(block, section)
+    return parse_list(scoped, key) if scoped else []
+
+
 def fallback_recommendation(text: str) -> str:
     match = re.search(r"recommendation\s*:\s*(accept|revise|reject|needs[-_ ]supervisor[-_ ]judgment)", text, re.I)
     if not match:
@@ -68,24 +100,79 @@ def fallback_recommendation(text: str) -> str:
     return value
 
 
+def parse_progress_review(block: str, path: Path) -> tuple[dict, list[str]]:
+    errors: list[str] = []
+    scoped = section_block(block, "progress_review")
+    if not scoped:
+        return (
+            {
+                "adds_executable_or_validation_value": False,
+                "metadata_unlock_is_credible": False,
+                "continues_metadata_streak": True,
+                "blocks_acceptance": True,
+                "blocking_reasons": ["missing progress_review YAML block"],
+            },
+            [f"{path}: missing progress_review YAML block"],
+        )
+
+    required_bool_keys = [
+        "adds_executable_or_validation_value",
+        "metadata_unlock_is_credible",
+        "continues_metadata_streak",
+        "blocks_acceptance",
+    ]
+    values: dict[str, object] = {}
+    for key in required_bool_keys:
+        raw = parse_scalar(scoped, key)
+        if not raw:
+            errors.append(f"{path}: missing progress_review.{key}")
+            values[key] = False if key != "blocks_acceptance" else True
+            continue
+        values[key] = parse_bool(raw)
+    blocking_reasons = parse_list(scoped, "blocking_reasons")
+    values["blocking_reasons"] = blocking_reasons
+    if values.get("blocks_acceptance") and not blocking_reasons:
+        values["blocking_reasons"] = ["progress_review blocks acceptance"]
+    if errors:
+        values["blocks_acceptance"] = True
+    return values, errors
+
+
 def analyze_one(label: str, path: Path) -> dict:
     text = read_text(path)
     block = extract_block(text)
     errors: list[str] = []
     if block:
-        recommendation = parse_scalar(block, "recommendation").lower().replace("-", "_").replace(" ", "_")
-        blocks_acceptance_raw = parse_scalar(block, "blocks_acceptance")
+        recommendation = (
+            parse_scalar_in_section(block, "review_decision", "recommendation")
+            .lower()
+            .replace("-", "_")
+            .replace(" ", "_")
+        )
+        blocks_acceptance_raw = parse_scalar_in_section(block, "review_decision", "blocks_acceptance")
         blocks_acceptance = parse_bool(blocks_acceptance_raw) if blocks_acceptance_raw else recommendation not in {"accept", ""}
-        blocking_reasons = parse_list(block, "blocking_reasons")
+        blocking_reasons = parse_list_in_section(block, "review_decision", "blocking_reasons")
+        progress_review, progress_errors = parse_progress_review(block, path)
+        errors.extend(progress_errors)
     else:
         recommendation = fallback_recommendation(text)
         blocks_acceptance = recommendation not in {"accept", "unknown"}
         blocking_reasons = []
+        progress_review = {
+            "adds_executable_or_validation_value": False,
+            "metadata_unlock_is_credible": False,
+            "continues_metadata_streak": True,
+            "blocks_acceptance": True,
+            "blocking_reasons": ["missing review_decision YAML block"],
+        }
         errors.append(f"{path}: missing review_decision YAML block")
     if recommendation == "reject":
         recommendation = "revise"
     if recommendation not in {"accept", "revise", "needs_supervisor_judgment", "unknown"}:
         errors.append(f"{path}: unknown recommendation {recommendation!r}")
+        blocks_acceptance = True
+    progress_blocks = bool(progress_review.get("blocks_acceptance"))
+    if progress_blocks:
         blocks_acceptance = True
     return {
         "role": label,
@@ -93,6 +180,8 @@ def analyze_one(label: str, path: Path) -> dict:
         "recommendation": recommendation,
         "blocks_acceptance": bool(blocks_acceptance),
         "blocking_reasons": blocking_reasons,
+        "progress_review": progress_review,
+        "progress_blocks_acceptance": progress_blocks,
         "errors": errors,
     }
 
@@ -131,6 +220,8 @@ def main() -> int:
         "reviewer_b_recommendation": reviews[1]["recommendation"],
         "reviewer_a_blocks": reviews[0]["blocks_acceptance"],
         "reviewer_b_blocks": reviews[1]["blocks_acceptance"],
+        "reviewer_a_progress_blocks": reviews[0]["progress_blocks_acceptance"],
+        "reviewer_b_progress_blocks": reviews[1]["progress_blocks_acceptance"],
         "reviews": reviews,
         "errors": errors,
     }

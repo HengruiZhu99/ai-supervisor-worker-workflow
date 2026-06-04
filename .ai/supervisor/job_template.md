@@ -4,6 +4,35 @@
 
 ## Background from design prompt
 
+## Progress Classification
+
+Every job must include this block with concrete values. The workflow progress
+gate rejects missing, vague, or inconsistent fields.
+
+```yaml
+progress:
+  job_type: implementation | numerical_test | backend_test | audit | metadata | docs | visualization | planning
+  subsystem: domain | geometry | operators | gh | xcts | backend | mpi | workflow | other
+  capability_target: "specific runtime or numerical capability"
+  new_executable_behavior: true | false
+  validation_class: none | schema | construction | identity | convergence | backend_matrix | mpi_device
+  unlocks_next: "specific implementation, numerical-test, or backend-test job this enables"
+  metadata_only: true | false
+  progress_exception_type: none | human_approved_planning_source | subsystem_deferred
+  progress_exception_record: ""
+```
+
+Metadata-like jobs (`audit`, `metadata`, `docs`, `visualization`, or
+`planning`) must name the implementation or validation job they unblock in
+`unlocks_next`. Vague values such as `None`, `TBD`, `future work`, or `general
+cleanup` are invalid unless an explicit human-approved planning/source gate is
+being recorded in the task.
+
+Use `progress_exception_type` only for a documented human-approved
+planning/source-only milestone or a documented subsystem deferral. When it is
+not `none`, `progress_exception_record` must name the human review, supervisor
+gate, or decision record authorizing the exception.
+
 ## Scope
 
 Allowed:

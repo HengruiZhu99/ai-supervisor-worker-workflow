@@ -29,6 +29,8 @@ WORKER_MAX_FAILURE_RESUMES="${WORKER_MAX_FAILURE_RESUMES:-2}"
 WORKER_INIT_SUBMODULES="${WORKER_INIT_SUBMODULES:-1}"
 WORKER_SUBMODULE_PATHS="${WORKER_SUBMODULE_PATHS:-}"
 WORKER_REQUIRED_SUBMODULE_PATHS="${WORKER_REQUIRED_SUBMODULE_PATHS:-}"
+WORKER_CLEAN_UNDECLARED_SUBMODULES="${WORKER_CLEAN_UNDECLARED_SUBMODULES:-1}"
+WORKER_ALLOW_SUBMODULE_CHANGES="${WORKER_ALLOW_SUBMODULE_CHANGES:-0}"
 WORKER_RECOVER_STALE_RUNNING="${WORKER_RECOVER_STALE_RUNNING:-1}"
 WORKER_RECOVER_LEGACY_STALE_LOCKS="${WORKER_RECOVER_LEGACY_STALE_LOCKS:-0}"
 WORKER_RUNS_DIR="${WORKER_RUNS_DIR:-.ai/supervisor_runs}"
@@ -180,7 +182,43 @@ run_reviewer_agent() {
 update_status() {
   local status_file="$1"
   shift
-  python3 scripts/update_job_status.py "$status_file" "$@" >/dev/null
+  local allow_state=()
+  local item
+  for item in "$@"; do
+    if [[ "$item" == state=* ]]; then
+      allow_state=(--allow-state)
+      break
+    fi
+  done
+  python3 scripts/update_job_status.py "${allow_state[@]}" "$status_file" "$@" >/dev/null
+}
+
+run_progress_gate() {
+  local job="$1"
+  local status_file="$2"
+  local task_file="$3"
+  local attempt="$4"
+  local log="$job/progress_gate.attempt-$attempt.log"
+  local json="$job/progress_gate.attempt-$attempt.json"
+  local stderr_log="$job/progress_gate.attempt-$attempt.stderr.log"
+  local gate_exit=0
+
+  python3 scripts/check_job_progress_gate.py "$task_file" --jobs-dir .ai/jobs --json >"$json" 2>"$stderr_log" || gate_exit=$?
+  {
+    if [[ -s "$stderr_log" ]]; then
+      cat "$stderr_log"
+      echo
+    fi
+    cat "$json" 2>/dev/null || true
+  } >"$log"
+  rm -f "$stderr_log"
+  update_status "$status_file" progress_gate_log="$log" progress_gate_json="$json" progress_gate_exit="$gate_exit"
+  if [[ "$gate_exit" -ne 0 ]]; then
+    update_status "$status_file" state=blocked worker_error="job progress gate failed; see $log"
+    return "$gate_exit"
+  fi
+  update_status "$status_file" --merge-status-fields "$json"
+  return 0
 }
 
 json_field() {
@@ -195,6 +233,29 @@ utc_now() {
 
 collect_cursor_metrics() {
   python3 scripts/collect_agent_metrics.py cursor "$@" >/dev/null || true
+}
+
+clean_worker_submodules() {
+  local job="$1"
+  local worktree="$2"
+  local attempt="$3"
+  local phase="$4"
+  local allowed_submodules="$job/allowed_submodule_paths.txt"
+  local log="$job/submodule_cleanliness.${phase}.attempt-$attempt.log"
+
+  if [[ "$WORKER_CLEAN_UNDECLARED_SUBMODULES" != "1" || "$WORKER_ALLOW_SUBMODULE_CHANGES" == "1" ]]; then
+    return 0
+  fi
+  if [[ ! -f "$worktree/.gitmodules" ]]; then
+    return 0
+  fi
+
+  python3 scripts/clean_worker_submodules.py \
+    --worktree "$worktree" \
+    --phase "$phase" \
+    --allowed-paths-file "$allowed_submodules" \
+    --required-paths "$WORKER_REQUIRED_SUBMODULE_PATHS" \
+    --output "$log" >/dev/null 2>&1 || true
 }
 
 lock_pid_alive() {
@@ -471,6 +532,7 @@ write_reviewer_prompt() {
     echo "If the diff is too large to review comprehensively within this reviewer pass, recommend revise/split; do not recommend acceptance for partially reviewed work."
     echo "Cross-check the worker report, test log, commit docs, and actual code. The actual diff and worktree are the source of truth."
     echo "Inspect the worker's Workflow Friction and Skill Suggestions sections. Treat them as proposals only. Decide whether each point is real, repeated, already covered by an existing skill/template/checklist/script, or too narrow to keep."
+    echo "Inspect the task's Progress Classification. State whether the job adds executable behavior, numerical validation, backend validation, or credibly unblocks a named implementation/test job. If the job is metadata-like, assess whether accepting it would continue a metadata-only streak."
     echo
     echo "Include this machine-checkable fenced YAML block exactly once. Replace the template values with your actual review result:"
     echo '```yaml'
@@ -491,6 +553,12 @@ write_reviewer_prompt() {
     echo "  recommendation: accept  # one of: accept, revise, needs-supervisor-judgment"
     echo "  blocks_acceptance: false"
     echo "  blocking_reasons: []"
+    echo "progress_review:"
+    echo "  adds_executable_or_validation_value: true"
+    echo "  metadata_unlock_is_credible: true"
+    echo "  continues_metadata_streak: false"
+    echo "  blocks_acceptance: false"
+    echo "  blocking_reasons: []"
     echo '```'
     echo
     echo "## Output Format"
@@ -503,10 +571,11 @@ write_reviewer_prompt() {
     echo "5. Diff coverage: list changed files reviewed, state whether the full diff was reviewed, and list any unreviewed paths. If any path was not reviewed, recommendation must not be accept."
     echo "6. Test and validation assessment"
     echo "7. Scope assessment"
-    echo "8. Suggested supervisor decision rationale"
-    echo "9. Workflow friction review: which reported frictions are valid, whether they need a skill, template, script, protocol/checklist update, project documentation, or no action, and whether the issue appears one-off or recurring."
-    echo "10. Skill suggestion review: whether the worker's suggested skills are useful, duplicate existing skills, and should be project-specific, general workflow skills, deferred, or rejected. Run 'python3 scripts/list_skills.py' if needed."
-    echo "11. Workflow evolution recommendations: provide concise proposed queue entries for the supervisor, each with title, source, category (skill/template/script/protocol/checklist/docs/ledger), scope (project/general), rationale, and recommended decision (create/update/defer/reject)."
+    echo "8. Progress value assessment"
+    echo "9. Suggested supervisor decision rationale"
+    echo "10. Workflow friction review: which reported frictions are valid, whether they need a skill, template, script, protocol/checklist update, project documentation, or no action, and whether the issue appears one-off or recurring."
+    echo "11. Skill suggestion review: whether the worker's suggested skills are useful, duplicate existing skills, and should be project-specific, general workflow skills, deferred, or rejected. Run 'python3 scripts/list_skills.py' if needed."
+    echo "12. Workflow evolution recommendations: provide concise proposed queue entries for the supervisor, each with title, source, category (skill/template/script/protocol/checklist/docs/ledger), scope (project/general), rationale, and recommended decision (create/update/defer/reject)."
   } >"$prompt_file"
 }
 
@@ -661,8 +730,11 @@ run_reviewers() {
     >"$reviewer_decision_log" 2>&1 || decision_exit=$?
 
   local reviewer_a_blocks reviewer_b_blocks reviewer_blocked_by reviewer_a_recommendation reviewer_b_recommendation
+  local reviewer_a_progress_blocks reviewer_b_progress_blocks
   reviewer_a_blocks="$(jq -r '.reviewer_a_blocks // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
   reviewer_b_blocks="$(jq -r '.reviewer_b_blocks // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
+  reviewer_a_progress_blocks="$(jq -r '.reviewer_a_progress_blocks // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
+  reviewer_b_progress_blocks="$(jq -r '.reviewer_b_progress_blocks // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
   reviewer_a_recommendation="$(jq -r '.reviewer_a_recommendation // "unknown"' "$reviewer_decision_file" 2>/dev/null || echo unknown)"
   reviewer_b_recommendation="$(jq -r '.reviewer_b_recommendation // "unknown"' "$reviewer_decision_file" 2>/dev/null || echo unknown)"
   reviewer_blocked_by="$(jq -r '(.blocked_by // []) | join(",")' "$reviewer_decision_file" 2>/dev/null || echo "")"
@@ -679,6 +751,8 @@ run_reviewers() {
     reviewer_b_recommendation="$reviewer_b_recommendation" \
     reviewer_a_blocks="$reviewer_a_blocks" \
     reviewer_b_blocks="$reviewer_b_blocks" \
+    reviewer_a_progress_blocks="$reviewer_a_progress_blocks" \
+    reviewer_b_progress_blocks="$reviewer_b_progress_blocks" \
     review_blocked_by="$reviewer_blocked_by" \
     reviewer_a_report="$job/reviews/reviewer-a.attempt-$attempt.md" \
     reviewer_b_report="$job/reviews/reviewer-b.attempt-$attempt.md" \
@@ -736,6 +810,10 @@ process_job() {
   fi
   if [[ ! -s "$task_file" ]]; then
     echo "Skipping $id: task file is not ready yet: $task_file"
+    cleanup_current_lock
+    return 0
+  fi
+  if ! run_progress_gate "$job" "$status_file" "$task_file" "$attempt"; then
     cleanup_current_lock
     return 0
   fi
@@ -884,6 +962,8 @@ process_job() {
   pre_commit_head="$(git -C "$worktree" rev-parse HEAD)"
   post_cursor_head="$pre_commit_head"
 
+  clean_worker_submodules "$job" "$worktree" "$attempt" precommit
+
   if [[ -n "$(git -C "$worktree" status --porcelain)" ]]; then
     git -C "$worktree" add -A
     git -C "$worktree" commit -m "worker($id): attempt $attempt"
@@ -922,6 +1002,7 @@ process_job() {
   local post_test_status="$job/post_test_status.attempt-$attempt.txt"
   local post_test_status_raw="$job/post_test_status_raw.attempt-$attempt.txt"
   local allowed_artifacts="$job/allowed_artifacts.txt"
+  clean_worker_submodules "$job" "$worktree" "$attempt" posttest
   git -C "$worktree" status --porcelain >"$post_test_status_raw"
   python3 scripts/filter_allowed_artifacts.py \
     --status "$post_test_status_raw" \
@@ -1118,6 +1199,10 @@ review_existing_job() {
   fi
   if ! git -C "$worktree" merge-base --is-ancestor "$base_sha" "$final_commit" >/dev/null 2>&1; then
     update_status "$status_file" state=blocked worker_error="implemented job commit is not reachable from base_sha: $base_sha..$final_commit"
+    cleanup_current_lock
+    return 0
+  fi
+  if ! run_progress_gate "$job" "$status_file" "$job/task.md" "$attempt"; then
     cleanup_current_lock
     return 0
   fi

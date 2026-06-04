@@ -11,6 +11,11 @@ COLUMNS = [
     ("job id", "id"),
     ("state", "state"),
     ("attempt", "attempt"),
+    ("type", "progress_job_type"),
+    ("subsystem", "progress_subsystem"),
+    ("validation", "progress_validation_class"),
+    ("new_exec", "progress_new_executable_behavior"),
+    ("metadata", "progress_metadata_only"),
     ("title", "title"),
     ("tests_passed", "tests_passed"),
     ("branch", "branch"),
@@ -59,4 +64,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
