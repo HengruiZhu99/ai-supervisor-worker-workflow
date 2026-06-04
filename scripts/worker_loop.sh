@@ -862,10 +862,17 @@ process_job() {
 
   update_status "$status_file" state=running attempt="$attempt" branch="$branch" base_sha="$base_sha" workflow_commit="$workflow_commit"
 
+  clean_worker_submodules "$job" "$worktree" "$attempt" preflight
+
   if ! run_worker_preflight "$job" "$status_file" "$id" "$attempt" "$worktree" "$branch" "$base_sha" "$starting_state"; then
     cleanup_current_lock
     return 0
   fi
+
+  # Submodule initialization can leave undeclared submodules dirty when a pinned
+  # commit is no longer fetchable. Clean those before prompt generation so the
+  # worker sees the same clean worktree the loop will commit and test.
+  clean_worker_submodules "$job" "$worktree" "$attempt" preagent
 
   local prompt_file="$job/worker_prompt.attempt-$attempt.md"
   if [[ ! -s "$task_file" ]]; then

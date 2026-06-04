@@ -107,7 +107,11 @@ def clean_submodule(root: Path, path: str, phase: str, required: bool, log: list
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--worktree", required=True)
-    parser.add_argument("--phase", required=True, choices=("precommit", "posttest"))
+    parser.add_argument(
+        "--phase",
+        required=True,
+        choices=("preflight", "preagent", "precommit", "posttest"),
+    )
     parser.add_argument("--allowed-paths-file", default="")
     parser.add_argument("--required-paths", default="")
     parser.add_argument("--output", required=True)
