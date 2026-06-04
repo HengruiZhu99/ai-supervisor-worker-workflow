@@ -123,12 +123,13 @@ echo "reviewer_b_agent_wrapper=$REVIEWER_B_AGENT_WRAPPER"
 echo "reviewer_b_model=$REVIEWER_B_MODEL"
 
 write_available_skills() {
+  local skill_root="${1:-$ROOT}"
   echo "## Available Skills"
   echo
   echo "These project and workflow skills are visible in this worktree. When a skill is relevant, read the listed SKILL.md file before applying it."
   echo
   echo '```text'
-  if ! python3 "$AI_WORKFLOW_PACKAGE_ROOT/scripts/list_skills.py" 2>/dev/null; then
+  if ! (cd "$skill_root" && python3 "$AI_WORKFLOW_PACKAGE_ROOT/scripts/list_skills.py") 2>/dev/null; then
     echo "Skill listing unavailable; fall back to inspecting project skills/ and workflow package skills/ manually."
   fi
   echo '```'
@@ -454,7 +455,7 @@ write_reviewer_prompt() {
     echo "- Commit docs: $ROOT/.ai/commit_docs/"
     echo "- Existing skills: run 'python3 scripts/list_skills.py' in the worktree if needed. The environment variable AI_WORKFLOW_PACKAGE_ROOT is set to $AI_WORKFLOW_PACKAGE_ROOT."
     echo
-    write_available_skills
+    write_available_skills "$ROOT/$worktree"
     echo
     echo "## Changed Files To Cover"
     echo
@@ -816,7 +817,7 @@ process_job() {
     echo "- For each skill suggestion, state proposed name, scope (project-specific or general scientific-coding workflow), when to use it, duplication risk versus existing skills, and the minimal content it should contain."
     echo "- Do not create or edit skills, supervisor protocols, roadmap files, or workflow scripts yourself unless this specific job explicitly assigns that work. Suggestions should be reported for supervisor review."
     echo
-    write_available_skills
+    write_available_skills "$ROOT/$worktree"
     echo
     echo "## Task"
     cat "$task_file"
@@ -1000,7 +1001,9 @@ process_job() {
 
   local next_state=ready_for_review
   local hard_block=false
+  local worker_soft_success=false
   if [[ "$worker_exit" -ne 0 && "$cursor_reported_success" == true && "$tests_passed" == true && "$post_test_dirty" != true ]]; then
+    worker_soft_success=true
     worker_error="${worker_error:+$worker_error; }cursor-agent returned nonzero after reporting system success; continuing to reviewer stage"
     echo "$worker_error" | tee -a "$cursor_err" >&2
   elif [[ "$worker_exit" -ne 0 ]]; then
@@ -1016,7 +1019,7 @@ process_job() {
     hard_block=true
     worker_error="${worker_error:+$worker_error; }attempt consistency check failed; see $job/attempt_consistency.attempt-$attempt.md"
   fi
-  if [[ "$worker_exit" -ne 0 && "$timed_out" != true && "$hard_block" != true && "$WORKER_AUTO_RELAUNCH_FAILURE" == "1" && "$attempt" -lt "$WORKER_MAX_FAILURE_RESUMES" ]]; then
+  if [[ "$next_state" == "blocked" && "$worker_soft_success" != true && "$worker_exit" -ne 0 && "$timed_out" != true && "$hard_block" != true && "$WORKER_AUTO_RELAUNCH_FAILURE" == "1" && "$attempt" -lt "$WORKER_MAX_FAILURE_RESUMES" ]]; then
     next_state=queued
     echo "Requeueing $id after worker failure attempt $attempt; max failure resumes: $WORKER_MAX_FAILURE_RESUMES"
   fi
