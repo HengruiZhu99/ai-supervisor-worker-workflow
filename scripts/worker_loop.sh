@@ -184,6 +184,23 @@ update_status() {
   python3 scripts/update_job_status.py "$status_file" "$@" >/dev/null
 }
 
+run_progress_gate() {
+  local job="$1"
+  local status_file="$2"
+  local task_file="$3"
+  local attempt="$4"
+  local log="$job/progress_gate.attempt-$attempt.log"
+  local gate_exit=0
+
+  python3 scripts/check_job_progress_gate.py "$task_file" --jobs-dir .ai/jobs >"$log" 2>&1 || gate_exit=$?
+  update_status "$status_file" progress_gate_log="$log" progress_gate_exit="$gate_exit"
+  if [[ "$gate_exit" -ne 0 ]]; then
+    update_status "$status_file" state=blocked worker_error="job progress gate failed; see $log"
+    return "$gate_exit"
+  fi
+  return 0
+}
+
 json_field() {
   local status_file="$1"
   local field="$2"
@@ -495,6 +512,7 @@ write_reviewer_prompt() {
     echo "If the diff is too large to review comprehensively within this reviewer pass, recommend revise/split; do not recommend acceptance for partially reviewed work."
     echo "Cross-check the worker report, test log, commit docs, and actual code. The actual diff and worktree are the source of truth."
     echo "Inspect the worker's Workflow Friction and Skill Suggestions sections. Treat them as proposals only. Decide whether each point is real, repeated, already covered by an existing skill/template/checklist/script, or too narrow to keep."
+    echo "Inspect the task's Progress Classification. State whether the job adds executable behavior, numerical validation, backend validation, or credibly unblocks a named implementation/test job. If the job is metadata-like, assess whether accepting it would continue a metadata-only streak."
     echo
     echo "Include this machine-checkable fenced YAML block exactly once. Replace the template values with your actual review result:"
     echo '```yaml'
@@ -527,10 +545,11 @@ write_reviewer_prompt() {
     echo "5. Diff coverage: list changed files reviewed, state whether the full diff was reviewed, and list any unreviewed paths. If any path was not reviewed, recommendation must not be accept."
     echo "6. Test and validation assessment"
     echo "7. Scope assessment"
-    echo "8. Suggested supervisor decision rationale"
-    echo "9. Workflow friction review: which reported frictions are valid, whether they need a skill, template, script, protocol/checklist update, project documentation, or no action, and whether the issue appears one-off or recurring."
-    echo "10. Skill suggestion review: whether the worker's suggested skills are useful, duplicate existing skills, and should be project-specific, general workflow skills, deferred, or rejected. Run 'python3 scripts/list_skills.py' if needed."
-    echo "11. Workflow evolution recommendations: provide concise proposed queue entries for the supervisor, each with title, source, category (skill/template/script/protocol/checklist/docs/ledger), scope (project/general), rationale, and recommended decision (create/update/defer/reject)."
+    echo "8. Progress value assessment"
+    echo "9. Suggested supervisor decision rationale"
+    echo "10. Workflow friction review: which reported frictions are valid, whether they need a skill, template, script, protocol/checklist update, project documentation, or no action, and whether the issue appears one-off or recurring."
+    echo "11. Skill suggestion review: whether the worker's suggested skills are useful, duplicate existing skills, and should be project-specific, general workflow skills, deferred, or rejected. Run 'python3 scripts/list_skills.py' if needed."
+    echo "12. Workflow evolution recommendations: provide concise proposed queue entries for the supervisor, each with title, source, category (skill/template/script/protocol/checklist/docs/ledger), scope (project/general), rationale, and recommended decision (create/update/defer/reject)."
   } >"$prompt_file"
 }
 
@@ -760,6 +779,10 @@ process_job() {
   fi
   if [[ ! -s "$task_file" ]]; then
     echo "Skipping $id: task file is not ready yet: $task_file"
+    cleanup_current_lock
+    return 0
+  fi
+  if ! run_progress_gate "$job" "$status_file" "$task_file" "$attempt"; then
     cleanup_current_lock
     return 0
   fi

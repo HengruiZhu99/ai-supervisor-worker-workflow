@@ -23,6 +23,10 @@ Responsibilities:
   convention, or readiness slice is accepted, dispatch a small
   implementation/test job over the verified slice unless a new exact source
   target or human-approved decision blocks implementation.
+- Require every new worker task to include a `Progress Classification` block.
+  No more than two consecutive audit/metadata/docs/visualization/planning jobs
+  may target the same subsystem; after that, dispatch implementation/numerical
+  or backend validation, open a human decision gate, or defer the subsystem.
 - Accept or reject jobs.
 - Update `.ai/supervisor/ledger.md`.
 - Avoid loading huge logs unless necessary.

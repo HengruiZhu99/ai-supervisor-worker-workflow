@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -58,6 +59,20 @@ def resolve_ref(ref: str, root: Path) -> str:
     return result.stdout.strip()
 
 
+def run_progress_gate(root: Path, task_source: Path, jobs_dir: Path) -> None:
+    gate = root / "scripts" / "check_job_progress_gate.py"
+    result = subprocess.run(
+        [sys.executable, str(gate), str(task_source), "--jobs-dir", str(jobs_dir)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(result.stdout.rstrip() or "job progress gate failed")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--title", required=True)
@@ -73,6 +88,7 @@ def main() -> int:
         raise SystemExit(f"task file does not exist: {task_source}")
 
     jobs_dir = root / ".ai" / "jobs"
+    run_progress_gate(root, task_source, jobs_dir)
     job_id = next_job_id(jobs_dir)
     job_dir = jobs_dir / job_id
     job_dir.mkdir()

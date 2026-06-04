@@ -12,6 +12,12 @@ Use when reviewing worker changes that implement or modify scientific, numerical
 ## Checklist
 
 - Confirm the diff stays within the assigned job scope.
+- Confirm the job's progress classification is credible: executable behavior,
+  numerical validation, backend validation, or a named implementation/test
+  unblock.
+- For audit/metadata/docs/visualization/planning jobs, verify that
+  `unlocks_next` is specific and that acceptance would not continue a
+  metadata-like streak for the same subsystem.
 - Check mathematical meaning against the design prompt, equations, and references.
 - Verify assumptions, units, dimensions, array shapes, tolerances, and conventions are documented.
 - Inspect edge cases and failure modes.

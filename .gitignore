@@ -4,6 +4,7 @@ __pycache__/
 .ai/jobs/*/*.log
 .ai/jobs/*/*.patch
 .ai/jobs/*/*.jsonl
+.ai/jobs/*/cursor_final*
 .ai/jobs/*/cursor_stderr*
 .ai/jobs/*/worker_prompt*
 .ai/runtime/

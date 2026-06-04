@@ -19,6 +19,16 @@ Choose one:
 
 ## Tests and validation
 
+## Progress accounting
+
+- Implementation jobs accepted:
+- Numerical test jobs accepted:
+- Backend/device/MPI test jobs accepted:
+- Metadata/audit/docs/visualization/planning jobs accepted:
+- New executable capability produced:
+- Remaining blockers:
+- Next non-metadata job:
+
 ## Scientific assumptions
 
 ## Known limitations
@@ -35,6 +45,7 @@ Summarize worker-reported friction, reviewer assessments, skill suggestions, and
 
 - [ ] Milestone summary is accurate.
 - [ ] Accepted jobs and commits are reviewable.
+- [ ] Progress accounting shows executable, numerical, or backend validation progress, or this is explicitly approved as a planning/source-only milestone.
 - [ ] Tests and validation are acceptable.
 - [ ] Scientific assumptions, risks, and limitations are acceptable.
 - [ ] Workflow evolution decisions are acceptable.
