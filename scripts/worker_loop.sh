@@ -982,18 +982,24 @@ process_job() {
   local test_exit=0
   local test_timed_out=false
   if [[ -n "$test_command" ]]; then
+    local test_script="$worktree/.ai_test_command.attempt-$attempt.sh"
+    mkdir -p "$(dirname "$test_script")"
+    printf '%s\n' "$test_command" >"$test_script"
     set +e
     git -C "$worktree" status --short >"$test_log"
     {
       echo
       echo "$ $test_command"
       if [[ "$TEST_TIMEOUT" != "0" ]]; then
-        timeout "$TEST_TIMEOUT" bash -lc "cd '$ROOT/$worktree' && $test_command"
+        timeout "$TEST_TIMEOUT" bash -c 'cd "$1" && exec bash "$2"' _ \
+          "$ROOT/$worktree" "$ROOT/$test_script"
       else
-        bash -lc "cd '$ROOT/$worktree' && $test_command"
+        bash -c 'cd "$1" && exec bash "$2"' _ "$ROOT/$worktree" \
+          "$ROOT/$test_script"
       fi
     } >>"$test_log" 2>&1
     test_exit=$?
+    rm -f "$test_script"
     set -e
     if [[ "$test_exit" -eq 124 || "$test_exit" -eq 137 ]]; then
       test_timed_out=true
