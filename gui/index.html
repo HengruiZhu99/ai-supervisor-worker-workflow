@@ -73,7 +73,7 @@
                       </label>
                       <label>
                         Model
-                        <input id="workflowChatModel" name="model" value="gpt-5.5" />
+                        <input id="workflowChatModel" name="model" value="claude-fable-5-thinking-xhigh" />
                       </label>
                     </div>
                     <div class="button-row">
@@ -178,6 +178,33 @@
               </div>
             </form>
             <div id="supervisorProcesses" class="process-list"></div>
+          </article>
+
+          <article class="panel process-card">
+            <div class="panel-title"><span>Modulator</span><span id="modulatorState" class="state-dot">Idle</span></div>
+            <form id="modulatorForm" class="control-form">
+              <label>
+                Modulator wrapper
+                <select name="wrapper" data-agent-wrapper data-role="modulator" data-model-input="modulatorModel"></select>
+              </label>
+              <label>
+                Modulator model
+                <select id="modulatorModel" name="model" data-model-select data-preferred-model="claude-fable-5-thinking-xhigh"></select>
+              </label>
+              <label>
+                Poll seconds
+                <input name="poll_seconds" type="number" min="5" step="1" value="30" />
+              </label>
+              <label class="check-line">
+                <input name="clears_preset_boundaries" type="checkbox" />
+                <span>Allow modulator to clear preset boundary gates</span>
+              </label>
+              <div class="button-row">
+                <button type="submit">Launch Modulator</button>
+                <button type="button" id="stopModulatorButton">Stop</button>
+              </div>
+            </form>
+            <div id="modulatorProcesses" class="process-list"></div>
           </article>
         </section>
 

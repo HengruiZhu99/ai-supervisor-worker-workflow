@@ -27,7 +27,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 GUI_ROOT = PACKAGE_ROOT / "gui"
 WORKFLOW_CHAT_JOBS: dict[str, dict] = {}
 WORKFLOW_CHAT_JOBS_LOCK = threading.Lock()
-DEFAULT_LOG_DISPLAY_LINES = 10_000
+DEFAULT_LOG_DISPLAY_LINES = 2_000
 ACTIVE_JOB_STATES = {
     "queued",
     "running",
@@ -40,6 +40,8 @@ ACTIVE_JOB_STATES = {
     "review_timeout",
 }
 TERMINAL_JOB_STATES = {"accepted", "cancelled", "superseded"}
+WORKER_PIPELINE_STATES = {"queued", "running", "rejected", "implemented", "reviewing"}
+SUPERVISOR_ACTIONABLE_JOB_STATES = {"ready_for_review", "blocked", "review_failed", "review_timeout", "invalid"}
 DEFAULT_HUMAN_REVIEW_ITEMS = [
     "Milestone summary is accurate.",
     "Accepted jobs and commits are reviewable.",
@@ -57,6 +59,14 @@ def env_int(name: str, default: int) -> int:
     except ValueError:
         return default
     return max(100, value)
+
+
+def env_nonnegative_int(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return max(0, value)
 
 
 LOG_DISPLAY_LINES = env_int("AI_WORKFLOW_GUI_LOG_LINES", DEFAULT_LOG_DISPLAY_LINES)
@@ -113,14 +123,38 @@ def pid_file(root: Path, name: str) -> Path:
     return runs_dir(root) / f"{name}.pid"
 
 
+def loop_lock_pid_file(root: Path, name: str) -> Path:
+    return runs_dir(root) / f"{name}.lock" / "pid"
+
+
+def loop_lock_workflow_commit_file(root: Path, name: str) -> Path:
+    return runs_dir(root) / f"{name}.lock" / "workflow_commit"
+
+
 def log_file(root: Path, name: str) -> Path:
     return runs_dir(root) / f"{name}.log"
 
 
-def gui_port_config_path(root: Path) -> Path:
+def runtime_dir(root: Path) -> Path:
     runtime = root / ".ai" / "runtime"
     runtime.mkdir(parents=True, exist_ok=True)
-    return runtime / "workflow_gui_port.json"
+    return runtime
+
+
+def gui_port_config_path(root: Path) -> Path:
+    return runtime_dir(root) / "workflow_gui_port.json"
+
+
+def loop_autostart_disabled_path(root: Path, name: str) -> Path:
+    return runtime_dir(root) / f"{name}.autostart_disabled"
+
+
+def loop_launch_env_path(root: Path, name: str) -> Path:
+    return runtime_dir(root) / f"{name}.launch_env.json"
+
+
+def loop_autorelaunch_state_path(root: Path, name: str) -> Path:
+    return runtime_dir(root) / f"{name}.autorelaunch.json"
 
 
 def port_available(host: str, port: int) -> bool:
@@ -188,6 +222,18 @@ def logged_workflow_commit(log_tail: str) -> str:
     return matches[-1] if matches else ""
 
 
+def lock_workflow_commit(root: Path, name: str) -> str:
+    if read_pid(loop_lock_pid_file(root, name)) is None:
+        return ""
+    try:
+        value = loop_lock_workflow_commit_file(root, name).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    if re.fullmatch(r"[0-9a-fA-F]+|unknown", value):
+        return value
+    return ""
+
+
 def pid_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -208,12 +254,38 @@ def read_pid(path: Path) -> int | None:
     return pid if pid_running(pid) else None
 
 
-def control_info(root: Path, name: str) -> dict:
+def loop_pid(root: Path, name: str) -> tuple[int | None, str]:
     pid = read_pid(pid_file(root, name))
+    if pid is not None:
+        return pid, "pid_file"
+    pid = read_pid(loop_lock_pid_file(root, name))
+    if pid is not None:
+        return pid, "lock_pid_file"
+    return None, ""
+
+
+def remove_stale_loop_lock(root: Path, name: str) -> None:
+    lock_pid_path = loop_lock_pid_file(root, name)
+    lock_dir = lock_pid_path.parent
+    if read_pid(lock_pid_path) is not None:
+        return
+    for child in (lock_pid_path, lock_dir / "started_at", loop_lock_workflow_commit_file(root, name)):
+        try:
+            child.unlink()
+        except OSError:
+            pass
+    try:
+        lock_dir.rmdir()
+    except OSError:
+        pass
+
+
+def control_info(root: Path, name: str) -> dict:
+    pid, pid_source = loop_pid(root, name)
     log = log_file(root, name)
     log_tail = tail(log, LOG_DISPLAY_LINES)
     expected_commit = workflow_package_commit()
-    running_commit = logged_workflow_commit(log_tail)
+    running_commit = lock_workflow_commit(root, name) or logged_workflow_commit(log_tail)
     version_warning = ""
     if pid is not None and expected_commit != "unknown" and running_commit and running_commit != expected_commit:
         version_warning = "running loop uses older workflow version; restart recommended"
@@ -221,6 +293,8 @@ def control_info(root: Path, name: str) -> dict:
         "pid": pid,
         "running": pid is not None,
         "pid_file": str(pid_file(root, name).relative_to(root)),
+        "lock_pid_file": str(loop_lock_pid_file(root, name).relative_to(root)),
+        "pid_source": pid_source,
         "log_file": str(log.relative_to(root)),
         "log_tail": log_tail,
         "log_display_lines": LOG_DISPLAY_LINES,
@@ -268,15 +342,16 @@ def jobs(root: Path) -> list[dict]:
         data = read_json(status_path)
         job_dir = status_path.parent
         attempt = data.get("attempt", 0)
+        load_detail = data.get("state") in ACTIVE_JOB_STATES
         data["_path"] = str(job_dir.relative_to(root))
         data["_files"] = sorted(path.name for path in job_dir.iterdir() if path.is_file())
-        data["_report_tail"] = tail(job_dir / "report.md", 60)
-        data["_test_tail"] = tail(job_dir / f"test.attempt-{attempt}.log", 60)
-        data["_cursor_tail"] = tail(job_dir / f"cursor_final.attempt-{attempt}.md", 60)
-        data["_task_text"] = read_text(job_dir / "task.md", 40_000)
+        data["_report_tail"] = tail(job_dir / "report.md", 60) if load_detail else ""
+        data["_test_tail"] = tail(job_dir / f"test.attempt-{attempt}.log", 60) if load_detail else ""
+        data["_cursor_tail"] = tail(job_dir / f"cursor_final.attempt-{attempt}.md", 60) if load_detail else ""
+        data["_task_text"] = read_text(job_dir / "task.md", 40_000) if load_detail else ""
         reviews_dir = job_dir / "reviews"
-        data["_reviewer_a_tail"] = tail(reviews_dir / f"reviewer-a.attempt-{attempt}.md", 80)
-        data["_reviewer_b_tail"] = tail(reviews_dir / f"reviewer-b.attempt-{attempt}.md", 80)
+        data["_reviewer_a_tail"] = tail(reviews_dir / f"reviewer-a.attempt-{attempt}.md", 80) if load_detail else ""
+        data["_reviewer_b_tail"] = tail(reviews_dir / f"reviewer-b.attempt-{attempt}.md", 80) if load_detail else ""
         out.append(data)
     return out
 
@@ -524,6 +599,8 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
     structural_request_text = read_text(structural_request_path)
     human_review_action_path = supervisor / "HUMAN_REVIEW_ACTION_REQUESTED.md"
     human_review_action_text = read_text(human_review_action_path)
+    supervisor_action_path = supervisor / "SUPERVISOR_ACTION_REQUIRED.md"
+    supervisor_action_text = read_text(supervisor_action_path)
     runs_dir = root / ".ai" / "supervisor_runs"
     run_logs = sorted(runs_dir.glob("supervisor.*.log"))
     latest_log = run_logs[-1] if run_logs else None
@@ -553,6 +630,8 @@ def supervisor_state(root: Path, job_rows: list[dict] | None = None) -> dict:
         "structural_request": structural_request_text,
         "human_review_action_exists": human_review_action_path.exists(),
         "human_review_action": human_review_action_text,
+        "supervisor_action_exists": supervisor_action_path.exists(),
+        "supervisor_action": supervisor_action_text,
         "latest_human_review": str(latest_review.relative_to(root)) if latest_review else "",
         "latest_human_review_result": latest_review_result,
         "latest_supervisor_log": str(latest_log.relative_to(root)) if latest_log else "",
@@ -651,7 +730,9 @@ def supervisor_preparing_human_review(supervisor: dict, job_rows: list[dict]) ->
         return False
     ledger = str(supervisor.get("ledger", "")).lower()
     review_phrases = [
+        "pending human boundary review",
         "pending human milestone review",
+        "pending renewed human boundary review",
         "pending renewed human milestone review",
         "human review gate is open",
         "reopened the m",
@@ -663,32 +744,34 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
     active = active_job_summary(job_rows)
     ready_job = next((job for job in job_rows if job.get("state") == "ready_for_review"), None)
     review_failed_job = next((job for job in job_rows if job.get("state") in {"review_failed", "review_timeout"}), None)
-    codex_active = bool(processes.get("codex"))
+    supervisor_agent_active = bool(processes.get("supervisor_agent"))
     supervisor_running = bool(controls.get("supervisor", {}).get("running"))
     worker_running = bool(controls.get("worker", {}).get("running"))
     human_gate_exists = bool(supervisor.get("human_gate_exists"))
     structural_request_exists = bool(supervisor.get("structural_request_exists"))
     human_review_action_exists = bool(supervisor.get("human_review_action_exists"))
-    preparing_human_review = codex_active and supervisor_preparing_human_review(supervisor, job_rows)
+    preparing_human_review = supervisor_agent_active and supervisor_preparing_human_review(supervisor, job_rows)
 
     if human_gate_exists:
         summary = "Wait for Human Milestone Review."
+        if processes.get("modulator_agent"):
+            summary = "Modulator agent is triaging the open human review gate."
     elif structural_request_exists:
         summary = (
             "Supervisor is preparing a structural plan revision."
-            if codex_active
+            if supervisor_agent_active
             else "Structural plan revision is waiting for the supervisor."
         )
     elif human_review_action_exists:
         summary = (
             "Supervisor is preparing a human-review revision plan."
-            if codex_active
+            if supervisor_agent_active
             else "Human-review revision request is waiting for the supervisor."
         )
     elif ready_job:
         summary = (
             f"Supervisor is reviewing {ready_job.get('id', 'a job')}."
-            if codex_active
+            if supervisor_agent_active
             else f"{ready_job.get('id', 'A job')} is ready for supervisor review."
         )
     elif review_failed_job:
@@ -703,7 +786,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
         summary = f"Worker is blocked on {active.get('id', 'a job')}."
     elif preparing_human_review:
         summary = "Supervisor is preparing a human review."
-    elif codex_active:
+    elif supervisor_agent_active:
         summary = "Supervisor is preparing the next worker job."
     elif worker_running or supervisor_running:
         summary = "Worker and supervisor are waiting for the next workflow event."
@@ -751,7 +834,7 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
         supervisor_text = "Supervisor should inspect reviewer failure artifacts and decide whether to retry, reject, or open a gate."
     elif preparing_human_review:
         supervisor_text = "Supervisor is preparing the milestone review summary and checklist."
-    elif codex_active:
+    elif supervisor_agent_active:
         supervisor_text = "Supervisor is actively planning, reviewing, or dispatching work."
     elif supervisor_running:
         supervisor_text = "Supervisor loop is live and watching job state."
@@ -895,7 +978,14 @@ def is_cursor_agent_process(argv: list[str]) -> bool:
 
 
 def process_blocks(root: Path) -> dict:
-    blocks = {"worker": [], "supervisor": [], "cursor": [], "codex": []}
+    blocks = {
+        "worker": [],
+        "supervisor": [],
+        "modulator": [],
+        "cursor": [],
+        "supervisor_agent": [],
+        "modulator_agent": [],
+    }
     proc_root = Path("/proc")
     for proc in proc_root.iterdir():
         if not proc.name.isdigit():
@@ -926,10 +1016,20 @@ def process_blocks(root: Path) -> dict:
             blocks["worker"].append(item)
         elif argv_has_script(argv, "supervisor_loop.sh"):
             blocks["supervisor"].append(item)
+        elif argv_has_script(argv, "modulator_loop.sh"):
+            blocks["modulator"].append(item)
         elif is_cursor_agent_process(argv):
-            blocks["cursor"].append(item)
+            # The supervisor/modulator prompts carry stable role markers, so
+            # their cursor-agent runs can be distinguished from worker runs.
+            if "boundary-gated supervisor agent" in cmdline:
+                blocks["supervisor_agent"].append(item)
+            elif "always-on workflow modulator agent" in cmdline:
+                blocks["modulator_agent"].append(item)
+            else:
+                blocks["cursor"].append(item)
         elif "codex" in cmdline and " exec " in f" {cmdline} ":
-            blocks["codex"].append(item)
+            # Legacy codex supervisor runs count as supervisor-agent activity.
+            blocks["supervisor_agent"].append(item)
     return blocks
 
 
@@ -945,9 +1045,26 @@ def state(root: Path) -> dict:
     controls = {
         "worker": control_info(root, "worker_loop"),
         "supervisor": control_info(root, "supervisor_loop"),
+        "modulator": control_info(root, "modulator_loop"),
     }
-    controls["worker"].update(worker_display_log(root, job_rows, controls["worker"]))
     supervisor = supervisor_state(root, job_rows)
+    auto_relaunch = auto_relaunch_worker_if_needed(root, job_rows, processes, controls, supervisor)
+    auto_relaunch_supervisor = auto_relaunch_supervisor_if_needed(
+        root, job_rows, processes, controls, supervisor
+    )
+    if (
+        auto_relaunch.get("attempted") and auto_relaunch.get("start_result", {}).get("ok")
+    ) or (
+        auto_relaunch_supervisor.get("attempted")
+        and auto_relaunch_supervisor.get("start_result", {}).get("ok")
+    ):
+        processes = process_blocks(root)
+        controls = {
+            "worker": control_info(root, "worker_loop"),
+            "supervisor": control_info(root, "supervisor_loop"),
+            "modulator": control_info(root, "modulator_loop"),
+        }
+    controls["worker"].update(worker_display_log(root, job_rows, controls["worker"]))
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "project": {"root": str(root), "name": root.name},
@@ -959,6 +1076,8 @@ def state(root: Path) -> dict:
         "worktrees": worktrees(root),
         "processes": processes,
         "controls": controls,
+        "auto_relaunch": auto_relaunch,
+        "auto_relaunch_supervisor": auto_relaunch_supervisor,
         "activity": activity_state(job_rows, processes, controls, supervisor),
         "reviewers": reviewer_state(root, job_rows),
         "agent_wrappers": agent_wrapper_catalog(root),
@@ -1011,17 +1130,38 @@ def read_request_json(handler: SimpleHTTPRequestHandler) -> dict:
 
 
 def start_loop(root: Path, name: str, env_updates: dict[str, str]) -> dict:
-    existing = read_pid(pid_file(root, name))
+    existing, existing_source = loop_pid(root, name)
     if existing:
-        return {"ok": True, "message": f"{name} already running", "pid": existing}
+        if existing_source == "lock_pid_file":
+            pid_file(root, name).write_text(str(existing) + "\n", encoding="utf-8")
+        try:
+            loop_autostart_disabled_path(root, name).unlink()
+        except OSError:
+            pass
+        return {"ok": True, "message": f"{name} already running", "pid": existing, "pid_source": existing_source}
 
-    script_name = "worker_loop.sh" if name == "worker_loop" else "supervisor_loop.sh"
+    script_names = {
+        "worker_loop": "worker_loop.sh",
+        "supervisor_loop": "supervisor_loop.sh",
+        "modulator_loop": "modulator_loop.sh",
+    }
+    script_name = script_names.get(name, "supervisor_loop.sh")
     script_path = root / "scripts" / script_name
     if not script_path.exists():
         return {"ok": False, "message": f"missing script: {script_path}"}
 
+    remove_stale_loop_lock(root, name)
     env = os.environ.copy()
-    env.update({key: value for key, value in env_updates.items() if value != ""})
+    clean_env_updates = {key: value for key, value in env_updates.items() if value != ""}
+    env.update(clean_env_updates)
+    try:
+        loop_autostart_disabled_path(root, name).unlink()
+    except OSError:
+        pass
+    loop_launch_env_path(root, name).write_text(
+        json.dumps(clean_env_updates, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     log = log_file(root, name)
     max_restarts = str(env.get("AI_WORKFLOW_LOOP_MAX_RESTARTS", "3"))
     restart_delay = str(env.get("AI_WORKFLOW_LOOP_RESTART_DELAY", "5"))
@@ -1058,15 +1198,46 @@ done
     return {"ok": True, "message": f"started {name}", "pid": proc.pid}
 
 
+def saved_loop_env(root: Path, name: str, default_env: dict[str, str]) -> dict[str, str]:
+    data = read_json(loop_launch_env_path(root, name))
+    if not data:
+        return default_env
+    return {str(key): str(value) for key, value in data.items() if str(value) != ""}
+
+
+def mark_autorelaunch_attempt(root: Path, name: str, result: dict | None = None) -> None:
+    payload = {
+        "attempted_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+    }
+    if result is not None:
+        payload["result"] = result
+    loop_autorelaunch_state_path(root, name).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def autorelaunch_recently_attempted(root: Path, name: str, cooldown_seconds: int) -> bool:
+    if cooldown_seconds <= 0:
+        return False
+    path = loop_autorelaunch_state_path(root, name)
+    try:
+        age = time.time() - path.stat().st_mtime
+    except OSError:
+        return False
+    return age < cooldown_seconds
+
+
 def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
     payload = payload or {}
     extra_args = str(payload.get("extra_args", ""))
     if payload.get("force") and "--force" not in extra_args:
         extra_args = (extra_args + " --force").strip()
+    worker_model = str(payload.get("model", "claude-fable-5-thinking-high"))
     return {
         "WORKER_AGENT_WRAPPER": str(payload.get("wrapper", "cursor-agent")),
-        "WORKER_MODEL": str(payload.get("model", "gpt-5.5-high")),
-        "CURSOR_MODEL": str(payload.get("model", "gpt-5.5-high")),
+        "WORKER_MODEL": worker_model,
+        "CURSOR_MODEL": worker_model,
         "CURSOR_TIMEOUT": str(payload.get("timeout", "3600")),
         "WORKER_AGENT_EXTRA_ARGS": extra_args,
         "CURSOR_AGENT_EXTRA_ARGS": extra_args,
@@ -1088,32 +1259,173 @@ def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
 
 def supervisor_loop_env(payload: dict | None = None) -> dict[str, str]:
     payload = payload or {}
+    supervisor_model = str(payload.get("model", "claude-fable-5-thinking-xhigh"))
     return {
-        "SUPERVISOR_AGENT_WRAPPER": str(payload.get("wrapper", "codex")),
-        "CODEX_MODEL": str(payload.get("model", "gpt-5.5")),
-        "CODEX_REASONING_EFFORT": str(payload.get("reasoning", "high")),
+        "SUPERVISOR_AGENT_WRAPPER": str(payload.get("wrapper", "cursor-agent")),
+        "SUPERVISOR_MODEL": supervisor_model,
+        "CODEX_MODEL": supervisor_model,
+        "SUPERVISOR_REASONING_EFFORT": str(payload.get("reasoning", "")),
         "SUPERVISOR_POLL_SECONDS": str(payload.get("poll_seconds", "10")),
         "SUPERVISOR_VERBOSE": "1" if payload.get("verbose", True) else "0",
-        "CODEX_EXTRA_ARGS": str(payload.get("extra_args", "")),
+        "SUPERVISOR_EXTRA_ARGS": str(payload.get("extra_args", "")),
         "SUPERVISOR_AUTO_RELAUNCH_FAILURE": "1",
         "SUPERVISOR_MAX_FAILURE_RELAUNCHES": str(payload.get("max_failure_relaunches", "1")),
     }
 
 
+def modulator_loop_env(payload: dict | None = None) -> dict[str, str]:
+    payload = payload or {}
+    modulator_model = str(payload.get("model", "claude-fable-5-thinking-xhigh"))
+    return {
+        "MODULATOR_AGENT_WRAPPER": str(payload.get("wrapper", "cursor-agent")),
+        "MODULATOR_MODEL": modulator_model,
+        "MODULATOR_POLL_SECONDS": str(payload.get("poll_seconds", "30")),
+        "MODULATOR_EXTRA_ARGS": str(payload.get("extra_args", "")),
+        "MODULATOR_CLEARS_PRESET_BOUNDARIES": str(payload.get("clears_preset_boundaries", "0")),
+    }
+
+
+def auto_relaunch_worker_if_needed(
+    root: Path,
+    job_rows: list[dict],
+    processes: dict,
+    controls: dict,
+    supervisor: dict,
+) -> dict:
+    if os.environ.get("AI_WORKFLOW_AUTO_RELAUNCH_WORKER", "1") == "0":
+        return {"attempted": False, "reason": "disabled by AI_WORKFLOW_AUTO_RELAUNCH_WORKER=0"}
+    if controls.get("worker", {}).get("running"):
+        return {"attempted": False, "reason": "worker loop already running"}
+    if processes.get("worker"):
+        return {"attempted": False, "reason": "worker loop process already visible"}
+    if loop_autostart_disabled_path(root, "worker_loop").exists():
+        return {"attempted": False, "reason": "worker loop autostart disabled by manual stop"}
+    if (
+        supervisor.get("human_gate_exists")
+        or supervisor.get("structural_request_exists")
+        or supervisor.get("human_review_action_exists")
+        or supervisor.get("supervisor_action_exists")
+    ):
+        return {"attempted": False, "reason": "workflow gate pauses worker loop"}
+
+    active_worker_jobs = [
+        str(job.get("id") or job.get("_path") or "")
+        for job in job_rows
+        if job.get("state") in WORKER_PIPELINE_STATES
+    ]
+    active_worker_jobs = [job_id for job_id in active_worker_jobs if job_id]
+    if not active_worker_jobs:
+        return {"attempted": False, "reason": "no worker-pipeline job state"}
+
+    cooldown = env_nonnegative_int("AI_WORKFLOW_AUTO_RELAUNCH_COOLDOWN_SECONDS", 30)
+    if autorelaunch_recently_attempted(root, "worker_loop", cooldown):
+        return {
+            "attempted": False,
+            "reason": f"worker loop autorelaunch cooldown active ({cooldown}s)",
+            "active_worker_jobs": active_worker_jobs,
+        }
+
+    mark_autorelaunch_attempt(root, "worker_loop")
+    result = start_loop(
+        root,
+        "worker_loop",
+        saved_loop_env(root, "worker_loop", worker_loop_env()),
+    )
+    payload = {
+        "attempted": True,
+        "reason": "worker loop was offline while worker-pipeline jobs were active",
+        "active_worker_jobs": active_worker_jobs,
+        "start_result": result,
+    }
+    mark_autorelaunch_attempt(root, "worker_loop", payload)
+    return payload
+
+
+def auto_relaunch_supervisor_if_needed(
+    root: Path,
+    job_rows: list[dict],
+    processes: dict,
+    controls: dict,
+    supervisor: dict,
+) -> dict:
+    if os.environ.get("AI_WORKFLOW_AUTO_RELAUNCH_SUPERVISOR", "1") == "0":
+        return {"attempted": False, "reason": "disabled by AI_WORKFLOW_AUTO_RELAUNCH_SUPERVISOR=0"}
+    if controls.get("supervisor", {}).get("running"):
+        return {"attempted": False, "reason": "supervisor loop already running"}
+    if processes.get("supervisor"):
+        return {"attempted": False, "reason": "supervisor loop process already visible"}
+    if loop_autostart_disabled_path(root, "supervisor_loop").exists():
+        return {"attempted": False, "reason": "supervisor loop autostart disabled by manual stop"}
+    if supervisor.get("human_gate_exists"):
+        return {"attempted": False, "reason": "human review gate pauses supervisor loop"}
+
+    active_reasons = []
+    if supervisor.get("structural_request_exists"):
+        active_reasons.append("structural change request")
+    if supervisor.get("human_review_action_exists"):
+        active_reasons.append("human review action request")
+    if supervisor.get("supervisor_action_exists"):
+        active_reasons.append("supervisor action request")
+
+    actionable_jobs = [
+        str(job.get("id") or job.get("_path") or "")
+        for job in job_rows
+        if job.get("state") in SUPERVISOR_ACTIONABLE_JOB_STATES
+    ]
+    actionable_jobs = [job_id for job_id in actionable_jobs if job_id]
+    if actionable_jobs:
+        active_reasons.append("supervisor-actionable job state")
+
+    if not active_reasons:
+        return {"attempted": False, "reason": "no supervisor-actionable state"}
+
+    cooldown = env_nonnegative_int("AI_WORKFLOW_AUTO_RELAUNCH_COOLDOWN_SECONDS", 30)
+    if autorelaunch_recently_attempted(root, "supervisor_loop", cooldown):
+        return {
+            "attempted": False,
+            "reason": f"supervisor loop autorelaunch cooldown active ({cooldown}s)",
+            "active_reasons": active_reasons,
+            "actionable_jobs": actionable_jobs,
+        }
+
+    mark_autorelaunch_attempt(root, "supervisor_loop")
+    result = start_loop(
+        root,
+        "supervisor_loop",
+        saved_loop_env(root, "supervisor_loop", supervisor_loop_env()),
+    )
+    payload = {
+        "attempted": True,
+        "reason": "supervisor loop was offline while supervisor-actionable state existed",
+        "active_reasons": active_reasons,
+        "actionable_jobs": actionable_jobs,
+        "start_result": result,
+    }
+    mark_autorelaunch_attempt(root, "supervisor_loop", payload)
+    return payload
+
+
 def auto_start_loops_after_human_review(root: Path) -> dict:
     supervisor = start_loop(root, "supervisor_loop", supervisor_loop_env())
     worker = start_loop(root, "worker_loop", worker_loop_env())
+    modulator = start_loop(root, "modulator_loop", modulator_loop_env())
     return {
         "ok": bool(supervisor.get("ok")) and bool(worker.get("ok")),
         "supervisor": supervisor,
         "worker": worker,
+        "modulator": modulator,
     }
 
 
 def stop_loop(root: Path, name: str) -> dict:
-    process_key = "worker" if name == "worker_loop" else "supervisor"
+    process_keys = {
+        "worker_loop": "worker",
+        "supervisor_loop": "supervisor",
+        "modulator_loop": "modulator",
+    }
+    process_key = process_keys.get(name, "supervisor")
     targets: set[int] = set()
-    pid = read_pid(pid_file(root, name))
+    pid, _pid_source = loop_pid(root, name)
     if pid:
         targets.add(pid)
     for item in process_blocks(root).get(process_key, []):
@@ -1125,6 +1437,11 @@ def stop_loop(root: Path, name: str) -> dict:
             pid_file(root, name).unlink()
         except OSError:
             pass
+        remove_stale_loop_lock(root, name)
+        loop_autostart_disabled_path(root, name).write_text(
+            datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z") + "\n",
+            encoding="utf-8",
+        )
         return {"ok": True, "message": f"{name} is not running"}
 
     groups: set[int] = set()
@@ -1169,6 +1486,11 @@ def stop_loop(root: Path, name: str) -> dict:
         pid_file(root, name).unlink()
     except OSError:
         pass
+    remove_stale_loop_lock(root, name)
+    loop_autostart_disabled_path(root, name).write_text(
+        datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z") + "\n",
+        encoding="utf-8",
+    )
 
     stopped = sorted(targets)
     killed = sorted(target for target in targets if not pid_running(target))
@@ -1311,12 +1633,12 @@ def draft_review_text(draft_review: object) -> str:
 def supervisor_chat(root: Path, message: str, history: object, draft_review: object) -> dict:
     gate_path = root / ".ai" / "supervisor" / "HUMAN_REVIEW_REQUIRED.md"
     if not gate_path.exists():
-        return {"ok": False, "message": "No human milestone review gate exists."}
+        return {"ok": False, "message": "No human review gate exists."}
     message = message.strip()
     if not message:
         return {"ok": False, "message": "Enter a question for the supervisor."}
-    if not shutil.which("codex"):
-        return {"ok": False, "message": "codex executable was not found in PATH."}
+    if not shutil.which("cursor-agent"):
+        return {"ok": False, "message": "cursor-agent executable was not found in PATH."}
 
     code, jobs_summary, jobs_err = run(["python3", "scripts/summarize_jobs.py"], root)
     if code != 0:
@@ -1331,9 +1653,9 @@ def supervisor_chat(root: Path, message: str, history: object, draft_review: obj
         (".ai/supervisor/HUMAN_REVIEW_REQUIRED.md", read_text(gate_path, 60_000)),
     ]
     context = "\n\n".join(f"## {name}\n\n{text or '(missing or empty)'}" for name, text in context_files)
-    prompt = f"""You are the Codex supervisor for this scientific coding project.
+    prompt = f"""You are the supervisor agent for this scientific coding project.
 
-The human is in the dashboard human milestone review panel and wants read-only guidance before submitting the review.
+The human is in the dashboard human review panel and wants read-only guidance before submitting the review.
 
 Hard constraints:
 - Answer the human's question only.
@@ -1367,30 +1689,31 @@ Hard constraints:
 {context}
 """
 
-    model = os.environ.get("AI_WORKFLOW_CHAT_MODEL") or os.environ.get("CODEX_MODEL") or "gpt-5.5"
-    effort = os.environ.get("AI_WORKFLOW_CHAT_REASONING_EFFORT") or os.environ.get("CODEX_REASONING_EFFORT") or "high"
+    model = (
+        os.environ.get("AI_WORKFLOW_CHAT_MODEL")
+        or os.environ.get("SUPERVISOR_MODEL")
+        or os.environ.get("CODEX_MODEL")
+        or "claude-fable-5-thinking-xhigh"
+    )
+    effort = os.environ.get("AI_WORKFLOW_CHAT_REASONING_EFFORT") or "model-default"
     timeout_seconds = max(30, env_int("AI_WORKFLOW_CHAT_TIMEOUT", 300))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = runs_dir(root) / f"human_review_chat_{stamp}.log"
     args = [
-        "codex",
-        "--ask-for-approval",
-        "never",
-        "--sandbox",
-        "read-only",
-        "exec",
-        "-C",
+        "cursor-agent",
+        "-p",
+        "--trust",
+        "--mode",
+        "ask",
+        "--workspace",
         str(root),
-        "-m",
+        "--model",
         model,
-        "-c",
-        f'model_reasoning_effort="{effort}"',
-        "-",
+        prompt,
     ]
     try:
         result = subprocess.run(
             args,
-            input=prompt,
             cwd=str(root),
             text=True,
             stdout=subprocess.PIPE,
@@ -1457,8 +1780,8 @@ def workflow_chat(root: Path, message: str, history: object, allow_edits: bool, 
     message = message.strip()
     if not message:
         return {"ok": False, "message": "Enter a question for the workflow chat."}
-    if not shutil.which("codex"):
-        return {"ok": False, "message": "codex executable was not found in PATH."}
+    if not shutil.which("cursor-agent"):
+        return {"ok": False, "message": "cursor-agent executable was not found in PATH."}
 
     code, jobs_summary, jobs_err = run(["python3", "scripts/summarize_jobs.py"], root)
     if code != 0:
@@ -1526,7 +1849,7 @@ Hard constraints:
 - If the user asks for a change, explain that they must enable "Allow this chat agent to edit workflow files" and resend the request.
 """
 
-    prompt = f"""You are a workflow-aware Codex agent launched from the AI Workflow Console.
+    prompt = f"""You are a workflow-aware agent launched from the AI Workflow Console.
 
 The user wants to chat about the supervisor/worker workflow, the current run, or the reusable workflow package.
 
@@ -1576,31 +1899,35 @@ The user wants to chat about the supervisor/worker workflow, the current run, or
 {context}
 """
 
-    model = model_override.strip() or os.environ.get("AI_WORKFLOW_CHAT_MODEL") or os.environ.get("CODEX_MODEL") or "gpt-5.5"
-    effort = os.environ.get("AI_WORKFLOW_CHAT_REASONING_EFFORT") or os.environ.get("CODEX_REASONING_EFFORT") or "high"
+    model = (
+        model_override.strip()
+        or os.environ.get("AI_WORKFLOW_CHAT_MODEL")
+        or os.environ.get("SUPERVISOR_MODEL")
+        or os.environ.get("CODEX_MODEL")
+        or "claude-fable-5-thinking-xhigh"
+    )
+    effort = os.environ.get("AI_WORKFLOW_CHAT_REASONING_EFFORT") or "model-default"
     timeout_seconds = max(30, env_int("AI_WORKFLOW_CHAT_TIMEOUT", 600 if allow_edits else 300))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = runs_dir(root) / f"workflow_chat_{stamp}.log"
-    sandbox = "danger-full-access" if allow_edits else "read-only"
+    sandbox = "edit" if allow_edits else "ask"
     args = [
-        "codex",
-        "--ask-for-approval",
-        "never",
-        "--sandbox",
-        sandbox,
-        "exec",
-        "-C",
+        "cursor-agent",
+        "-p",
+        "--trust",
+        "--workspace",
         str(root),
-        "-m",
+        "--model",
         model,
-        "-c",
-        f'model_reasoning_effort="{effort}"',
-        "-",
     ]
+    if allow_edits:
+        args.append("--force")
+    else:
+        args.extend(["--mode", "ask"])
+    args.append(prompt)
     try:
         result = subprocess.run(
             args,
-            input=prompt,
             cwd=str(root),
             text=True,
             stdout=subprocess.PIPE,
@@ -1782,7 +2109,7 @@ def create_structural_change_request(
         "",
         "## Review Context",
         "",
-        f"- Milestone gate: `{archived_gate}`",
+        f"- Archived human gate: `{archived_gate}`",
         f"- Human review record: `{review_record}`",
         "",
         "## Human Structural Change Request",
@@ -1799,7 +2126,7 @@ def create_structural_change_request(
         "1. Summary of roadmap/project-brief/ledger changes",
         "2. Validation run and results",
         "3. Human review gate path",
-        "4. Proposed next small worker jobs after human approval",
+        "4. Proposed next small worker jobs after boundary approval",
         "5. Known limitations or decisions still requiring human review",
     ]
     text = "\n".join(task_lines).rstrip() + "\n"
@@ -1825,7 +2152,7 @@ def create_human_review_action_request(
         "",
         "## Supervisor Objective",
         "",
-        "Read the failed human milestone review items, classify the concerns, and decide the next safe workflow action.",
+        "Read the failed human review items, classify the concerns, and decide the next safe workflow action.",
         "",
         "## Required Supervisor Behavior",
         "",
@@ -1840,7 +2167,7 @@ def create_human_review_action_request(
         "",
         "## Review Context",
         "",
-        f"- Archived milestone gate: `{archived_gate}`",
+        f"- Archived human gate: `{archived_gate}`",
         f"- Human review record: `{review_record}`",
         "",
         "## Failed Human Review Items",
@@ -1962,7 +2289,7 @@ def write_human_review(
             handle.write("- Accepted job branch/worktree pruning:\n")
             for line in prune_output.splitlines():
                 handle.write(f"  - {line}\n")
-        commit_ok, commit_output = commit_workflow_records(root, "workflow: record human milestone approval")
+        commit_ok, commit_output = commit_workflow_records(root, "workflow: record human review approval")
         push_ok, push_output = push_after_human_review(root)
         return {
             "ok": True,
@@ -1982,7 +2309,7 @@ def write_human_review(
     )
     with ledger.open("a", encoding="utf-8") as handle:
         handle.write(f"- Human milestone review requested changes. Supervisor action request: `{request_path.relative_to(root)}`.\n")
-    commit_ok, commit_output = commit_workflow_records(root, "workflow: record human milestone review action request")
+    commit_ok, commit_output = commit_workflow_records(root, "workflow: record human review action request")
     push_ok, push_output = push_after_human_review(root)
     return {
         "ok": True,
@@ -2048,12 +2375,21 @@ class Handler(SimpleHTTPRequestHandler):
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return
 
+        if parsed.path == "/api/modulator/start":
+            result = start_loop(self.project_root, "modulator_loop", modulator_loop_env(payload))
+            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            return
+
         if parsed.path == "/api/worker/stop":
             json_response(self, HTTPStatus.OK, stop_loop(self.project_root, "worker_loop"))
             return
 
         if parsed.path == "/api/supervisor/stop":
             json_response(self, HTTPStatus.OK, stop_loop(self.project_root, "supervisor_loop"))
+            return
+
+        if parsed.path == "/api/modulator/stop":
+            json_response(self, HTTPStatus.OK, stop_loop(self.project_root, "modulator_loop"))
             return
 
         if parsed.path == "/api/human-review":

@@ -34,8 +34,8 @@ function badgeClass(status) {
 
 function jobDisplayStatus(job, data) {
   const status = job.state || "unknown";
-  const codexActive = Boolean(data?.processes?.codex?.length);
-  if (status === "ready_for_review" && codexActive) return "reviewing";
+  const supervisorAgentActive = Boolean(data?.processes?.supervisor_agent?.length);
+  if (status === "ready_for_review" && supervisorAgentActive) return "reviewing";
   if (status === "ready_for_review") return "ready for review";
   if (status === "review_failed") return "review failed";
   if (status === "review_timeout") return "review timeout";
@@ -134,7 +134,6 @@ function defaultModelFor(wrapper, role) {
 }
 
 function roleDefaultWrapper(role) {
-  if (role === "supervisor" || role === "chat") return "codex";
   return "cursor-agent";
 }
 
@@ -491,12 +490,23 @@ function render(data, options = {}) {
   $("gitHead").textContent = data.git.head || "-";
   $("dirtyCount").textContent = data.git.dirty_count || 0;
 
-  const workerActive = data.processes.worker.length || data.processes.cursor.length;
-  const supervisorActive = data.processes.supervisor.length || data.processes.codex.length;
+  const workerActive = Boolean(
+    data.controls?.worker?.running || data.processes.worker.length || data.processes.cursor.length
+  );
+  const supervisorActive = Boolean(
+    data.controls?.supervisor?.running || data.processes.supervisor.length || (data.processes.supervisor_agent || []).length
+  );
+  const modulatorActive = Boolean(
+    data.controls?.modulator?.running || (data.processes.modulator || []).length || (data.processes.modulator_agent || []).length
+  );
   $("workerState").textContent = workerActive ? "Live" : "Idle";
   $("workerState").className = `state-dot ${workerActive ? "live" : ""}`;
   $("supervisorState").textContent = supervisorActive ? "Live" : "Idle";
   $("supervisorState").className = `state-dot ${supervisorActive ? "live" : ""}`;
+  if ($("modulatorState")) {
+    $("modulatorState").textContent = modulatorActive ? "Live" : "Idle";
+    $("modulatorState").className = `state-dot ${modulatorActive ? "live" : ""}`;
+  }
   $("healthPill").textContent = data.supervisor.human_gate_exists ? "Human Review" : "Operational";
   $("healthPill").className = `health ${data.supervisor.human_gate_exists ? "gate" : "live"}`;
 
@@ -528,7 +538,16 @@ function render(data, options = {}) {
     : "";
 
   renderProcesses("workerProcesses", [...data.processes.worker, ...data.processes.cursor]);
-  renderProcesses("supervisorProcesses", [...data.processes.supervisor, ...data.processes.codex]);
+  renderProcesses("supervisorProcesses", [
+    ...data.processes.supervisor,
+    ...(data.processes.supervisor_agent || []),
+  ]);
+  if ($("modulatorProcesses")) {
+    renderProcesses("modulatorProcesses", [
+      ...(data.processes.modulator || []),
+      ...(data.processes.modulator_agent || []),
+    ]);
+  }
   $("reviewerTitle").textContent = data.reviewers?.title || "Reviewer Reports";
   $("reviewerMeta").textContent = data.reviewers?.job_id
     ? [
@@ -590,6 +609,27 @@ $("stopSupervisorButton").addEventListener("click", async () => {
     alert(error.message);
   }
 });
+if ($("modulatorForm")) {
+  $("modulatorForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await postJson("/api/modulator/start", formValues(event.currentTarget));
+      await refresh();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+}
+if ($("stopModulatorButton")) {
+  $("stopModulatorButton").addEventListener("click", async () => {
+    try {
+      await postJson("/api/modulator/stop");
+      await refresh();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+}
 $("humanReviewForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const items = [...event.currentTarget.querySelectorAll(".review-item")];

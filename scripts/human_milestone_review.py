@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactively process a human milestone review checklist."""
+"""Interactively process a human review gate checklist."""
 
 from __future__ import annotations
 
@@ -150,7 +150,7 @@ def create_revision_task(
         "",
         "## Objective",
         "",
-        "Address the human milestone review concerns listed below.",
+        "Address the human review concerns listed below.",
         "",
         "## Progress Classification",
         "",
@@ -158,7 +158,7 @@ def create_revision_task(
         "progress:",
         "  job_type: planning",
         "  subsystem: workflow",
-        "  capability_target: \"Classify human milestone review concerns into the next implementation or validation job\"",
+        "  capability_target: \"Classify human review concerns into the next implementation or validation job\"",
         "  new_executable_behavior: false",
         "  validation_class: schema",
         "  unlocks_next: \"Create exactly one scoped implementation, numerical-test, or backend-test worker job from the reviewed concern\"",
@@ -180,7 +180,7 @@ def create_revision_task(
         "",
         "## Review Context",
         "",
-        f"- Milestone gate: `{gate_path}`",
+        f"- Archived human gate: `{gate_path}`",
         f"- Human review record: `{review_record}`",
         "",
         "## Failed Human Review Items",
@@ -279,7 +279,7 @@ def create_structural_change_request(
         "1. Summary of roadmap/project-brief/ledger changes",
         "2. Validation run and results",
         "3. Human review gate path",
-        "4. Proposed next small worker jobs after human approval",
+        "4. Proposed next small worker jobs after boundary approval",
         "5. Known limitations or decisions still requiring human review",
     ]
     text = "\n".join(lines).rstrip() + "\n"
@@ -305,7 +305,7 @@ def create_human_review_action_request(
         "",
         "## Supervisor Objective",
         "",
-        "Read the failed human milestone review items, classify the concerns, and decide the next safe workflow action.",
+        "Read the failed human review items, classify the concerns, and decide the next safe workflow action.",
         "",
         "## Required Supervisor Behavior",
         "",
@@ -320,7 +320,7 @@ def create_human_review_action_request(
         "",
         "## Review Context",
         "",
-        f"- Archived milestone gate: `{gate_path}`",
+        f"- Archived human gate: `{gate_path}`",
         f"- Human review record: `{review_record}`",
         "",
         "## Failed Human Review Items",
@@ -375,7 +375,7 @@ def append_ledger(message: str) -> None:
     if not ledger.exists():
         return
     with ledger.open("a", encoding="utf-8") as handle:
-        handle.write("\n## Human milestone review update\n\n")
+        handle.write("\n## Human review update\n\n")
         handle.write(message.rstrip() + "\n")
 
 
@@ -448,10 +448,33 @@ def read_pid(path: Path) -> int | None:
     return pid if pid_running(pid) else None
 
 
+def loop_lock_dir(name: str) -> Path:
+    return Path(".ai/supervisor_runs") / f"{name}.lock"
+
+
+def loop_lock_pid_path(name: str) -> Path:
+    return loop_lock_dir(name) / "pid"
+
+
+def remove_stale_loop_lock(name: str) -> None:
+    lock_dir = loop_lock_dir(name)
+    if read_pid(lock_dir / "pid") is not None:
+        return
+    for child in (lock_dir / "pid", lock_dir / "started_at", lock_dir / "workflow_commit"):
+        try:
+            child.unlink()
+        except OSError:
+            pass
+    try:
+        lock_dir.rmdir()
+    except OSError:
+        pass
+
+
 def default_loop_env(name: str) -> dict[str, str]:
     if name == "worker_loop":
         return {
-            "CURSOR_MODEL": os.environ.get("CURSOR_MODEL", "gpt-5.5-high"),
+            "CURSOR_MODEL": os.environ.get("CURSOR_MODEL", "claude-fable-5-thinking-high"),
             "CURSOR_TIMEOUT": os.environ.get("CURSOR_TIMEOUT", "3600"),
             "CURSOR_REVIEWERS_ENABLED": os.environ.get("CURSOR_REVIEWERS_ENABLED", "1"),
             "CURSOR_REVIEW_TIMEOUT": os.environ.get("CURSOR_REVIEW_TIMEOUT", "2400"),
@@ -459,9 +482,17 @@ def default_loop_env(name: str) -> dict[str, str]:
             "CURSOR_REVIEWER_B_MODEL": os.environ.get("CURSOR_REVIEWER_B_MODEL", "gpt-5.3-codex-high"),
             "WORKER_AUTO_RELAUNCH_FAILURE": "1",
         }
+    if name == "modulator_loop":
+        return {
+            "MODULATOR_AGENT_WRAPPER": os.environ.get("MODULATOR_AGENT_WRAPPER", "cursor-agent"),
+            "MODULATOR_MODEL": os.environ.get("MODULATOR_MODEL", "claude-fable-5-thinking-xhigh"),
+            "MODULATOR_POLL_SECONDS": os.environ.get("MODULATOR_POLL_SECONDS", "30"),
+        }
     return {
-        "CODEX_MODEL": os.environ.get("CODEX_MODEL", "gpt-5.5"),
-        "CODEX_REASONING_EFFORT": os.environ.get("CODEX_REASONING_EFFORT", "high"),
+        "SUPERVISOR_AGENT_WRAPPER": os.environ.get("SUPERVISOR_AGENT_WRAPPER", "cursor-agent"),
+        "SUPERVISOR_MODEL": os.environ.get(
+            "SUPERVISOR_MODEL", os.environ.get("CODEX_MODEL", "claude-fable-5-thinking-xhigh")
+        ),
         "SUPERVISOR_POLL_SECONDS": os.environ.get("SUPERVISOR_POLL_SECONDS", "10"),
         "SUPERVISOR_VERBOSE": os.environ.get("SUPERVISOR_VERBOSE", "1"),
         "SUPERVISOR_AUTO_RELAUNCH_FAILURE": "1",
@@ -475,9 +506,19 @@ def start_loop(name: str) -> str:
     existing = read_pid(pid_path)
     if existing:
         return f"{name} already running with pid {existing}"
+    existing = read_pid(loop_lock_pid_path(name))
+    if existing:
+        pid_path.write_text(str(existing) + "\n", encoding="utf-8")
+        return f"{name} already running with pid {existing}"
 
-    script_name = "worker_loop.sh" if name == "worker_loop" else "supervisor_loop.sh"
+    script_names = {
+        "worker_loop": "worker_loop.sh",
+        "supervisor_loop": "supervisor_loop.sh",
+        "modulator_loop": "modulator_loop.sh",
+    }
+    script_name = script_names.get(name, "supervisor_loop.sh")
     script_path = Path("scripts") / script_name
+    remove_stale_loop_lock(name)
     if not script_path.exists():
         return f"{name} not started: missing {script_path}"
 
@@ -521,14 +562,15 @@ done
 def auto_start_loops() -> str:
     supervisor = start_loop("supervisor_loop")
     worker = start_loop("worker_loop")
-    return f"{supervisor}\n{worker}"
+    modulator = start_loop("modulator_loop")
+    return f"{supervisor}\n{worker}\n{modulator}"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--gate", default=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md")
     parser.add_argument("--test-command", default="python3 scripts/summarize_jobs.py")
-    parser.add_argument("--title", default="Address human milestone review concerns")
+    parser.add_argument("--title", default="Address human review concerns")
     args = parser.parse_args()
 
     git_root()
@@ -540,7 +582,7 @@ def main() -> int:
     items = extract_checklist(gate_text)
 
     decisions: list[dict[str, str | bool]] = []
-    print(f"Human milestone review: {gate_path}")
+    print(f"Human review gate: {gate_path}")
     structural_requested = ask_yes_no(
         "Major structural change request? This supersedes the checklist review"
     )
@@ -588,7 +630,7 @@ def main() -> int:
             reviews_dir, stamp, archived_gate, review_record, structural_comment
         )
         append_ledger(
-            f"- Human milestone review requested a major structural change. Record: `{review_record}`. Supervisor structural request: `{request_path}`."
+            f"- Human review requested a major structural change. Record: `{review_record}`. Supervisor structural request: `{request_path}`."
         )
         print("\nMajor structural change requested.")
         print(f"Review record: {review_record}")
@@ -604,7 +646,7 @@ def main() -> int:
 
     if not failed:
         prune_output = prune_accepted_job_refs(review_record)
-        ledger_message = f"- Human milestone review approved all items. Record: `{review_record}`.\n"
+        ledger_message = f"- Human review approved all items. Record: `{review_record}`.\n"
         if approval_comment.strip():
             ledger_message += "- Approval comment:\n" + "\n".join(
                 f"  {line}" for line in approval_comment.strip().splitlines()
@@ -618,7 +660,7 @@ def main() -> int:
         print("\nAccepted job branch/worktree pruning:")
         print(prune_output)
         print("\nWorkflow record commit:")
-        print(commit_workflow_records("workflow: record human milestone approval"))
+        print(commit_workflow_records("workflow: record human review approval"))
         print("\nPush after human review:")
         print(push_after_human_review())
         print("\nAuto-start loops:")
@@ -629,7 +671,7 @@ def main() -> int:
         reviews_dir, stamp, archived_gate, review_record, decisions
     )
     append_ledger(
-        f"- Human milestone review requested changes. Record: `{review_record}`. Supervisor action request: `{request_path}`."
+        f"- Human review requested changes. Record: `{review_record}`. Supervisor action request: `{request_path}`."
     )
 
     print("\nChanges requested.")
@@ -637,7 +679,7 @@ def main() -> int:
     print(f"Archived gate: {archived_gate}")
     print(f"Supervisor action request: {request_path}")
     print("\nWorkflow record commit:")
-    print(commit_workflow_records("workflow: record human milestone review action request"))
+    print(commit_workflow_records("workflow: record human review action request"))
     print("\nPush after human review:")
     print(push_after_human_review())
     print("\nAuto-start loops:")

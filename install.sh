@@ -52,6 +52,7 @@ files=(
   ".ai/supervisor/ledger.md"
   ".ai/supervisor/human_reviews/.gitkeep"
   ".ai/supervisor/milestone_review_template.md"
+  ".ai/supervisor/modulator_protocol.md"
   ".ai/supervisor/project_brief.md"
   ".ai/supervisor/review_checklist.md"
   ".ai/supervisor/roadmap.md"
@@ -83,6 +84,7 @@ files=(
   "scripts/human_milestone_review.py"
   "scripts/integrate_job.py"
   "scripts/list_skills.py"
+  "scripts/modulator_loop.sh"
   "scripts/prune_accepted_job_refs.py"
   "scripts/record_workflow_event.py"
   "scripts/record_workflow_improvement.py"
@@ -130,6 +132,7 @@ chmod +x \
   "$TARGET_DIR/scripts/transition_job.py" \
   "$TARGET_DIR/scripts/worker_loop.sh" \
   "$TARGET_DIR/scripts/supervisor_loop.sh" \
+  "$TARGET_DIR/scripts/modulator_loop.sh" \
   "$TARGET_DIR/scripts/human_milestone_review.py" \
   "$TARGET_DIR/scripts/list_skills.py" \
   "$TARGET_DIR/scripts/workflow_gui.py"
