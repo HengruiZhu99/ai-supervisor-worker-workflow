@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -1158,8 +1159,10 @@ def start_loop(root: Path, name: str, env_updates: dict[str, str]) -> dict:
         loop_autostart_disabled_path(root, name).unlink()
     except OSError:
         pass
+    stamped_env = dict(clean_env_updates)
+    stamped_env["_defaults_fingerprint"] = defaults_fingerprint(loop_default_env(name))
     loop_launch_env_path(root, name).write_text(
-        json.dumps(clean_env_updates, indent=2, sort_keys=True) + "\n",
+        json.dumps(stamped_env, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     log = log_file(root, name)
@@ -1198,9 +1201,26 @@ done
     return {"ok": True, "message": f"started {name}", "pid": proc.pid}
 
 
+def defaults_fingerprint(default_env: dict[str, str]) -> str:
+    payload = json.dumps(default_env, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
 def saved_loop_env(root: Path, name: str, default_env: dict[str, str]) -> dict[str, str]:
+    """Return the saved launch env only if the loop defaults are unchanged.
+
+    Saved launch envs capture user customizations from the GUI form. When the
+    workflow defaults themselves change (e.g. a wrapper/model migration), a
+    stale snapshot must not silently resurrect the old stack on auto-relaunch
+    (observed 2026-06-11: a pre-migration codex/gpt-5.5 env was replayed).
+    The env is stamped with a fingerprint of the defaults at save time; on
+    mismatch the current defaults win.
+    """
     data = read_json(loop_launch_env_path(root, name))
     if not data:
+        return default_env
+    saved_fingerprint = data.pop("_defaults_fingerprint", None)
+    if saved_fingerprint != defaults_fingerprint(default_env):
         return default_env
     return {str(key): str(value) for key, value in data.items() if str(value) != ""}
 
@@ -1226,6 +1246,14 @@ def autorelaunch_recently_attempted(root: Path, name: str, cooldown_seconds: int
     except OSError:
         return False
     return age < cooldown_seconds
+
+
+def loop_default_env(name: str) -> dict[str, str]:
+    if name == "worker_loop":
+        return worker_loop_env()
+    if name == "modulator_loop":
+        return modulator_loop_env()
+    return supervisor_loop_env()
 
 
 def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
@@ -1267,7 +1295,7 @@ def supervisor_loop_env(payload: dict | None = None) -> dict[str, str]:
         "SUPERVISOR_REASONING_EFFORT": str(payload.get("reasoning", "")),
         "SUPERVISOR_POLL_SECONDS": str(payload.get("poll_seconds", "10")),
         "SUPERVISOR_VERBOSE": "1" if payload.get("verbose", True) else "0",
-        "SUPERVISOR_EXTRA_ARGS": str(payload.get("extra_args", "")),
+        "SUPERVISOR_EXTRA_ARGS": str(payload.get("extra_args", "--force")),
         "SUPERVISOR_AUTO_RELAUNCH_FAILURE": "1",
         "SUPERVISOR_MAX_FAILURE_RELAUNCHES": str(payload.get("max_failure_relaunches", "1")),
     }
@@ -1280,7 +1308,7 @@ def modulator_loop_env(payload: dict | None = None) -> dict[str, str]:
         "MODULATOR_AGENT_WRAPPER": str(payload.get("wrapper", "cursor-agent")),
         "MODULATOR_MODEL": modulator_model,
         "MODULATOR_POLL_SECONDS": str(payload.get("poll_seconds", "30")),
-        "MODULATOR_EXTRA_ARGS": str(payload.get("extra_args", "")),
+        "MODULATOR_EXTRA_ARGS": str(payload.get("extra_args", "--force")),
         "MODULATOR_CLEARS_PRESET_BOUNDARIES": str(payload.get("clears_preset_boundaries", "0")),
     }
 
@@ -1776,10 +1804,50 @@ Hard constraints:
     }
 
 
-def workflow_chat(root: Path, message: str, history: object, allow_edits: bool, model_override: str = "") -> dict:
+def modulator_terminal_history_path(root: Path) -> Path:
+    return root / ".ai" / "modulator" / "terminal_history.jsonl"
+
+
+def append_terminal_entry(root: Path, role: str, content: str, meta: dict | None = None) -> None:
+    path = modulator_terminal_history_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "role": role,
+        "content": content,
+    }
+    if meta:
+        entry["meta"] = meta
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, sort_keys=True) + "\n")
+
+
+def load_terminal_history(root: Path, limit: int = 40) -> list[dict]:
+    path = modulator_terminal_history_path(root)
+    entries: list[dict] = []
+    if not path.exists():
+        return entries
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return entries
+    for line in lines[-limit:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries
+
+
+def modulator_terminal_chat(root: Path, message: str, model_override: str = "") -> dict:
     message = message.strip()
     if not message:
-        return {"ok": False, "message": "Enter a question for the workflow chat."}
+        return {"ok": False, "message": "Enter a message for the modulator terminal."}
     if not shutil.which("cursor-agent"):
         return {"ok": False, "message": "cursor-agent executable was not found in PATH."}
 
@@ -1788,80 +1856,65 @@ def workflow_chat(root: Path, message: str, history: object, allow_edits: bool, 
         jobs_summary = jobs_err or jobs_summary or "Unable to summarize jobs."
     _, project_status, _ = run(["git", "status", "--short"], root)
     _, project_head, _ = run(["git", "log", "--oneline", "-1"], root)
-    _, workflow_status, _ = run(["git", "status", "--short"], PACKAGE_ROOT)
-    _, workflow_head, _ = run(["git", "log", "--oneline", "-1"], PACKAGE_ROOT)
 
     job_rows = jobs(root)
     processes = process_blocks(root)
     controls = {
         "worker": control_info(root, "worker_loop"),
         "supervisor": control_info(root, "supervisor_loop"),
+        "modulator": control_info(root, "modulator_loop"),
     }
     supervisor = supervisor_state(root, job_rows)
     activity = activity_state(job_rows, processes, controls, supervisor)
     active = activity.get("active_job") or {}
 
+    modulator_dir = root / ".ai" / "modulator"
+    triage_files = sorted((modulator_dir / "triage").glob("triage.*.md")) if (modulator_dir / "triage").exists() else []
+    recent_triage = "\n\n".join(read_text(p, 8_000) for p in triage_files[-2:])
+
     context_files = [
-        ("Project AGENTS.md", read_text(root / "AGENTS.md", 35_000)),
-        ("Workflow package README.md", read_text(PACKAGE_ROOT / "README.md", 35_000)),
-        (".ai/supervisor/supervisor_protocol.md", read_text(root / ".ai" / "supervisor" / "supervisor_protocol.md", 35_000)),
-        (".ai/supervisor/roadmap.md", read_text(root / ".ai" / "supervisor" / "roadmap.md", 45_000)),
-        (".ai/supervisor/ledger.md", read_text(root / ".ai" / "supervisor" / "ledger.md", 45_000)),
+        (".ai/supervisor/modulator_protocol.md", read_text(root / ".ai" / "supervisor" / "modulator_protocol.md", 25_000)),
+        (".ai/supervisor/autonomous_boundary_policy.md", read_text(root / ".ai" / "supervisor" / "autonomous_boundary_policy.md", 25_000)),
+        (".ai/supervisor/HUMAN_REVIEW_REQUIRED.md", read_text(root / ".ai" / "supervisor" / "HUMAN_REVIEW_REQUIRED.md", 30_000)),
+        (".ai/supervisor/MODULATOR_FINDINGS.md", read_text(root / ".ai" / "supervisor" / "MODULATOR_FINDINGS.md", 20_000)),
+        ("Recent modulator triage records", recent_triage),
+        (".ai/supervisor/roadmap.md (tail)", tail(root / ".ai" / "supervisor" / "roadmap.md", 260)),
+        (".ai/supervisor/ledger.md (tail)", tail(root / ".ai" / "supervisor" / "ledger.md", 200)),
     ]
     if active.get("id"):
         job_dir = root / ".ai" / "jobs" / str(active.get("id"))
-        attempt = active.get("attempt", 0)
         context_files.extend(
             [
                 (f"{active.get('id')} status.json", json.dumps(read_json(job_dir / "status.json"), indent=2)),
-                (f"{active.get('id')} task.md", read_text(job_dir / "task.md", 30_000)),
-                (f"{active.get('id')} report.md", read_text(job_dir / "report.md", 25_000)),
-                (f"{active.get('id')} worker output", tail(job_dir / f"cursor_final.attempt-{attempt}.md", 160)),
+                (f"{active.get('id')} task.md", read_text(job_dir / "task.md", 25_000)),
             ]
         )
     context = "\n\n".join(f"## {name}\n\n{text or '(missing or empty)'}" for name, text in context_files)
 
-    if allow_edits:
-        mode_rules = f"""The user explicitly enabled edit mode for this chat.
+    history = load_terminal_history(root, limit=14)
+    history_text = compact_history(
+        [{"role": e.get("role", ""), "content": e.get("content", "")} for e in history]
+    )
 
-You may edit files if and only if the user's current message asks for a concrete workflow change.
+    prompt = f"""You are the modulator agent answering on the modulator terminal of the AI Workflow Console.
 
-Editing rules:
-- Prefer reusable workflow changes in `{PACKAGE_ROOT}` when the request is generally applicable to the AI supervisor/worker package.
-- Use the project repo `{root}` only for project-specific workflow state, wrappers, or submodule pointer updates.
-- Do not edit active job artifacts under `.ai/jobs/` unless the user explicitly asks for job-state repair.
-- Do not run `cursor-agent`, `scripts/worker_loop.sh`, or `scripts/supervisor_loop.sh`.
-- Do not stop running worker or supervisor loops unless the user explicitly asks.
-- Do not push to a remote unless the user explicitly asks.
-- If you make reusable workflow-package changes, run focused validation and commit them in the workflow package when complete.
-- If you advance the project submodule pointer, commit only that pointer/wrapper change in the project repo and do not stage active job artifacts.
-- Keep the final answer concise: what changed, validation, commits, and any manual step.
-"""
-    else:
-        mode_rules = """This chat is in read-only guidance mode.
+The human operator steers the autonomous workflow through this terminal. You have the modulator's full authority and limits (see the protocol in the context below). Treat the operator's message as coming from the project owner.
 
-Hard constraints:
-- Answer the user's question only.
-- Do not edit files.
-- Do not dispatch jobs.
-- Do not start, stop, or relaunch loops.
-- Do not update Git state.
-- If the user asks for a change, explain that they must enable "Allow this chat agent to edit workflow files" and resend the request.
-"""
+Rules for this terminal session:
+- Answer the operator's message directly and concisely. Investigate first when the question concerns workflow state, job evidence, or scientific artifacts: read files, run read-only probes, check processes.
+- If the message contains an operator DIRECTIVE that should change workflow behavior (pause or redirect dispatch, reprioritize, impose a constraint, overrule or confirm a modulator/supervisor decision, adjust validation requirements), record it durably by writing `.ai/modulator/steering/steering.<UTC timestamp>.md` containing: the verbatim operator message, your interpretation, and the concrete behavioral change. The always-on modulator loop wakes on that file and honors it. Confirm in your answer that the directive was recorded.
+- If the directive requires immediate supervisor action, also write `.ai/supervisor/MODULATOR_FINDINGS.md` (or a dated addendum) carrying the directive per the Findings Contract.
+- You may repair mechanical workflow state and manage gates exactly as the modulator protocol allows. You must not edit `src/`, `tests/`, `CMakeLists.txt`, or supervisor-owned planning files, and you must not clear preset boundary gates unless the operator explicitly instructs it in this message (operator instruction here counts as explicit human configuration).
+- Do not start or stop loops unless the operator asks.
+- Keep the final answer terse and operational: findings, actions taken, files written, recommended next step.
 
-    prompt = f"""You are a workflow-aware agent launched from the AI Workflow Console.
-
-The user wants to chat about the supervisor/worker workflow, the current run, or the reusable workflow package.
-
-{mode_rules}
-
-# User message
+# Operator message
 
 {message}
 
-# Recent chat history
+# Recent terminal history
 
-{compact_history(history)}
+{history_text}
 
 # Current activity
 
@@ -1879,15 +1932,6 @@ The user wants to chat about the supervisor/worker workflow, the current run, or
 {project_status or '(clean)'}
 ```
 
-# Workflow Package Git
-
-- Root: `{PACKAGE_ROOT}`
-- HEAD: `{workflow_head}`
-- Dirty status:
-```text
-{workflow_status or '(clean)'}
-```
-
 # Compact job table
 
 ```text
@@ -1901,30 +1945,25 @@ The user wants to chat about the supervisor/worker workflow, the current run, or
 
     model = (
         model_override.strip()
-        or os.environ.get("AI_WORKFLOW_CHAT_MODEL")
-        or os.environ.get("SUPERVISOR_MODEL")
-        or os.environ.get("CODEX_MODEL")
+        or os.environ.get("AI_WORKFLOW_TERMINAL_MODEL")
+        or os.environ.get("MODULATOR_MODEL")
         or "claude-fable-5-thinking-xhigh"
     )
-    effort = os.environ.get("AI_WORKFLOW_CHAT_REASONING_EFFORT") or "model-default"
-    timeout_seconds = max(30, env_int("AI_WORKFLOW_CHAT_TIMEOUT", 600 if allow_edits else 300))
+    timeout_seconds = max(30, env_int("AI_WORKFLOW_TERMINAL_TIMEOUT", 900))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    log_path = runs_dir(root) / f"workflow_chat_{stamp}.log"
-    sandbox = "edit" if allow_edits else "ask"
+    log_path = runs_dir(root) / f"modulator_terminal_{stamp}.log"
     args = [
         "cursor-agent",
         "-p",
         "--trust",
+        "--force",
         "--workspace",
         str(root),
         "--model",
         model,
+        prompt,
     ]
-    if allow_edits:
-        args.append("--force")
-    else:
-        args.extend(["--mode", "ask"])
-    args.append(prompt)
+    append_terminal_entry(root, "user", message)
     try:
         result = subprocess.run(
             args,
@@ -1937,12 +1976,14 @@ The user wants to chat about the supervisor/worker workflow, the current run, or
         )
     except subprocess.TimeoutExpired as exc:
         log_path.write_text(
-            f"# Workflow Chat\n\nTimed out after {timeout_seconds}s.\n\n## Mode\n\n{sandbox}\n\n## Prompt\n\n{prompt}\n\n## Partial stdout\n\n{exc.stdout or ''}\n\n## Partial stderr\n\n{exc.stderr or ''}\n",
+            f"# Modulator Terminal\n\nTimed out after {timeout_seconds}s.\n\n## Prompt\n\n{prompt}\n\n## Partial stdout\n\n{exc.stdout or ''}\n\n## Partial stderr\n\n{exc.stderr or ''}\n",
             encoding="utf-8",
         )
+        failure = f"Modulator terminal timed out after {timeout_seconds}s."
+        append_terminal_entry(root, "modulator", failure, {"ok": False, "model": model})
         return {
             "ok": False,
-            "message": f"Workflow chat timed out after {timeout_seconds}s.",
+            "message": failure,
             "log_file": str(log_path.relative_to(root)),
             "model": model,
         }
@@ -1951,11 +1992,9 @@ The user wants to chat about the supervisor/worker workflow, the current run, or
     log_path.write_text(
         "\n".join(
             [
-                "# Workflow Chat",
+                "# Modulator Terminal",
                 "",
-                f"- Mode: `{sandbox}`",
                 f"- Model: `{model}`",
-                f"- Reasoning effort: `{effort}`",
                 f"- Exit code: `{result.returncode}`",
                 "",
                 "## Prompt",
@@ -1974,21 +2013,23 @@ The user wants to chat about the supervisor/worker workflow, the current run, or
         encoding="utf-8",
     )
     if result.returncode != 0:
+        failure = (result.stderr.strip() or answer or f"Modulator terminal failed with exit code {result.returncode}")[-2000:]
+        append_terminal_entry(root, "modulator", failure, {"ok": False, "model": model, "exit_code": result.returncode})
         return {
             "ok": False,
-            "message": (result.stderr.strip() or answer or f"Workflow chat failed with exit code {result.returncode}")[-2000:],
+            "message": failure,
             "answer": answer,
             "exit_code": result.returncode,
             "log_file": str(log_path.relative_to(root)),
             "model": model,
         }
+    final_answer = answer or "(The modulator returned no text.)"
+    append_terminal_entry(root, "modulator", final_answer, {"ok": True, "model": model})
     return {
         "ok": True,
-        "answer": answer or "(The workflow agent returned no text.)",
+        "answer": final_answer,
         "model": model,
-        "reasoning_effort": effort,
         "log_file": str(log_path.relative_to(root)),
-        "mode": sandbox,
     }
 
 
@@ -2003,13 +2044,11 @@ def prune_workflow_chat_jobs() -> None:
 def start_workflow_chat_job(
     root: Path,
     message: str,
-    history: object,
-    allow_edits: bool,
     model_override: str = "",
 ) -> dict:
     message = message.strip()
     if not message:
-        return {"ok": False, "message": "Enter a question for the workflow chat."}
+        return {"ok": False, "message": "Enter a message for the modulator terminal."}
     prune_workflow_chat_jobs()
     chat_id = uuid4().hex
     created_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -2020,14 +2059,13 @@ def start_workflow_chat_job(
             "state": "running",
             "created_at": created_at,
             "created_monotonic": time.time(),
-            "allow_edits": allow_edits,
         }
 
     def run_chat() -> None:
         try:
-            result = workflow_chat(root, message, history, allow_edits, model_override)
+            result = modulator_terminal_chat(root, message, model_override)
         except Exception as exc:  # Keep API responses JSON even on unexpected agent failure.
-            result = {"ok": False, "message": f"Workflow chat failed before completion: {exc}"}
+            result = {"ok": False, "message": f"Modulator terminal failed before completion: {exc}"}
         with WORKFLOW_CHAT_JOBS_LOCK:
             current = WORKFLOW_CHAT_JOBS.get(chat_id, {})
             current.update(
@@ -2039,8 +2077,8 @@ def start_workflow_chat_job(
             )
             WORKFLOW_CHAT_JOBS[chat_id] = current
 
-    threading.Thread(target=run_chat, name=f"workflow-chat-{chat_id[:8]}", daemon=True).start()
-    return {"ok": True, "state": "running", "chat_id": chat_id, "message": "Workflow chat started."}
+    threading.Thread(target=run_chat, name=f"modulator-terminal-{chat_id[:8]}", daemon=True).start()
+    return {"ok": True, "state": "running", "chat_id": chat_id, "message": "Modulator terminal request started."}
 
 
 def workflow_chat_result(chat_id: str) -> dict:
@@ -2344,11 +2382,15 @@ class Handler(SimpleHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 pass
             return
-        if parsed.path == "/api/workflow-chat-result":
+        if parsed.path == "/api/modulator-terminal-result":
             query = parse_qs(parsed.query)
             chat_id = (query.get("id") or [""])[0]
             result = workflow_chat_result(chat_id)
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.NOT_FOUND, result)
+            return
+        if parsed.path == "/api/modulator-terminal-history":
+            history = load_terminal_history(self.project_root, limit=60)
+            json_response(self, HTTPStatus.OK, {"ok": True, "history": history})
             return
         if parsed.path.startswith("/api/"):
             json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "message": f"unknown endpoint: {parsed.path}"})
@@ -2418,12 +2460,10 @@ class Handler(SimpleHTTPRequestHandler):
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return
 
-        if parsed.path == "/api/workflow-chat":
+        if parsed.path == "/api/modulator-terminal":
             result = start_workflow_chat_job(
                 self.project_root,
                 str(payload.get("message", "")),
-                payload.get("history", []),
-                bool(payload.get("allow_edits", False)),
                 str(payload.get("model", "")),
             )
             json_response(self, HTTPStatus.ACCEPTED if result.get("ok") else HTTPStatus.BAD_REQUEST, result)

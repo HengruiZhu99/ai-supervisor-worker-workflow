@@ -61,7 +61,7 @@ external/ai-supervisor-worker-workflow/install.sh .
 
 ## Modulator Loop
 
-`scripts/modulator_loop.sh` runs an always-on watchdog/steering agent (default `cursor-agent` with `claude-fable-5-thinking-xhigh`). It polls workflow state and wakes an agent run when a human review gate opens, `SUPERVISOR_ACTION_REQUIRED` appears, a job lands in `review_failed`/`review_timeout`, a job accumulates repeated rejections, a worker/supervisor loop dies with pending work, or a milestone closure is recorded in the ledger. For technical blockers it may diagnose the root cause, write `.ai/supervisor/MODULATOR_FINDINGS.md` with a corrective directive, and clear the gate so the supervisor dispatches the fix without waiting for a human; preset boundary and scope/science gates stay human unless `MODULATOR_CLEARS_PRESET_BOUNDARIES=1`. See `.ai/supervisor/modulator_protocol.md` for the full authority policy.
+`scripts/modulator_loop.sh` runs an always-on watchdog/steering agent (default `cursor-agent` with `claude-fable-5-thinking-xhigh`). It polls workflow state and wakes an agent run when a human review gate opens, `SUPERVISOR_ACTION_REQUIRED` appears, a job lands in `review_failed`/`review_timeout`, a job accumulates repeated rejections, a worker/supervisor loop dies with pending work, an alive worker loop stalls without log progress for `MODULATOR_STALL_MINUTES` (default 30), `MODULATOR_AUDIT_EVERY_ACCEPTED` (default 3) new jobs are accepted since the last audit, a milestone closure is recorded in the ledger, or a human steering directive arrives from the GUI modulator terminal. The modulator owns all failure handling between preset boundary gates: it diagnoses technical blockers, writes `.ai/supervisor/MODULATOR_FINDINGS.md` with corrective directives, clears non-preset gates, and decides non-preset scope/architecture/convention questions itself with decision records under `.ai/modulator/decisions/`. Only preset boundary gates stay human unless `MODULATOR_CLEARS_PRESET_BOUNDARIES=1`. See `.ai/supervisor/modulator_protocol.md` for the full authority policy.
 
 ```bash
 MODULATOR_MODEL=claude-fable-5-thinking-xhigh ./scripts/modulator_loop.sh
@@ -112,14 +112,14 @@ The dashboard includes:
 - bounded live worker/supervisor loop log panes
 - project worktree and expandable file-tree views
 - click-to-open files through the system default opener on Ubuntu
-- an always-available Workflow Chat in Project Overview for workflow questions, current-run diagnosis, and explicitly enabled workflow edits
+- an embedded Modulator Terminal in Project Overview: a persistent steering channel to the modulator agent for run questions, investigations, and binding operator directives (recorded under `.ai/modulator/steering/` and honored by the always-on modulator loop)
 - an interactive human milestone review checklist that routes failed review items back through the supervisor
 - a read-only "Ask Supervisor" chat inside the human milestone review panel for questions before submitting the checklist
 
 Loops launched from the dashboard are wrapped with a small crash relaunch guard. The default is three process-level restarts; adjust with `AI_WORKFLOW_LOOP_MAX_RESTARTS` and `AI_WORKFLOW_LOOP_RESTART_DELAY`.
 After a successful human-review submission through the dashboard or `scripts/human_milestone_review.py`, the workflow automatically starts the supervisor and worker loops if either is offline. It also pushes the current branch to `origin` by default after recording the human review. Disable that push with `AI_WORKFLOW_PUSH_AFTER_HUMAN_REVIEW=0`, or choose a different target with `AI_WORKFLOW_PUSH_REMOTE` and `AI_WORKFLOW_PUSH_BRANCH`.
 
-Workflow Chat defaults to read-only guidance. To let the chat agent edit workflow files, enable "Allow this chat agent to edit workflow files" before sending the request. Edit mode is intended for workflow maintenance, not scientific implementation jobs; it should not run Cursor, start loops, or modify active job artifacts unless explicitly requested.
+The Modulator Terminal answers with the modulator's full authority and limits: it investigates with read-only probes, repairs mechanical workflow state, and records operator directives as durable steering files that the always-on loop wakes on and honors. Conversation history persists in `.ai/modulator/terminal_history.jsonl`. It must not edit scientific code or supervisor-owned planning files, and it does not clear preset boundary gates unless the operator explicitly instructs it.
 
 If the human review marks a major structural change, implementation pauses and `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` is created. The supervisor, not a worker job, updates the milestone plan and creates a fresh `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` gate summarizing what changed and what the next small worker jobs should be. The supervisor stops at that second gate until the revised plan is approved.
 

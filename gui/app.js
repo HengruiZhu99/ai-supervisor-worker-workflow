@@ -6,10 +6,11 @@ const state = {
   supervisorChatSignature: "",
   supervisorChatHistory: [],
   supervisorChatBusy: false,
-  workflowChatHistory: [],
-  workflowChatBusy: false,
-  workflowChatRenderSignature: "",
-  workflowChatAtBottom: true,
+  modulatorTerminalHistory: [],
+  modulatorTerminalBusy: false,
+  modulatorTerminalRenderSignature: "",
+  modulatorTerminalAtBottom: true,
+  modulatorTerminalHistoryLoaded: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -102,13 +103,28 @@ function delay(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-async function pollWorkflowChat(chatId) {
+async function pollModulatorTerminal(chatId) {
   for (let attempt = 0; attempt < 720; attempt += 1) {
-    const result = await getJson(`/api/workflow-chat-result?id=${encodeURIComponent(chatId)}`);
+    const result = await getJson(`/api/modulator-terminal-result?id=${encodeURIComponent(chatId)}`);
     if (result.state === "done") return result;
     await delay(2000);
   }
-  throw new Error("Workflow chat is still running after 24 minutes; check the workflow chat log.");
+  throw new Error("Modulator terminal is still running after 24 minutes; check the terminal log.");
+}
+
+async function loadModulatorTerminalHistory() {
+  if (state.modulatorTerminalHistoryLoaded) return;
+  try {
+    const result = await getJson("/api/modulator-terminal-history");
+    state.modulatorTerminalHistory = (result.history || []).map((entry) => ({
+      role: entry.role === "user" ? "user" : "modulator",
+      content: entry.content || "",
+    }));
+    state.modulatorTerminalHistoryLoaded = true;
+    renderModulatorTerminal({ force: true });
+  } catch (error) {
+    console.error("modulator terminal history load failed", error);
+  }
 }
 
 function formValues(form) {
@@ -241,32 +257,32 @@ function renderSupervisorChat() {
   }
 }
 
-function renderWorkflowChat(options = {}) {
-  const log = $("workflowChatLog");
-  const meta = $("workflowChatMeta");
+function renderModulatorTerminal(options = {}) {
+  const log = $("modulatorTerminalLog");
+  const meta = $("modulatorTerminalMeta");
   if (!log) return;
-  const metaText = state.workflowChatBusy
+  const metaText = state.modulatorTerminalBusy
     ? "Working..."
-    : (meta?.dataset.last || "Read-only guidance");
+    : (meta?.dataset.last || "Steering channel");
   const signature = JSON.stringify({
-    history: state.workflowChatHistory,
-    busy: state.workflowChatBusy,
+    history: state.modulatorTerminalHistory,
+    busy: state.modulatorTerminalBusy,
     meta: metaText,
   });
-  if (!options.force && signature === state.workflowChatRenderSignature) {
+  if (!options.force && signature === state.modulatorTerminalRenderSignature) {
     if (meta) meta.textContent = metaText;
     return;
   }
 
-  const shouldStickToBottom = state.workflowChatAtBottom || isNearBottom(log);
+  const shouldStickToBottom = state.modulatorTerminalAtBottom || isNearBottom(log);
   const previousScrollTop = log.scrollTop;
   const previousScrollHeight = log.scrollHeight;
-  if (!state.workflowChatHistory.length) {
-    log.innerHTML = '<div class="chat-empty">Ask about the workflow, current run, or request a workflow edit.</div>';
+  if (!state.modulatorTerminalHistory.length) {
+    log.innerHTML = '<div class="chat-empty">Ask the modulator about the run, or issue a steering directive. Directives are recorded under .ai/modulator/steering/ and honored by the always-on loop.</div>';
   } else {
-    log.innerHTML = state.workflowChatHistory.map((message) => `
+    log.innerHTML = state.modulatorTerminalHistory.map((message) => `
       <div class="chat-message ${message.role === "user" ? "user" : "assistant"}">
-        <span class="role">${message.role === "user" ? "You" : "Workflow Agent"}</span>
+        <span class="role">${message.role === "user" ? "You" : "Modulator"}</span>
         ${escapeHtml(message.content || "")}
       </div>
     `).join("");
@@ -279,8 +295,8 @@ function renderWorkflowChat(options = {}) {
   if (meta) {
     meta.textContent = metaText;
   }
-  state.workflowChatAtBottom = isNearBottom(log);
-  state.workflowChatRenderSignature = signature;
+  state.modulatorTerminalAtBottom = isNearBottom(log);
+  state.modulatorTerminalRenderSignature = signature;
 }
 
 function renderJobs(jobs, data) {
@@ -565,7 +581,7 @@ function render(data, options = {}) {
     renderTree(data.tree);
   }
   renderHumanReview(data.supervisor);
-  renderWorkflowChat();
+  renderModulatorTerminal();
 }
 
 async function refresh(options = {}) {
@@ -707,73 +723,68 @@ $("supervisorChatInput").addEventListener("keydown", (event) => {
   event.preventDefault();
   $("supervisorChatForm").requestSubmit();
 });
-$("workflowChatForm").addEventListener("submit", async (event) => {
+$("modulatorTerminalForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const input = $("workflowChatInput");
+  const input = $("modulatorTerminalInput");
   const message = input.value.trim();
-  if (!message || state.workflowChatBusy) return;
+  if (!message || state.modulatorTerminalBusy) return;
 
-  const allowEdits = $("workflowChatAllowEdits")?.checked || false;
-  state.workflowChatHistory.push({ role: "user", content: message });
+  state.modulatorTerminalHistory.push({ role: "user", content: message });
   input.value = "";
-  state.workflowChatBusy = true;
-  state.workflowChatAtBottom = true;
-  $("workflowChatMeta").dataset.last = allowEdits ? "Edit mode" : "Read-only guidance";
-  renderWorkflowChat({ force: true });
+  state.modulatorTerminalBusy = true;
+  state.modulatorTerminalAtBottom = true;
+  $("modulatorTerminalMeta").dataset.last = "Steering channel";
+  renderModulatorTerminal({ force: true });
 
   try {
-    const started = await postJson("/api/workflow-chat", {
+    const started = await postJson("/api/modulator-terminal", {
       message,
-      history: state.workflowChatHistory.slice(-12),
-      allow_edits: allowEdits,
-      model: $("workflowChatModel")?.value || "",
+      model: $("modulatorTerminalModel")?.value || "",
     });
-    $("workflowChatMeta").dataset.last = [
-      allowEdits ? "Edit mode" : "Read-only guidance",
-      started.chat_id ? `job ${started.chat_id.slice(0, 8)}` : "working",
-    ].filter(Boolean).join(" · ");
-    renderWorkflowChat({ force: true });
+    $("modulatorTerminalMeta").dataset.last = started.chat_id
+      ? `working · ${started.chat_id.slice(0, 8)}`
+      : "working";
+    renderModulatorTerminal({ force: true });
     const result = started.state === "running" && started.chat_id
-      ? await pollWorkflowChat(started.chat_id)
+      ? await pollModulatorTerminal(started.chat_id)
       : started;
-    state.workflowChatHistory.push({
-      role: "assistant",
+    state.modulatorTerminalHistory.push({
+      role: "modulator",
       content: result.answer || result.message || "(No answer returned.)",
     });
-    $("workflowChatMeta").dataset.last = [
-      allowEdits ? "Edit mode" : "Read-only guidance",
+    $("modulatorTerminalMeta").dataset.last = [
       result.model ? result.model : "",
       result.log_file ? result.log_file : "",
-    ].filter(Boolean).join(" · ");
+    ].filter(Boolean).join(" · ") || "Steering channel";
     await refresh({ refreshStaticPanels: true });
   } catch (error) {
-    state.workflowChatHistory.push({
-      role: "assistant",
-      content: `Workflow chat failed: ${error.message}`,
+    state.modulatorTerminalHistory.push({
+      role: "modulator",
+      content: `Modulator terminal failed: ${error.message}`,
     });
-    $("workflowChatMeta").dataset.last = allowEdits ? "Edit mode" : "Read-only guidance";
+    $("modulatorTerminalMeta").dataset.last = "Steering channel";
   } finally {
-    state.workflowChatBusy = false;
-    renderWorkflowChat({ force: true });
+    state.modulatorTerminalBusy = false;
+    renderModulatorTerminal({ force: true });
   }
 });
-$("clearWorkflowChatButton").addEventListener("click", () => {
-  state.workflowChatHistory = [];
-  state.workflowChatAtBottom = true;
-  $("workflowChatMeta").dataset.last = "Read-only guidance";
-  renderWorkflowChat({ force: true });
+$("clearModulatorTerminalButton").addEventListener("click", () => {
+  state.modulatorTerminalHistory = [];
+  state.modulatorTerminalAtBottom = true;
+  $("modulatorTerminalMeta").dataset.last = "Steering channel";
+  renderModulatorTerminal({ force: true });
 });
-$("workflowChatInput").addEventListener("keydown", (event) => {
+$("modulatorTerminalInput").addEventListener("keydown", (event) => {
   if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
     return;
   }
   event.preventDefault();
-  $("workflowChatForm").requestSubmit();
+  $("modulatorTerminalForm").requestSubmit();
 });
-const workflowChatLog = $("workflowChatLog");
-if (workflowChatLog) {
-  workflowChatLog.addEventListener("scroll", () => {
-    state.workflowChatAtBottom = isNearBottom(workflowChatLog);
+const modulatorTerminalLog = $("modulatorTerminalLog");
+if (modulatorTerminalLog) {
+  modulatorTerminalLog.addEventListener("scroll", () => {
+    state.modulatorTerminalAtBottom = isNearBottom(modulatorTerminalLog);
   });
 }
 refresh({ refreshStaticPanels: true }).catch((error) => {
@@ -781,4 +792,5 @@ refresh({ refreshStaticPanels: true }).catch((error) => {
   $("healthPill").className = "health gate";
   $("supervisorLoopLog").textContent = error.stack || String(error);
 });
+loadModulatorTerminalHistory().catch(console.error);
 state.timer = setInterval(() => refresh({ refreshStaticPanels: false }).catch(console.error), 5000);
