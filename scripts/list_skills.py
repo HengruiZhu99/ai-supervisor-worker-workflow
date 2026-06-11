@@ -48,7 +48,11 @@ def iter_skill_files(root: Path, base: Path) -> list[Path]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--include-system", action="store_true", help="include the user's ~/.codex skills when available")
+    parser.add_argument(
+        "--include-system",
+        action="store_true",
+        help="include the user's ~/.cursor and ~/.codex skills when available",
+    )
     args = parser.parse_args()
 
     root = git_root()
@@ -58,6 +62,7 @@ def main() -> int:
         ("workflow-installed", root, Path("skills")),
     ]
     if args.include_system:
+        locations.append(("cursor-user", Path.home() / ".cursor", Path("skills")))
         locations.append(("codex-user", Path.home() / ".codex", Path("skills")))
 
     seen: set[Path] = set()

@@ -163,7 +163,7 @@ def parse_codex_tokens(text: str) -> dict[str, int | None]:
     if match:
         total_tokens = int(match.group(1).replace(",", ""))
 
-    # Leave room for future Codex CLI formats without guessing split fields.
+    # Leave room for future CLI formats without guessing split fields.
     return {
         "input_tokens": None,
         "output_tokens": None,
@@ -173,7 +173,8 @@ def parse_codex_tokens(text: str) -> dict[str, int | None]:
     }
 
 
-def codex_metrics(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+def plain_log_metrics(args: argparse.Namespace, root: Path, agent: str) -> dict[str, Any]:
+    """Metrics for any agent run captured as a plain text log (no stream-json)."""
     log_text = ""
     log_path = root / args.log if args.log else None
     if log_path:
@@ -185,7 +186,7 @@ def codex_metrics(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     finished_at = iso_or_now(args.finished_at)
     return {
         "schema_version": 1,
-        "agent": "codex",
+        "agent": agent,
         "role": args.role,
         "reviewer_role": None,
         "job_id": args.job_id or None,
@@ -200,6 +201,10 @@ def codex_metrics(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "log_path": args.log or None,
         **parse_codex_tokens(log_text),
     }
+
+
+def codex_metrics(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    return plain_log_metrics(args, root, "codex")
 
 
 def write_metrics(root: Path, metrics: dict[str, Any], output: str | None) -> Path:
@@ -255,10 +260,28 @@ def main() -> int:
     codex.add_argument("--exit-code", type=int, required=True)
     codex.add_argument("--output", default="")
 
+    plain = subparsers.add_parser(
+        "plain", help="plain-text log metrics for any agent wrapper (cursor-agent supervisor/modulator runs)"
+    )
+    plain.add_argument("--agent", default="cursor-agent")
+    plain.add_argument("--role", default="supervisor")
+    plain.add_argument("--run-id", default="")
+    plain.add_argument("--job-id", default="")
+    plain.add_argument("--attempt", type=int)
+    plain.add_argument("--model", default="")
+    plain.add_argument("--reasoning-effort", default="")
+    plain.add_argument("--log", required=True)
+    plain.add_argument("--started-at", default="")
+    plain.add_argument("--finished-at", default="")
+    plain.add_argument("--exit-code", type=int, required=True)
+    plain.add_argument("--output", default="")
+
     args = parser.parse_args()
     root = git_root()
     if args.kind == "cursor":
         metrics = cursor_metrics(args, root)
+    elif args.kind == "plain":
+        metrics = plain_log_metrics(args, root, args.agent)
     else:
         metrics = codex_metrics(args, root)
     out_path = write_metrics(root, metrics, args.output)

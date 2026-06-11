@@ -68,6 +68,12 @@ def normalize_cursor_model(model: str) -> str:
         return "gpt-5.5-high"
     if model == "gpt-5.3-codex":
         return "gpt-5.3-codex-high"
+    if model == "claude-opus-4.8-thinking-high":
+        return "claude-opus-4-8-thinking-high"
+    if model in {"fable", "fable-high", "fable-1m-high"}:
+        return "claude-fable-5-thinking-high"
+    if model in {"fable-xhigh", "fable-1m-xhigh", "fable-extra-high"}:
+        return "claude-fable-5-thinking-xhigh"
     return model
 
 
@@ -178,7 +184,11 @@ def main() -> int:
     list_parser.set_defaults(func=cmd_list)
 
     run_parser = subparsers.add_parser("run", help="run an agent wrapper")
-    run_parser.add_argument("--role", required=True, choices=["worker", "reviewer", "supervisor", "chat"])
+    run_parser.add_argument(
+        "--role",
+        required=True,
+        choices=["worker", "reviewer", "supervisor", "modulator", "chat"],
+    )
     run_parser.add_argument("--wrapper", required=True)
     run_parser.add_argument("--model", default="")
     run_parser.add_argument("--workspace", required=True)

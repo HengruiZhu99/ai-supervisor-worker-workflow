@@ -3,9 +3,9 @@
 This repository contains a reusable filesystem-based AI supervisor/worker workflow for scientific coding projects.
 
 It provides:
-- Codex supervisor protocol and review templates
+- supervisor protocol and review templates
 - Cursor worker loop
-- optional Codex supervisor automation loop
+- optional supervisor automation loop and always-on modulator watchdog loop
 - local browser dashboard for jobs, worker/supervisor state, worktrees, roadmap, and project status
 - automatic pruning of accepted job worktrees and local branches after human milestone approval
 - separate workflow-state commits for `.ai` audit records after supervisor or human-review updates
@@ -59,11 +59,20 @@ Then install or update the workflow files from the submodule:
 external/ai-supervisor-worker-workflow/install.sh .
 ```
 
+## Modulator Loop
+
+`scripts/modulator_loop.sh` runs an always-on watchdog/steering agent (default `cursor-agent` with `claude-fable-5-thinking-xhigh`). It polls workflow state and wakes an agent run when a human review gate opens, `SUPERVISOR_ACTION_REQUIRED` appears, a job lands in `review_failed`/`review_timeout`, a job accumulates repeated rejections, a worker/supervisor loop dies with pending work, or a milestone closure is recorded in the ledger. For technical blockers it may diagnose the root cause, write `.ai/supervisor/MODULATOR_FINDINGS.md` with a corrective directive, and clear the gate so the supervisor dispatches the fix without waiting for a human; preset boundary and scope/science gates stay human unless `MODULATOR_CLEARS_PRESET_BOUNDARIES=1`. See `.ai/supervisor/modulator_protocol.md` for the full authority policy.
+
+```bash
+MODULATOR_MODEL=claude-fable-5-thinking-xhigh ./scripts/modulator_loop.sh
+```
+
 ## Validation
 
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
+bash -n scripts/modulator_loop.sh
 python3 -m py_compile scripts/agent_wrapper.py scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/summarize_progress_accounting.py scripts/check_job_progress_gate.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/human_milestone_review.py scripts/list_skills.py scripts/prune_accepted_job_refs.py scripts/workflow_gui.py
 python3 scripts/test_check_job_progress_gate.py
 python3 scripts/test_update_job_status.py
@@ -112,7 +121,7 @@ After a successful human-review submission through the dashboard or `scripts/hum
 
 Workflow Chat defaults to read-only guidance. To let the chat agent edit workflow files, enable "Allow this chat agent to edit workflow files" before sending the request. Edit mode is intended for workflow maintenance, not scientific implementation jobs; it should not run Cursor, start loops, or modify active job artifacts unless explicitly requested.
 
-If the human review marks a major structural change, implementation pauses and `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` is created. The Codex supervisor, not a worker job, updates the milestone plan and creates a fresh `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` gate summarizing what changed and what the next small worker jobs should be. The supervisor stops at that second gate until the revised plan is approved.
+If the human review marks a major structural change, implementation pauses and `.ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md` is created. The supervisor, not a worker job, updates the milestone plan and creates a fresh `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` gate summarizing what changed and what the next small worker jobs should be. The supervisor stops at that second gate until the revised plan is approved.
 
 If ordinary checklist items fail, implementation also pauses and `.ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md` is created. The supervisor reads the failed review items first, then creates a small worker revision job, splits the concerns, updates planning records, or asks for clarification.
 
@@ -175,7 +184,7 @@ python3 scripts/integrate_job.py JNNNN --apply
 
 The guard checks immutable `base_sha`, the task progress gate, stored progress fields, reviewer completion, tests, post-test cleanliness, and attempt consistency before merging the worker branch.
 
-The worker loop normalizes common accidental Codex-style Cursor model ids, for example `gpt-5.5` to `gpt-5.5-high`, before invoking `cursor-agent`. If Cursor returns nonzero after emitting `[system success]`, tests pass, and the post-test worktree is clean, the attempt proceeds to reviewer review while recording the nonzero exit in `status.json`.
+The worker loop normalizes common model-id aliases, for example `gpt-5.5` to `gpt-5.5-high` and `fable-xhigh` to `claude-fable-5-thinking-xhigh`, before invoking `cursor-agent`. If Cursor returns nonzero after emitting `[system success]`, tests pass, and the post-test worktree is clean, the attempt proceeds to reviewer review while recording the nonzero exit in `status.json`.
 
 Agent wrappers are isolated under `agent_wrappers/<wrapper-id>/wrapper.json` and invoked through `scripts/agent_wrapper.py`. List available wrappers with:
 
@@ -183,7 +192,7 @@ Agent wrappers are isolated under `agent_wrappers/<wrapper-id>/wrapper.json` and
 python3 scripts/agent_wrapper.py list --json
 ```
 
-The built-in wrappers are role-neutral: `cursor-agent` is recommended for worker/reviewer roles, and `codex` is recommended for supervisor/chat roles, but the dashboard can select either wrapper for any role. A future wrapper such as Claude Code can be added by creating a new wrapper directory with `wrapper.json` and either adding a built-in runner to `scripts/agent_wrapper.py` or providing a `command` template in the JSON file.
+The built-in wrappers are role-neutral: `cursor-agent` is the default and recommended wrapper for all roles (worker, reviewer, supervisor, modulator, chat); the legacy `codex` wrapper remains available by explicit opt-in. Default models are `claude-fable-5-thinking-xhigh` for supervisor/modulator/chat and `claude-fable-5-thinking-high` for the worker. A future wrapper such as Claude Code can be added by creating a new wrapper directory with `wrapper.json` and either adding a built-in runner to `scripts/agent_wrapper.py` or providing a `command` template in the JSON file.
 
 If an older workflow leaves a completed attempt in a blocked state before reviewers run, set the job state to `implemented`; the worker loop will run only the reviewer stage for the existing `base_sha..commit` attempt and then move the job to `ready_for_review`, `review_failed`, or `review_timeout`.
 
@@ -197,7 +206,7 @@ Project-specific skills belong in the project `skills/` directory. Generally reu
 
 Supervisor, worker, and reviewer prompts include the skill index generated by
 `python3 scripts/list_skills.py`. This makes project skills and reusable
-workflow skills visible to both Codex and Cursor; agents still need to open the
+workflow skills visible to all workflow agents; agents still need to open the
 listed `SKILL.md` file before applying a skill.
 
 The supervisor may also create or update skills from repeated failure artifacts

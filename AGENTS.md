@@ -1,14 +1,14 @@
 # AI Supervisor/Worker Workflow
 
-This repository uses a two-role AI coding workflow for scientific software development.
+This repository uses a multi-role AI coding workflow for scientific software development.
 
 ## Roles
 
-Agent wrappers are selected independently from model names. Built-in wrappers are `cursor-agent` for worker/reviewer roles and `codex` for supervisor/chat roles. Wrapper metadata lives under `agent_wrappers/<wrapper-id>/wrapper.json`; new wrappers should extend that registry instead of hard-coding commands directly in the workflow loops.
+Agent wrappers are selected independently from model names. The default wrapper for every role (worker, reviewer, supervisor, modulator, chat) is `cursor-agent`. Default models are Fable 1M extra high (`claude-fable-5-thinking-xhigh`) for the supervisor, modulator, and chat roles, and Fable 1M high (`claude-fable-5-thinking-high`) for the worker. The legacy `codex` wrapper remains in the registry for explicit opt-in only. Wrapper metadata lives under `agent_wrappers/<wrapper-id>/wrapper.json`; new wrappers should extend that registry instead of hard-coding commands directly in the workflow loops.
 
-### Codex supervisor
+### Cursor supervisor
 
-Codex acts as the supervisor and reviewer.
+The supervisor agent (Cursor agent running Fable) acts as the supervisor and final reviewer.
 
 Responsibilities:
 - Read the detailed design prompt in `.ai/supervisor/design_prompt.md`.
@@ -33,9 +33,21 @@ Responsibilities:
 - Avoid polling while waiting for the worker.
 - Avoid implementing worker jobs directly unless explicitly instructed by the user.
 
-In milestone-gated autonomous mode, Codex may review completed jobs, accept or reject them, update the ledger, and dispatch the next small job without human input until the current milestone is complete or blocked. Human input is required at milestone boundaries, for scope changes, and for unresolved scientific or engineering decisions.
+In milestone-gated autonomous mode, the supervisor may review completed jobs, accept or reject them, update the ledger, and dispatch the next small job without human input until the current milestone is complete or blocked. Human input is required at milestone boundaries, for scope changes, and for unresolved scientific or engineering decisions.
 
-When a human milestone review requests a major structural change, Codex should treat the response as a supervisor-owned planning revision. Codex should update the roadmap, project brief, ledger, and related architecture documents itself, then create a new human review gate summarizing the changed milestones and proposed next worker jobs. Codex should not continue implementation until that revised plan is approved. Do not dispatch a Cursor worker job whose purpose is to revise the roadmap, project brief, ledger, or milestone sequence.
+When a human milestone review requests a major structural change, the supervisor should treat the response as a supervisor-owned planning revision. The supervisor should update the roadmap, project brief, ledger, and related architecture documents itself, then create a new human review gate summarizing the changed milestones and proposed next worker jobs. The supervisor should not continue implementation until that revised plan is approved. Do not dispatch a worker job whose purpose is to revise the roadmap, project brief, ledger, or milestone sequence.
+
+### Modulator
+
+The modulator is an always-on watchdog/steering agent (Cursor agent running Fable 1M extra high) launched by `scripts/modulator_loop.sh`. Its protocol lives in `.ai/supervisor/modulator_protocol.md` and its state under `.ai/modulator/`.
+
+Responsibilities:
+- Wake when something goes wrong in the workflow: an open human review gate, a `SUPERVISOR_ACTION_REQUIRED` request, `review_failed`/`review_timeout` job states, repeated rejected attempts on one job, or dead worker/supervisor loops with pending work.
+- Independently investigate technical blockers behind human gates (read job artifacts, diffs, logs; run read-only reproduction probes). When it diagnoses a concrete code/configuration bug with verifiable evidence, it writes `.ai/supervisor/MODULATOR_FINDINGS.md` with a corrective directive, archives the gate with a modulator-decision record, and lets the supervisor dispatch the corrective job, so technical blockers do not stall on human input.
+- Audit progress per milestone closure: compare accepted evidence against the design target, run progress accounting, and flag drift such as proxy evidence labeled as real capability evidence or repeated audit-only job chains.
+- Restart dead worker/supervisor loops when actionable work remains.
+- Never clear preset boundary gates or scope/science decision gates unless `MODULATOR_CLEARS_PRESET_BOUNDARIES=1` is explicitly configured.
+- Never implement scientific project code, accept/reject jobs, or edit supervisor-owned planning files other than its own findings/audit records.
 
 ### Cursor worker
 
@@ -51,7 +63,7 @@ Responsibilities:
 - For each commit or attempt, record a documentation summary under `.ai/commit_docs/`.
 - Never mark its own work as accepted.
 - Never broaden scope without supervisor approval.
-- Never directly edit supervisor-owned planning files such as `.ai/supervisor/roadmap.md`, `.ai/supervisor/project_brief.md`, or `.ai/supervisor/ledger.md`; if roadmap or milestone changes appear necessary, propose them in the worker report for Codex to handle.
+- Never directly edit supervisor-owned planning files such as `.ai/supervisor/roadmap.md`, `.ai/supervisor/project_brief.md`, or `.ai/supervisor/ledger.md`; if roadmap or milestone changes appear necessary, propose them in the worker report for the supervisor to handle.
 
 ### Cursor reviewers
 
@@ -59,7 +71,7 @@ When enabled, two read-only Cursor reviewer passes run after a worker attempt:
 - Reviewer A checks scientific/numerical correctness, assumptions, tolerances, edge cases, and validation evidence.
 - Reviewer B checks build/code quality, Kokkos/MPI/OpenMP/SYCL portability, memory layout, tests, and maintainability.
 
-Reviewer reports are advisory inputs to Codex. Reviewers do not accept work, reject work, or modify files.
+Reviewer reports are advisory inputs to the supervisor. Reviewers do not accept work, reject work, or modify files.
 
 Reviewers should inspect the actual diff comprehensively, not rely on the worker report. Their report should list the changed files reviewed and explicitly state whether the full diff was covered. If the full diff is too large to inspect end to end, reviewers should recommend splitting or revision rather than acceptance.
 
@@ -77,15 +89,15 @@ review_decision:
   blocking_reasons: []
 ```
 
-If either reviewer sets `blocks_acceptance: true`, the job should not become supervisor-ready for acceptance until Codex has reviewed the concern and either rejects the job with feedback or explicitly waives the concern with rationale.
+If either reviewer sets `blocks_acceptance: true`, the job should not become supervisor-ready for acceptance until the supervisor has reviewed the concern and either rejects the job with feedback or explicitly waives the concern with rationale.
 
 Reviewers should also assess any worker skill suggestions: whether they would avoid real duplication, whether they duplicate existing skills, and whether they should be project-specific or generally reusable.
 
 ### Skill stewardship
 
-Codex owns skill creation decisions. Before creating a skill, Codex should list existing skills, compare triggers and checklists for overlap, and reject suggestions that are too narrow or already covered. Project-specific skills belong in this repository under `skills/`. Generally reusable scientific-coding workflow skills belong in the reusable workflow package under `external/ai-supervisor-worker-workflow/skills/` and should be committed and pushed there before updating the submodule pointer.
+The supervisor owns skill creation decisions. Before creating a skill, the supervisor should list existing skills, compare triggers and checklists for overlap, and reject suggestions that are too narrow or already covered. Project-specific skills belong in this repository under `skills/`. Generally reusable scientific-coding workflow skills belong in the reusable workflow package under `external/ai-supervisor-worker-workflow/skills/` and should be committed and pushed there before updating the submodule pointer.
 
-Skills must be discoverable by both Codex and Cursor. The supervisor loop and
+Skills must be discoverable by all workflow agents. The supervisor loop and
 worker loop should include the `python3 scripts/list_skills.py` output in their
 agent prompts, and agents should read the listed `SKILL.md` file before applying
 a relevant skill. Do not assume repository skills are automatically loaded by an
@@ -116,7 +128,7 @@ agent runtime.
 - Worker jobs store both `base_ref` and immutable `base_sha`; diffs and reviews should use `base_sha..HEAD`.
 - Use `superseded` or `cancelled` for terminal jobs that must not be retried. Use `rejected` only when the worker should retry with feedback.
 - Each worker attempt should produce a commit documentation file under `.ai/commit_docs/`.
-- Human reviewers do not need to inspect every worker commit during milestone-gated autonomous mode; Codex reviews commit documentation per job and presents a milestone summary for human review.
+- Human reviewers do not need to inspect every worker commit during milestone-gated autonomous mode; the supervisor reviews commit documentation per job and presents a milestone summary for human review.
 - Commit documentation should include:
   - job id
   - attempt number

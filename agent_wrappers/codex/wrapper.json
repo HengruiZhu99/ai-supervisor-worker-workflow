@@ -1,9 +1,9 @@
 {
   "id": "codex",
   "label": "Codex CLI",
-  "description": "Use codex exec for worker, reviewer, supervisor, or workflow-chat roles.",
+  "description": "Legacy wrapper. The workflow defaults to cursor-agent for all roles; use codex exec only by explicit opt-in.",
   "roles": ["worker", "reviewer", "supervisor", "chat"],
-  "recommended_roles": ["supervisor", "chat"],
+  "recommended_roles": [],
   "executable": "codex",
   "default_models": {
     "worker": "gpt-5.5",

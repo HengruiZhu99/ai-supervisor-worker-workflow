@@ -9,7 +9,8 @@ cd "$ROOT"
 
 CURSOR_TIMEOUT="${CURSOR_TIMEOUT:-3600}"
 WORKER_AGENT_WRAPPER="${WORKER_AGENT_WRAPPER:-${CURSOR_AGENT_WRAPPER:-cursor-agent}}"
-WORKER_MODEL="${WORKER_MODEL:-${CURSOR_MODEL:-gpt-5.5-high}}"
+# Default worker model: Fable 1M high through the Cursor agent CLI.
+WORKER_MODEL="${WORKER_MODEL:-${CURSOR_MODEL:-claude-fable-5-thinking-high}}"
 WORKER_AGENT_EXTRA_ARGS="${WORKER_AGENT_EXTRA_ARGS:-${CURSOR_AGENT_EXTRA_ARGS:-}}"
 CURSOR_OUTPUT_FORMAT="${CURSOR_OUTPUT_FORMAT:-stream-json}"
 CURSOR_STREAM_PARTIAL_OUTPUT="${CURSOR_STREAM_PARTIAL_OUTPUT:-1}"
@@ -49,6 +50,15 @@ normalize_cursor_model() {
       ;;
     gpt-5.3-codex)
       echo "gpt-5.3-codex-high"
+      ;;
+    claude-opus-4.8-thinking-high)
+      echo "claude-opus-4-8-thinking-high"
+      ;;
+    fable | fable-high | fable-1m-high)
+      echo "claude-fable-5-thinking-high"
+      ;;
+    fable-xhigh | fable-1m-xhigh | fable-extra-high)
+      echo "claude-fable-5-thinking-xhigh"
       ;;
     *)
       echo "$1"

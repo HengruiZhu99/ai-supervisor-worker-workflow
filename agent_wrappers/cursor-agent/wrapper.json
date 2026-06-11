@@ -1,17 +1,21 @@
 {
   "id": "cursor-agent",
   "label": "Cursor Agent",
-  "description": "Use cursor-agent for worker, reviewer, supervisor, or workflow-chat roles.",
-  "roles": ["worker", "reviewer", "supervisor", "chat"],
-  "recommended_roles": ["worker", "reviewer"],
+  "description": "Use cursor-agent for worker, reviewer, supervisor, modulator, or workflow-chat roles.",
+  "roles": ["worker", "reviewer", "supervisor", "modulator", "chat"],
+  "recommended_roles": ["worker", "reviewer", "supervisor", "modulator", "chat"],
   "executable": "cursor-agent",
   "default_models": {
-    "worker": "gpt-5.5-high",
+    "worker": "claude-fable-5-thinking-high",
     "reviewer": "gpt-5.3-codex-high",
-    "supervisor": "gpt-5.5-high",
-    "chat": "gpt-5.5-high"
+    "supervisor": "claude-fable-5-thinking-xhigh",
+    "modulator": "claude-fable-5-thinking-xhigh",
+    "chat": "claude-fable-5-thinking-xhigh"
   },
   "models": [
+    "claude-fable-5-thinking-xhigh",
+    "claude-fable-5-thinking-high",
+    "claude-opus-4-8-thinking-high",
     "gpt-5.5-high",
     "gpt-5.3-codex-high",
     "claude-opus-4-7-thinking-high"
