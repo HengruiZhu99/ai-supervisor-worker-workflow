@@ -42,11 +42,13 @@ When a human milestone review requests a major structural change, the supervisor
 The modulator is an always-on watchdog/steering agent (Cursor agent running Fable 1M extra high) launched by `scripts/modulator_loop.sh`. Its protocol lives in `.ai/supervisor/modulator_protocol.md` and its state under `.ai/modulator/`.
 
 Responsibilities:
-- Wake when something goes wrong in the workflow: an open human review gate, a `SUPERVISOR_ACTION_REQUIRED` request, `review_failed`/`review_timeout` job states, repeated rejected attempts on one job, or dead worker/supervisor loops with pending work.
+- Own all failure handling between preset human boundary gates: an open human review gate, a `SUPERVISOR_ACTION_REQUIRED` request, `review_failed`/`review_timeout` job states, repeated rejected attempts on one job, dead worker/supervisor loops with pending work, alive-but-hung worker runs (stalled log), and periodic mid-tranche progress audits.
 - Independently investigate technical blockers behind human gates (read job artifacts, diffs, logs; run read-only reproduction probes). When it diagnoses a concrete code/configuration bug with verifiable evidence, it writes `.ai/supervisor/MODULATOR_FINDINGS.md` with a corrective directive, archives the gate with a modulator-decision record, and lets the supervisor dispatch the corrective job, so technical blockers do not stall on human input.
-- Audit progress per milestone closure: compare accepted evidence against the design target, run progress accounting, and flag drift such as proxy evidence labeled as real capability evidence or repeated audit-only job chains.
-- Restart dead worker/supervisor loops when actionable work remains.
-- Never clear preset boundary gates or scope/science decision gates unless `MODULATOR_CLEARS_PRESET_BOUNDARIES=1` is explicitly configured.
+- Decide non-preset scope, architecture, and scientific-convention questions that arise between gates itself, with a recorded decision under `.ai/modulator/decisions/` grounded in the design prompt, roadmap target, and cited references; escalate to a human only when a decision would contradict an explicit prior human instruction or exceed the approved roadmap.
+- Audit progress per milestone closure and every few accepted jobs: compare accepted evidence against the design target, run progress accounting, and flag drift such as proxy evidence labeled as real capability evidence or repeated audit-only job chains.
+- Restart dead worker/supervisor loops when actionable work remains; kill genuinely hung agent/build/test processes so stale-state recovery can requeue the attempt.
+- Honor human steering directives issued through the modulator terminal in the workflow GUI (recorded under `.ai/modulator/steering/`) as binding operator instructions.
+- Never clear preset boundary gates unless `MODULATOR_CLEARS_PRESET_BOUNDARIES=1` is explicitly configured.
 - Never implement scientific project code, accept/reject jobs, or edit supervisor-owned planning files other than its own findings/audit records.
 
 ### Cursor worker
