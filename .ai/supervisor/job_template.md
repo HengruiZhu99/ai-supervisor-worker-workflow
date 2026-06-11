@@ -65,6 +65,26 @@ Run:
 
 If validation intentionally generates untracked or modified files, list the expected paths or glob patterns in `.ai/jobs/JNNNN/allowed_artifacts.txt`. Otherwise the worker loop treats post-test dirty files as a blocking failure.
 
+The worker loop prefers the job-worktree copy of `allowed_artifacts.txt`
+(falling back to the main-worktree copy), and lists untracked files
+individually (`--untracked-files=all`), so per-file patterns match files in
+new directories. Workers may declare expected artifacts on their branch;
+supervisors should still pre-declare known artifact paths at dispatch time.
+
+Long-run placement rule: the worker session must never sit waiting on a run
+longer than ~10 minutes. Anything longer (full convergence ladders, long
+evolutions, backend matrices) belongs in the job's `validate.sh` (or the
+canonical `test_command`), which the worker loop executes after the session
+as the canonical evidence, with explicit timeout budgets. In-session work is
+limited to build, fast structural gates, and short confidence probes. A
+worker session that hits its time budget while waiting on a long run wastes
+the whole attempt.
+
+Negated text-search guards must stay meaningful when a tool is missing: do
+not write `! rg ...` (a missing `rg` exits 127 and the `!` silently turns it
+into a pass). Use `! grep -E ...` on explicit files, or assert `command -v
+rg` before any `! rg` guard.
+
 ## Worker report contract
 
 Finish with a clean structured report using these exact Markdown headings:

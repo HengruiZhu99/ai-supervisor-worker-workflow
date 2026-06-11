@@ -69,6 +69,12 @@ normalize_cursor_model() {
 WORKER_MODEL="$(normalize_cursor_model "$WORKER_MODEL")"
 REVIEWER_A_MODEL="$(normalize_cursor_model "$REVIEWER_A_MODEL")"
 REVIEWER_B_MODEL="$(normalize_cursor_model "$REVIEWER_B_MODEL")"
+if [[ "$WORKER_AGENT_WRAPPER" == "cursor-agent" && -z "$WORKER_AGENT_EXTRA_ARGS" ]]; then
+  WORKER_AGENT_EXTRA_ARGS="--force"
+fi
+if [[ "$REVIEWER_A_AGENT_WRAPPER" == "cursor-agent" && "$REVIEWER_B_AGENT_WRAPPER" == "cursor-agent" && -z "$REVIEWER_AGENT_EXTRA_ARGS" ]]; then
+  REVIEWER_AGENT_EXTRA_ARGS="--force"
+fi
 
 cleanup_current_lock() {
   if [[ -n "${CURRENT_LOCK:-}" ]]; then
@@ -99,7 +105,7 @@ interrupt_worker_loop() {
 
 cleanup_loop_lock() {
   if [[ -n "${LOOP_LOCK:-}" ]]; then
-    rm -f "$LOOP_LOCK/pid" "$LOOP_LOCK/started_at" 2>/dev/null || true
+    rm -f "$LOOP_LOCK/pid" "$LOOP_LOCK/started_at" "$LOOP_LOCK/workflow_commit" 2>/dev/null || true
     rmdir "$LOOP_LOCK" 2>/dev/null || true
     LOOP_LOCK=""
   fi
@@ -126,13 +132,25 @@ for cmd in git jq python3 timeout; do
 done
 
 workflow_commit="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [[ -z "$WORKER_SUBMODULE_PATHS" ]] &&
+   git config --file .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null |
+     awk '{print $2}' | grep -qx 'external/kokkos'; then
+  WORKER_SUBMODULE_PATHS="external/kokkos"
+fi
+if [[ -z "$WORKER_REQUIRED_SUBMODULE_PATHS" && "$WORKER_SUBMODULE_PATHS" == *external/kokkos* ]]; then
+  WORKER_REQUIRED_SUBMODULE_PATHS="external/kokkos"
+fi
 echo "workflow_commit=$workflow_commit"
 echo "worker_agent_wrapper=$WORKER_AGENT_WRAPPER"
 echo "worker_model=$WORKER_MODEL"
+echo "worker_agent_extra_args=${WORKER_AGENT_EXTRA_ARGS:-<none>}"
+echo "worker_submodule_paths=${WORKER_SUBMODULE_PATHS:-<all>}"
+echo "worker_required_submodule_paths=${WORKER_REQUIRED_SUBMODULE_PATHS:-<none>}"
 echo "reviewer_a_agent_wrapper=$REVIEWER_A_AGENT_WRAPPER"
 echo "reviewer_a_model=$REVIEWER_A_MODEL"
 echo "reviewer_b_agent_wrapper=$REVIEWER_B_AGENT_WRAPPER"
 echo "reviewer_b_model=$REVIEWER_B_MODEL"
+echo "reviewer_agent_extra_args=${REVIEWER_AGENT_EXTRA_ARGS:-<none>}"
 
 write_available_skills() {
   local skill_root="${1:-$ROOT}"
@@ -237,6 +255,29 @@ json_field() {
   jq -r --arg field "$field" '.[$field] // ""' "$status_file"
 }
 
+attempt_still_active() {
+  local status_file="$1"
+  local id="$2"
+  local attempt="$3"
+  local phase="$4"
+  shift 4
+
+  local current_state current_attempt allowed_state
+  current_state="$(jq -r '.state // ""' "$status_file" 2>/dev/null || echo invalid)"
+  current_attempt="$(jq -r '.attempt // 0' "$status_file" 2>/dev/null || echo invalid)"
+
+  if [[ "$current_attempt" == "$attempt" ]]; then
+    for allowed_state in "$@"; do
+      if [[ "$current_state" == "$allowed_state" ]]; then
+        return 0
+      fi
+    done
+  fi
+
+  echo "Skipping stale $id attempt $attempt during $phase: status is state=$current_state attempt=$current_attempt" >&2
+  return 1
+}
+
 utc_now() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
@@ -284,6 +325,7 @@ acquire_loop_lock() {
     LOOP_LOCK="$lock_dir"
     printf '%s\n' "$$" >"$LOOP_LOCK/pid"
     date -u +"%Y-%m-%dT%H:%M:%SZ" >"$LOOP_LOCK/started_at"
+    printf '%s\n' "$workflow_commit" >"$LOOP_LOCK/workflow_commit"
     return 0
   fi
   if lock_pid_alive "$lock_dir"; then
@@ -295,6 +337,7 @@ acquire_loop_lock() {
     LOOP_LOCK="$lock_dir"
     printf '%s\n' "$$" >"$LOOP_LOCK/pid"
     date -u +"%Y-%m-%dT%H:%M:%SZ" >"$LOOP_LOCK/started_at"
+    printf '%s\n' "$workflow_commit" >"$LOOP_LOCK/workflow_commit"
     return 0
   fi
   echo "failed to acquire worker loop lock: $lock_dir" >&2
@@ -303,7 +346,7 @@ acquire_loop_lock() {
 
 clear_known_stale_lock() {
   local lock_dir="$1"
-  rm -f "$lock_dir/pid" "$lock_dir/started_at" 2>/dev/null || true
+  rm -f "$lock_dir/pid" "$lock_dir/started_at" "$lock_dir/workflow_commit" 2>/dev/null || true
   rmdir "$lock_dir" 2>/dev/null
 }
 
@@ -312,6 +355,15 @@ record_event() {
 }
 
 acquire_loop_lock
+
+normalize_test_command() {
+  local raw="$1"
+  if [[ "$raw" == *\\n* ]]; then
+    printf '%s' "${raw//\\n/$'\n'}"
+  else
+    printf '%s' "$raw"
+  fi
+}
 
 recover_stale_running_jobs() {
   [[ "$WORKER_RECOVER_STALE_RUNNING" == "1" ]] || return 0
@@ -484,6 +536,13 @@ run_attempt_consistency_check() {
   return "$check_exit"
 }
 
+canonical_commit_doc_path() {
+  local id="$1"
+  local attempt="$2"
+  local final_commit="$3"
+  echo ".ai/commit_docs/${id}_attempt-${attempt}_${final_commit}.md"
+}
+
 write_reviewer_prompt() {
   local role="$1"
   local job="$2"
@@ -494,7 +553,10 @@ write_reviewer_prompt() {
   local final_commit="$7"
   local prompt_file="$8"
   local changed_files_file="$job/changed_files.attempt-$attempt.txt"
+  local canonical_commit_doc
   local focus
+
+  canonical_commit_doc="$(canonical_commit_doc_path "$id" "$attempt" "$final_commit")"
 
   if [[ "$role" == "reviewer-a" ]]; then
     focus="scientific and numerical correctness, mathematical assumptions, units/dimensions, tolerances, edge cases, validation quality, documentation of scientific meaning, and scope discipline"
@@ -523,7 +585,8 @@ write_reviewer_prompt() {
     echo "- Changed files: $ROOT/$changed_files_file"
     echo "- Patch: $ROOT/$job/diff.attempt-$attempt.patch"
     echo "- Test log: $ROOT/$job/test.attempt-$attempt.log"
-    echo "- Commit docs: $ROOT/.ai/commit_docs/"
+    echo "- Canonical current-attempt commit doc: $ROOT/$canonical_commit_doc"
+    echo "- Commit docs directory: $ROOT/.ai/commit_docs/"
     echo "- Existing skills: run 'python3 scripts/list_skills.py' in the worktree if needed. The environment variable AI_WORKFLOW_PACKAGE_ROOT is set to $AI_WORKFLOW_PACKAGE_ROOT."
     echo
     write_available_skills "$ROOT/$worktree"
@@ -538,6 +601,7 @@ write_reviewer_prompt() {
     echo
     echo "Read the actual diff comprehensively, not just the worker report. Start from the diffstat, then inspect every changed file in the patch and/or worktree."
     echo "Treat the worker report and structured handoff as worker narrative. Treat status.json, changed_files, test logs, commit docs, and Git diff from base SHA to final commit as canonical. Do not rely on the raw transcript except when debugging an inconsistency."
+    echo "Use the canonical current-attempt commit doc and $ROOT/$job/attempt_consistency.attempt-$attempt.md for the final attempt audit. If the worker branch also contains older .ai/commit_docs files, review them as historical evidence for the attempt/commit they name, not as required coverage for later bookkeeping commits."
     echo "Use commands such as 'git diff --name-only $base_sha..$final_commit', 'git diff $base_sha..$final_commit -- <path>', and direct source reads from the worktree."
     echo "If the diff is too large to review comprehensively within this reviewer pass, recommend revise/split; do not recommend acceptance for partially reviewed work."
     echo "Cross-check the worker report, test log, commit docs, and actual code. The actual diff and worktree are the source of truth."
@@ -689,6 +753,10 @@ run_reviewers() {
   local reviewer_a_exit=0
   local reviewer_b_exit=0
 
+  if ! attempt_still_active "$status_file" "$id" "$attempt" "review launch" running implemented ready_for_review; then
+    return 125
+  fi
+
   if [[ "$CURSOR_REVIEWERS_ENABLED" != "1" ]]; then
     update_status "$status_file" reviewers_enabled=false
     return 0
@@ -698,6 +766,24 @@ run_reviewers() {
     state=reviewing \
     reviewers_enabled=true \
     reviewers_parallel=true \
+    reviewers_complete=false \
+    reviewer_a_exit=null \
+    reviewer_b_exit=null \
+    reviewer_coverage_exit=null \
+    reviewer_decision_exit=null \
+    reviewer_a_blocks=false \
+    reviewer_b_blocks=false \
+    reviewer_a_progress_blocks=false \
+    reviewer_b_progress_blocks=false \
+    reviewer_a_recommendation="" \
+    reviewer_b_recommendation="" \
+    review_blocked_by="" \
+    reviewer_a_report="$job/reviews/reviewer-a.attempt-$attempt.md" \
+    reviewer_b_report="$job/reviews/reviewer-b.attempt-$attempt.md" \
+    reviewer_a_metrics="$job/reviews/reviewer-a.metrics.attempt-$attempt.json" \
+    reviewer_b_metrics="$job/reviews/reviewer-b.metrics.attempt-$attempt.json" \
+    reviewer_decision_file="$job/reviews/reviewer_decisions.attempt-$attempt.json" \
+    reviewer_decision_log="$job/reviews/reviewer_decisions.attempt-$attempt.log" \
     reviewer_a_wrapper="$REVIEWER_A_AGENT_WRAPPER" \
     reviewer_b_wrapper="$REVIEWER_B_AGENT_WRAPPER" \
     reviewer_a_model="$REVIEWER_A_MODEL" \
@@ -726,6 +812,10 @@ run_reviewers() {
   reviewer_a_exit="$(cat "$reviewer_a_exit_file" 2>/dev/null || echo 1)"
   reviewer_b_exit="$(cat "$reviewer_b_exit_file" 2>/dev/null || echo 1)"
 
+  if ! attempt_still_active "$status_file" "$id" "$attempt" "review finalization" reviewing; then
+    return 125
+  fi
+
   local coverage_exit=0
   python3 scripts/check_reviewer_coverage.py "$job/changed_files.attempt-$attempt.txt" \
     "$job/reviews/reviewer-a.attempt-$attempt.md" \
@@ -748,13 +838,15 @@ run_reviewers() {
   reviewer_a_recommendation="$(jq -r '.reviewer_a_recommendation // "unknown"' "$reviewer_decision_file" 2>/dev/null || echo unknown)"
   reviewer_b_recommendation="$(jq -r '.reviewer_b_recommendation // "unknown"' "$reviewer_decision_file" 2>/dev/null || echo unknown)"
   reviewer_blocked_by="$(jq -r '(.blocked_by // []) | join(",")' "$reviewer_decision_file" 2>/dev/null || echo "")"
+  local reviewer_decisions_complete
+  reviewer_decisions_complete="$(jq -r '.reviewers_complete // false' "$reviewer_decision_file" 2>/dev/null || echo false)"
 
   update_status "$status_file" \
     reviewer_a_exit="$reviewer_a_exit" \
     reviewer_b_exit="$reviewer_b_exit" \
     reviewer_coverage_exit="$coverage_exit" \
     reviewer_decision_exit="$decision_exit" \
-    reviewers_complete="$([[ "$reviewer_a_exit" -eq 0 && "$reviewer_b_exit" -eq 0 && "$coverage_exit" -eq 0 && "$decision_exit" -eq 0 ]] && echo true || echo false)" \
+    reviewers_complete="$([[ "$reviewer_a_exit" -eq 0 && "$reviewer_b_exit" -eq 0 && "$coverage_exit" -eq 0 && "$reviewer_decisions_complete" == "true" ]] && echo true || echo false)" \
     reviewer_decision_file="$reviewer_decision_file" \
     reviewer_decision_log="$reviewer_decision_log" \
     reviewer_a_recommendation="$reviewer_a_recommendation" \
@@ -808,6 +900,7 @@ process_job() {
   base_sha="$(json_field "$status_file" base_sha)"
   branch="$(json_field "$status_file" branch)"
   test_command="$(json_field "$status_file" test_command)"
+  test_command="$(normalize_test_command "$test_command")"
   attempt="$(jq -r '(.attempt // 0) + 1' "$status_file")"
   starting_state="$(jq -r '.state // ""' "$status_file")"
   worktree=".worktrees/$id"
@@ -870,7 +963,49 @@ process_job() {
     fi
   fi
 
-  update_status "$status_file" state=running attempt="$attempt" branch="$branch" base_sha="$base_sha" workflow_commit="$workflow_commit"
+  update_status "$status_file" \
+    state=running \
+    attempt="$attempt" \
+    branch="$branch" \
+    base_sha="$base_sha" \
+    workflow_commit="$workflow_commit" \
+    commit=null \
+    commit_doc= \
+    allowed_artifacts= \
+    changed_files= \
+    worker_metrics= \
+    worker_handoff= \
+    report= \
+    worker_exit=null \
+    worker_error= \
+    test_exit=null \
+    test_timed_out=false \
+    tests_passed=false \
+    timed_out=false \
+    cursor_reported_success=false \
+    attempt_consistency_exit=null \
+    attempt_consistency_log= \
+    post_test_dirty=false \
+    post_test_status= \
+    post_test_status_raw= \
+    reviewers_complete=false \
+    reviewer_a_exit=null \
+    reviewer_b_exit=null \
+    reviewer_coverage_exit=null \
+    reviewer_decision_exit=null \
+    reviewer_a_blocks=false \
+    reviewer_b_blocks=false \
+    reviewer_a_progress_blocks=false \
+    reviewer_b_progress_blocks=false \
+    reviewer_a_recommendation= \
+    reviewer_b_recommendation= \
+    review_blocked_by= \
+    reviewer_a_report="$job/reviews/reviewer-a.attempt-$attempt.md" \
+    reviewer_b_report="$job/reviews/reviewer-b.attempt-$attempt.md" \
+    reviewer_a_metrics="$job/reviews/reviewer-a.metrics.attempt-$attempt.json" \
+    reviewer_b_metrics="$job/reviews/reviewer-b.metrics.attempt-$attempt.json" \
+    reviewer_decision_file="$job/reviews/reviewer_decisions.attempt-$attempt.json" \
+    reviewer_decision_log="$job/reviews/reviewer_decisions.attempt-$attempt.log"
 
   clean_worker_submodules "$job" "$worktree" "$attempt" preflight
 
@@ -909,6 +1044,7 @@ process_job() {
     echo "- Include a Skill Suggestions section. Say 'None' if no new skill is justified."
     echo "- Before proposing a skill, consult existing skills with 'python3 scripts/list_skills.py' when available."
     echo "- Before finalizing, make sure your report and any commit documentation match this attempt's actual commits, tests, and final state. Use the attempt-artifact-consistency skill if available, especially after retry feedback about stale or contradictory attempt artifacts."
+    echo "- Do not copy forward stale commit documentation. If you add attempt documentation yourself, it must say exactly which attempt and commit range it covers; the worker loop will also generate the canonical current-attempt commit doc after tests."
     echo "- For each skill suggestion, state proposed name, scope (project-specific or general scientific-coding workflow), when to use it, duplication risk versus existing skills, and the minimal content it should contain."
     echo "- Do not create or edit skills, supervisor protocols, roadmap files, or workflow scripts yourself unless this specific job explicitly assigns that work. Suggestions should be reported for supervisor review."
     echo
@@ -992,9 +1128,118 @@ process_job() {
   local test_exit=0
   local test_timed_out=false
   if [[ -n "$test_command" ]]; then
-    local test_script="$worktree/.ai_test_command.attempt-$attempt.sh"
+    local test_script="$job/test_command.attempt-$attempt.sh"
     mkdir -p "$(dirname "$test_script")"
-    printf '%s\n' "$test_command" >"$test_script"
+    cat >"$test_script" <<'TEST_PREAMBLE'
+__bbhk_oneapi_setvars="/home/hzhu/intel/oneapi/setvars.sh"
+__bbhk_oneapi_loaded=0
+__bbhk_sycl_preset="sycl-intel-b580"
+__bbhk_sycl_build_dir="build/${__bbhk_sycl_preset}"
+__bbhk_icpx_path=""
+
+__bbhk_source_oneapi_for_sycl() {
+  if [[ "$__bbhk_oneapi_loaded" == "1" ]]; then
+    return 0
+  fi
+  if [[ ! -f "$__bbhk_oneapi_setvars" ]]; then
+    return 0
+  fi
+
+  echo "[worker_loop] sourcing oneAPI for sycl-intel-b580: $__bbhk_oneapi_setvars"
+  local __bbhk_had_nounset=0
+  case "$-" in
+    *u*) __bbhk_had_nounset=1 ;;
+  esac
+  set +u
+  # shellcheck disable=SC1090
+  local __bbhk_source_status=0
+  source "$__bbhk_oneapi_setvars" --force || __bbhk_source_status=$?
+  if [[ "$__bbhk_had_nounset" == "1" ]]; then
+    set -u
+  fi
+  if [[ "$__bbhk_source_status" -ne 0 ]]; then
+    return "$__bbhk_source_status"
+  fi
+  __bbhk_oneapi_loaded=1
+}
+
+__bbhk_resolve_icpx_for_sycl() {
+  __bbhk_source_oneapi_for_sycl || return $?
+  if [[ -z "$__bbhk_icpx_path" ]]; then
+    __bbhk_icpx_path="$(command -v icpx 2>/dev/null || true)"
+    if [[ -z "$__bbhk_icpx_path" ]]; then
+      echo "[worker_loop] icpx unavailable after sourcing oneAPI" >&2
+      return 127
+    fi
+  fi
+  export CXX="$__bbhk_icpx_path"
+}
+
+__bbhk_command_needs_sycl_env() {
+  local __bbhk_arg
+  for __bbhk_arg in "$@"; do
+    if [[ "$__bbhk_arg" == *"$__bbhk_sycl_preset"* || "$__bbhk_arg" == *sycl-ls* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+__bbhk_is_sycl_cmake_configure() {
+  local __bbhk_seen_build=0
+  local __bbhk_seen_preset=0
+  local __bbhk_arg
+  for __bbhk_arg in "$@"; do
+    if [[ "$__bbhk_arg" == "--build" ]]; then
+      __bbhk_seen_build=1
+    fi
+    if [[ "$__bbhk_arg" == "$__bbhk_sycl_preset" ]]; then
+      __bbhk_seen_preset=1
+    fi
+  done
+  [[ "$__bbhk_seen_build" == "0" && "$__bbhk_seen_preset" == "1" ]]
+}
+
+__bbhk_prepare_sycl_cmake_configure() {
+  __bbhk_resolve_icpx_for_sycl || return $?
+  if [[ -f "$__bbhk_sycl_build_dir/CMakeCache.txt" ]]; then
+    local __bbhk_cached_compiler=""
+    __bbhk_cached_compiler="$(
+      sed -n 's/^CMAKE_CXX_COMPILER:[^=]*=//p' \
+        "$__bbhk_sycl_build_dir/CMakeCache.txt" | head -n 1
+    )"
+    if [[ "$__bbhk_cached_compiler" != "$__bbhk_icpx_path" ]]; then
+      echo "[worker_loop] removing stale $__bbhk_sycl_preset cache with CMAKE_CXX_COMPILER=${__bbhk_cached_compiler:-unset}; expected $__bbhk_icpx_path"
+      rm -rf "$__bbhk_sycl_build_dir"
+    fi
+  fi
+}
+
+cmake() {
+  if __bbhk_command_needs_sycl_env "$@"; then
+    if __bbhk_is_sycl_cmake_configure "$@"; then
+      __bbhk_prepare_sycl_cmake_configure || return $?
+      command cmake "$@" -DCMAKE_CXX_COMPILER="$__bbhk_icpx_path"
+      return $?
+    fi
+    __bbhk_resolve_icpx_for_sycl || return $?
+  fi
+  command cmake "$@"
+}
+
+ctest() {
+  if __bbhk_command_needs_sycl_env "$@"; then
+    __bbhk_source_oneapi_for_sycl || return $?
+  fi
+  command ctest "$@"
+}
+
+sycl-ls() {
+  __bbhk_source_oneapi_for_sycl || return $?
+  command sycl-ls "$@"
+}
+TEST_PREAMBLE
+    printf '%s\n' "$test_command" >>"$test_script"
     set +e
     git -C "$worktree" status --short >"$test_log"
     {
@@ -1011,6 +1256,13 @@ process_job() {
     test_exit=$?
     rm -f "$test_script"
     set -e
+    if grep -q "No tests were found!!!" "$test_log" 2>/dev/null; then
+      test_exit=66
+      {
+        echo
+        echo "ERROR: ctest reported that no tests were found. Treating this as a canonical validation failure."
+      } >>"$test_log"
+    fi
     if [[ "$test_exit" -eq 124 || "$test_exit" -eq 137 ]]; then
       test_timed_out=true
       echo "Test command timed out after ${TEST_TIMEOUT}s" >>"$test_log"
@@ -1024,9 +1276,18 @@ process_job() {
   final_commit="$(git -C "$worktree" rev-parse HEAD)"
   local post_test_status="$job/post_test_status.attempt-$attempt.txt"
   local post_test_status_raw="$job/post_test_status_raw.attempt-$attempt.txt"
+  # Prefer the worker's branch copy of the allowlist: workers may declare
+  # generated artifacts in the job worktree, which the main worktree only
+  # sees after integration (J0307 attempt-4 false dirty block, WFI-J0307-5).
   local allowed_artifacts="$job/allowed_artifacts.txt"
+  if [[ -f "$worktree/$job/allowed_artifacts.txt" ]]; then
+    allowed_artifacts="$worktree/$job/allowed_artifacts.txt"
+  fi
   clean_worker_submodules "$job" "$worktree" "$attempt" posttest
-  git -C "$worktree" status --porcelain >"$post_test_status_raw"
+  # --untracked-files=all lists new files individually instead of collapsing
+  # an untracked directory to one "dir/" entry that per-file allow patterns
+  # cannot match (WFI-J0307-5).
+  git -C "$worktree" status --porcelain --untracked-files=all >"$post_test_status_raw"
   python3 scripts/filter_allowed_artifacts.py \
     --status "$post_test_status_raw" \
     --allow-file "$allowed_artifacts" \
@@ -1080,10 +1341,13 @@ process_job() {
     post_test_status="$post_test_status" \
     post_test_status_raw="$post_test_status_raw" \
     allowed_artifacts="$allowed_artifacts" \
+    changed_files="$job/changed_files.attempt-$attempt.txt" \
+    worker_metrics="$worker_metrics" \
     worker_handoff="$handoff_json" \
     report="$job/report.md"
 
-  python3 scripts/create_commit_doc.py \
+  local commit_doc_path=""
+  commit_doc_path="$(python3 scripts/create_commit_doc.py \
     --job-id "$id" \
     --attempt "$attempt" \
     --branch "$branch" \
@@ -1093,7 +1357,10 @@ process_job() {
     --test-exit "$test_exit" \
     --test-log "$test_log" \
     --summary-file "$handoff_json" \
-    --handoff-json "$handoff_json" >/dev/null || true
+    --handoff-json "$handoff_json" 2>/dev/null || true)"
+  if [[ -n "$commit_doc_path" ]]; then
+    update_status "$status_file" commit_doc="$commit_doc_path"
+  fi
 
   local consistency_exit=0
   run_attempt_consistency_check "$job" "$status_file" "$attempt" "$worktree" "$base_sha" "$final_commit" "$test_log" "$job/report.md" "$handoff_json" || consistency_exit=$?
@@ -1118,6 +1385,11 @@ process_job() {
     hard_block=true
     worker_error="${worker_error:+$worker_error; }$post_test_dirty_error"
   fi
+  if [[ "$tests_passed" != true ]]; then
+    next_state=blocked
+    hard_block=true
+    worker_error="${worker_error:+$worker_error; }test command failed with exit $test_exit; see $test_log"
+  fi
   if [[ "$consistency_exit" -ne 0 ]]; then
     next_state=blocked
     hard_block=true
@@ -1132,14 +1404,27 @@ process_job() {
     echo "Requeueing $id after timeout attempt $attempt; max timeout resumes: $WORKER_MAX_TIMEOUT_RESUMES"
   fi
 
+  if ! attempt_still_active "$status_file" "$id" "$attempt" "worker finalization" running; then
+    cleanup_current_lock
+    return 0
+  fi
+
   if [[ "$next_state" == "ready_for_review" ]]; then
     local reviewer_status=0
     run_reviewers "$job" "$status_file" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_status=$?
     if [[ "$reviewer_status" -eq 124 ]]; then
       next_state=review_timeout
+    elif [[ "$reviewer_status" -eq 125 ]]; then
+      cleanup_current_lock
+      return 0
     elif [[ "$reviewer_status" -ne 0 ]]; then
       next_state=review_failed
     fi
+  fi
+
+  if ! attempt_still_active "$status_file" "$id" "$attempt" "status finalization" running reviewing; then
+    cleanup_current_lock
+    return 0
   fi
 
   if [[ "$next_state" == "blocked" ]]; then
@@ -1186,6 +1471,7 @@ process_job() {
     changed_files="$job/changed_files.attempt-$attempt.txt" \
     worker_metrics="$worker_metrics" \
     commit="$final_commit" \
+    commit_doc="$(canonical_commit_doc_path "$id" "$attempt" "$final_commit")" \
     report="$job/report.md"
 
   cleanup_current_lock
@@ -1229,6 +1515,15 @@ review_existing_job() {
     cleanup_current_lock
     return 0
   fi
+  if [[ "$(jq -r '.tests_passed // false' "$status_file")" != "true" ]]; then
+    update_status "$status_file" \
+      state=blocked \
+      workflow_commit="$workflow_commit" \
+      worker_error="implemented job has failing canonical tests; rerun or reject before review" \
+      report="$job/report.md"
+    cleanup_current_lock
+    return 0
+  fi
 
   if [[ ! -s "$job/changed_files.attempt-$attempt.txt" ]]; then
     git -C "$worktree" diff --name-status "$base_sha..$final_commit" >"$job/changed_files.attempt-$attempt.txt" || true
@@ -1255,11 +1550,20 @@ review_existing_job() {
 
   reviewer_status=0
   run_reviewers "$job" "$status_file" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" || reviewer_status=$?
+  if [[ "$reviewer_status" -eq 125 ]]; then
+    cleanup_current_lock
+    return 0
+  fi
   next_state=ready_for_review
   if [[ "$reviewer_status" -eq 124 ]]; then
     next_state=review_timeout
   elif [[ "$reviewer_status" -ne 0 ]]; then
     next_state=review_failed
+  fi
+
+  if ! attempt_still_active "$status_file" "$id" "$attempt" "implemented review finalization" implemented reviewing; then
+    cleanup_current_lock
+    return 0
   fi
 
   update_status "$status_file" \

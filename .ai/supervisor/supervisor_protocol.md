@@ -28,6 +28,20 @@ Each job directory must contain:
 
 Use small, reviewable jobs.
 
+Split implementation from long-horizon validation when the slice is large:
+when a job would bundle new numerical code with a multi-hour validation
+campaign (convergence ladders, backend matrices), prefer two sequential jobs -
+(1) implement + fast structural gates + a short confidence probe, (2) the
+long validation campaign over the accepted implementation. A failure in
+either half then costs one small attempt instead of restarting the bundle.
+Single-job slices remain fine when the validation set is fast.
+
+After a mid-tranche convention or scope decision (modulator decision record
+or human steering) changes the numerics, re-derive which frozen validation
+gates remain observable under the new scheme before requeueing: a gate whose
+observable is dominated by the new term must be redesigned in the amendment,
+not discovered as a measured failure by the worker.
+
 A job should usually be small enough to produce a concise, meaningful diff and one to three logical commits.
 
 Do not create multiple worker jobs at the same time unless the user explicitly asks.

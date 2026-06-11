@@ -78,6 +78,13 @@ The modulator MAY:
   `.ai/modulator/decisions/decision.<UTC timestamp>.md` with rationale,
   references, alternatives considered, and the resulting directive, plus a
   `MODULATOR_FINDINGS.md` entry carrying the decision to the supervisor.
+  When the decision changes the numerics of the scheme under test (a new
+  convention, term, projection, or coupling), the directive must also
+  instruct the supervisor to audit every frozen validation gate of the
+  affected job for observability under the new scheme - any gate whose
+  measured quantity is dominated by the newly introduced term must be
+  redesigned in the requeue amendment rather than left for the worker to
+  fail against.
 - Restart the worker/supervisor loops (`scripts/worker_loop.sh`,
   `scripts/supervisor_loop.sh`) when they are dead and actionable work
   remains and no human gate pauses them.

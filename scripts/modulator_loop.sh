@@ -356,21 +356,24 @@ Act strictly within the modulator protocol:
   timestamp>.md`, and stop. The supervisor will dispatch the corrective job.
 - For an open non-preset gate that asks for a scope, architecture, or
   scientific-convention decision: make the decision yourself. Ground it in
-  the design prompt, the roadmap target, the cited public references, and the
-  accepted evidence; choose the option that preserves scientific meaning and
-  the smallest scope consistent with the roadmap. Record the decision with
-  full rationale and references in
+  the design prompt, the roadmap target, the cited public references, and
+  the accepted evidence; choose the option that preserves scientific meaning
+  and the smallest scope consistent with the roadmap. Record the decision with full rationale and references in
   `.ai/modulator/decisions/decision.<UTC timestamp>.md`, write
   `MODULATOR_FINDINGS.md` carrying the decision and its corrective/dispatch
   directive, archive the gate file, and stop. Do NOT leave such gates waiting
   for a human. Only escalate to a human if the decision would contradict an
   explicit prior human instruction or exceed the approved roadmap itself.
+  When the decision changes the numerics of the scheme under test, the
+  directive must instruct the supervisor to audit every frozen validation
+  gate of the affected job for observability under the new scheme and to
+  redesign dominated gates in the requeue amendment.
 - If the gate is a preset boundary gate (listed in
   `.ai/supervisor/autonomous_boundary_policy.md`), leave it in place unless
-  MODULATOR_CLEARS_PRESET_BOUNDARIES is 1. When leaving a gate in place,
-  append a short `## Modulator Triage` note to the gate file with your
-  independent verification so the human review is better informed, but do not
-  alter the existing gate content.
+  MODULATOR_CLEARS_PRESET_BOUNDARIES is 1. When leaving a
+  gate in place, append a short `## Modulator Triage` note to the gate file
+  with your independent verification so the human review is better informed,
+  but do not alter the existing gate content.
 - For `SUPERVISOR_ACTION_REQUIRED`, `review_failed`/`review_timeout`, or
   repeated rejections: diagnose the failure mode from logs and artifacts. If
   it is a mechanical/workflow-state problem you can safely repair (stale lock,
