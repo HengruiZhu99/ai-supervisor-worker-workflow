@@ -174,7 +174,12 @@ def parse_codex_tokens(text: str) -> dict[str, int | None]:
 
 
 def plain_log_metrics(args: argparse.Namespace, root: Path, agent: str) -> dict[str, Any]:
-    """Metrics for any agent run captured as a plain text log (no stream-json)."""
+    """Metrics for any agent run captured as a plain text log.
+
+    When --stream points at a cursor-agent stream-json capture, exact token
+    usage and session metadata are taken from it instead of the lossy
+    plain-text token regex.
+    """
     log_text = ""
     log_path = root / args.log if args.log else None
     if log_path:
@@ -184,7 +189,7 @@ def plain_log_metrics(args: argparse.Namespace, root: Path, agent: str) -> dict[
             log_text = ""
     started_at = iso_or_now(args.started_at)
     finished_at = iso_or_now(args.finished_at)
-    return {
+    metrics = {
         "schema_version": 1,
         "agent": agent,
         "role": args.role,
@@ -201,6 +206,26 @@ def plain_log_metrics(args: argparse.Namespace, root: Path, agent: str) -> dict[
         "log_path": args.log or None,
         **parse_codex_tokens(log_text),
     }
+    stream = getattr(args, "stream", "") or ""
+    if stream:
+        events = read_jsonl(root / stream)
+        if events:
+            init = next(
+                (e for e in events if e.get("type") == "system" and e.get("subtype") == "init"),
+                {},
+            )
+            results = [e for e in events if e.get("type") == "result"]
+            last_result = results[-1] if results else {}
+            usage = sum_usage(events)
+            metrics.update(usage)
+            metrics["total_tokens"] = sum(usage.values()) or None
+            metrics["model"] = init.get("model") or metrics["model"]
+            metrics["session_id"] = init.get("session_id") or last_result.get("session_id")
+            metrics["api_ms"] = last_result.get("duration_api_ms")
+            metrics["is_error"] = last_result.get("is_error")
+            metrics["stream_path"] = stream
+            metrics["event_count"] = len(events)
+    return metrics
 
 
 def codex_metrics(args: argparse.Namespace, root: Path) -> dict[str, Any]:
@@ -271,6 +296,11 @@ def main() -> int:
     plain.add_argument("--model", default="")
     plain.add_argument("--reasoning-effort", default="")
     plain.add_argument("--log", required=True)
+    plain.add_argument(
+        "--stream",
+        default="",
+        help="optional cursor-agent stream-json capture for exact token usage",
+    )
     plain.add_argument("--started-at", default="")
     plain.add_argument("--finished-at", default="")
     plain.add_argument("--exit-code", type=int, required=True)

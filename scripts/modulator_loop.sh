@@ -14,6 +14,12 @@ MODULATOR_MODEL="${MODULATOR_MODEL:-claude-fable-5-thinking-xhigh}"
 MODULATOR_EXTRA_ARGS="${MODULATOR_EXTRA_ARGS:---force}"
 MODULATOR_CLEARS_PRESET_BOUNDARIES="${MODULATOR_CLEARS_PRESET_BOUNDARIES:-0}"
 MODULATOR_RESTART_LOOPS="${MODULATOR_RESTART_LOOPS:-1}"
+# Minutes without worker-loop log progress before an alive-but-hung run wakes
+# the modulator; 0 disables stall detection.
+MODULATOR_STALL_MINUTES="${MODULATOR_STALL_MINUTES:-30}"
+# Run a mid-tranche progress audit every N newly accepted jobs; 0 disables.
+MODULATOR_AUDIT_EVERY_ACCEPTED="${MODULATOR_AUDIT_EVERY_ACCEPTED:-3}"
+export MODULATOR_STALL_MINUTES MODULATOR_AUDIT_EVERY_ACCEPTED
 MODULATOR_STATE_DIR=".ai/modulator"
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 SUPERVISOR_ACTION_REQUEST=".ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md"
@@ -113,7 +119,16 @@ signature_parts = []
 gate = Path(".ai/supervisor/HUMAN_REVIEW_REQUIRED.md")
 if gate.exists():
     reasons.append("human_gate_open")
-    signature_parts.append(f"gate:{gate.stat().st_mtime_ns}")
+    # Hash only the gate content above the modulator's own appended notes so
+    # an informational `## Modulator Triage` note does not change the wake
+    # signature and self-trigger another wake (observed 2026-06-11).
+    try:
+        gate_text = gate.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        gate_text = ""
+    gate_core = gate_text.split("\n## Modulator Triage", 1)[0]
+    gate_digest = hashlib.sha256(gate_core.encode("utf-8")).hexdigest()[:16]
+    signature_parts.append(f"gate:{gate_digest}")
 
 action = Path(".ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md")
 if action.exists():
@@ -195,6 +210,71 @@ if closure_headers:
 if new_headers:
     known_path.write_text("\n".join(headers) + "\n", encoding="utf-8")
 
+# Stall detection: an alive worker loop whose log stops advancing while a job
+# is in the active pipeline means a hung agent/build/test, which the dead-loop
+# check above cannot see.
+import os
+import time
+
+stall_minutes = int(os.environ.get("MODULATOR_STALL_MINUTES", "30") or "0")
+stall_states = {"running", "reviewing", "implemented"}
+stalled_jobs = sorted(
+    job_id for job_id, (state, _) in job_states.items() if state in stall_states
+)
+if stall_minutes > 0 and stalled_jobs and lock_alive("worker_loop"):
+    log = Path(".ai/supervisor_runs/worker_loop.log")
+    try:
+        log_mtime = log.stat().st_mtime
+    except OSError:
+        log_mtime = time.time()
+    if time.time() - log_mtime > stall_minutes * 60:
+        jobs_tag = ",".join(stalled_jobs)
+        reasons.append(f"worker_stalled:{jobs_tag}")
+        signature_parts.append(f"stall:{jobs_tag}:{int(log_mtime)}")
+
+# Mid-tranche audit: wake every N newly accepted jobs so drift is caught
+# between milestone closures, not only at them.
+audit_every = int(os.environ.get("MODULATOR_AUDIT_EVERY_ACCEPTED", "3") or "0")
+accepted_count = sum(1 for state, _ in job_states.values() if state == "accepted")
+audit_count_path = state_dir / "last_audit_accepted_count"
+last_audited = None
+try:
+    last_audited = int(audit_count_path.read_text().strip())
+except (OSError, ValueError):
+    # First run: baseline without a retroactive audit over old jobs.
+    audit_count_path.write_text(f"{accepted_count}\n", encoding="utf-8")
+if (
+    audit_every > 0
+    and last_audited is not None
+    and accepted_count >= last_audited + audit_every
+):
+    reasons.append("mid_tranche_audit")
+    signature_parts.append(f"audit:{accepted_count}")
+    audit_count_path.write_text(f"{accepted_count}\n", encoding="utf-8")
+
+# Human steering: directives recorded by the modulator terminal. Each file is
+# processed once; the modulator archives it after honoring it.
+steering_dir = state_dir / "steering"
+steering_seen_path = state_dir / "steering_seen.txt"
+seen = set()
+if steering_seen_path.exists():
+    seen = set(
+        steering_seen_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    )
+pending = (
+    sorted(p.name for p in steering_dir.glob("steering.*.md"))
+    if steering_dir.exists()
+    else []
+)
+new_steering = [name for name in pending if name not in seen]
+if new_steering:
+    reasons.append("human_steering")
+    digest = hashlib.sha256("\n".join(new_steering).encode("utf-8")).hexdigest()[:16]
+    signature_parts.append(f"steering:{digest}")
+    steering_seen_path.write_text(
+        "\n".join(sorted(seen | set(pending))) + "\n", encoding="utf-8"
+    )
+
 signature = hashlib.sha256("|".join(signature_parts).encode("utf-8")).hexdigest()
 print(",".join(reasons) + "|" + signature)
 PY
@@ -257,6 +337,12 @@ Act strictly within the modulator protocol:
 - Triage the wake reasons listed at the top of this prompt. Write one triage
   record to `.ai/modulator/triage/triage.<UTC timestamp>.md` summarizing what
   you inspected and decided.
+- You own ALL failure handling between preset boundary gates. This includes
+  technical blockers AND scope/architecture/scientific-convention decisions
+  that arise mid-tranche: investigate, decide, and keep the workflow moving.
+  Only preset boundary gates listed in
+  `.ai/supervisor/autonomous_boundary_policy.md` wait for a human (unless the
+  runtime option MODULATOR_CLEARS_PRESET_BOUNDARIES shown above is 1).
 - For an open human gate caused by a technical blocker (failing test,
   unexplained numerical result, suspected code bug, repeated mechanical worker
   failure): investigate the actual code and evidence yourself. Read the
@@ -268,25 +354,53 @@ Act strictly within the modulator protocol:
   (Trigger / Diagnosis / Classification / Corrective Directive / Gate Action),
   move the gate file to `.ai/modulator/archive/HUMAN_REVIEW_REQUIRED.<UTC
   timestamp>.md`, and stop. The supervisor will dispatch the corrective job.
-- If the gate is a preset boundary gate (pre-M32, pre-M33) or requires a
-  scope/architecture/scientific-convention decision, leave it in place unless
-  the runtime option MODULATOR_CLEARS_PRESET_BOUNDARIES shown above is 1.
-  When leaving a gate in place, append a short `## Modulator Triage` note to
-  the gate file with your assessment so the human review is better informed,
-  but do not alter the existing gate content.
+- For an open non-preset gate that asks for a scope, architecture, or
+  scientific-convention decision: make the decision yourself. Ground it in
+  the design prompt, the roadmap target, the cited public references, and the
+  accepted evidence; choose the option that preserves scientific meaning and
+  the smallest scope consistent with the roadmap. Record the decision with
+  full rationale and references in
+  `.ai/modulator/decisions/decision.<UTC timestamp>.md`, write
+  `MODULATOR_FINDINGS.md` carrying the decision and its corrective/dispatch
+  directive, archive the gate file, and stop. Do NOT leave such gates waiting
+  for a human. Only escalate to a human if the decision would contradict an
+  explicit prior human instruction or exceed the approved roadmap itself.
+- If the gate is a preset boundary gate (listed in
+  `.ai/supervisor/autonomous_boundary_policy.md`), leave it in place unless
+  MODULATOR_CLEARS_PRESET_BOUNDARIES is 1. When leaving a gate in place,
+  append a short `## Modulator Triage` note to the gate file with your
+  independent verification so the human review is better informed, but do not
+  alter the existing gate content.
 - For `SUPERVISOR_ACTION_REQUIRED`, `review_failed`/`review_timeout`, or
   repeated rejections: diagnose the failure mode from logs and artifacts. If
   it is a mechanical/workflow-state problem you can safely repair (stale lock,
   stale status file, missing directory), repair it and record the repair in
   your triage record. Otherwise write `MODULATOR_FINDINGS.md` with a
   corrective directive for the supervisor.
-- For `milestone_activity`: run the per-milestone progress audit from the
-  protocol. Compare accepted evidence against the main design target stated
-  in `.ai/supervisor/design_prompt.md` and the roadmap milestone text. Write
-  `.ai/modulator/milestone_audits/<milestone>.<UTC timestamp>.md`. Flag drift
-  (proxy evidence labeled as evolution, audit-only chains, weakened
-  validation, roadmap divergence) and, when supervisor action is needed,
-  write `MODULATOR_FINDINGS.md`.
+- For `worker_stalled:<jobs>`: the worker loop is alive but its log has not
+  advanced for the configured stall window. Inspect the log tail, the job
+  status, and the process tree (`ps -eo pid,ppid,etime,cmd`). Distinguish a
+  legitimately long build/test (note it and stop) from a hung agent/command.
+  For a genuine hang, kill the hung agent/test process group (never the loop
+  itself), let the loop's stale-state recovery requeue the attempt, and
+  record the repair; if the hang repeats at the same point, write
+  `MODULATOR_FINDINGS.md` prescribing a job revision (e.g. split the test,
+  add a timeout) for the supervisor.
+- For `milestone_activity` or `mid_tranche_audit`: run the progress audit
+  from the protocol. Compare accepted evidence against the main design target
+  stated in `.ai/supervisor/design_prompt.md` and the roadmap milestone text.
+  Write
+  `.ai/modulator/milestone_audits/<milestone-or-audit>.<UTC timestamp>.md`.
+  Flag drift (proxy evidence labeled as evolution, audit-only chains,
+  weakened validation, roadmap divergence) and, when supervisor action is
+  needed, write `MODULATOR_FINDINGS.md`.
+- For `human_steering`: read every unprocessed directive under
+  `.ai/modulator/steering/` (oldest first). These are binding instructions
+  from the human operator issued through the modulator terminal. Honor them:
+  adjust your triage/decision behavior accordingly, write
+  `MODULATOR_FINDINGS.md` if the supervisor must act, and record how each
+  directive was honored in your triage record. Then move each processed file
+  to `.ai/modulator/steering/processed/`.
 - Never edit `src/`, `tests/`, `CMakeLists.txt`, or supervisor-owned planning
   files. Never accept/reject/create jobs. Never loosen tolerances or waive
   reviewer blocks. Prescribe; do not implement.
@@ -299,14 +413,32 @@ action taken, files written, and whether the supervisor or a human needs to
 act next.
 PROMPT
   } >"$prompt_file"
-  python3 scripts/agent_wrapper.py run \
-    --role modulator \
-    --wrapper "$MODULATOR_AGENT_WRAPPER" \
-    --model "$MODULATOR_MODEL" \
-    --workspace "$ROOT" \
-    --prompt-file "$prompt_file" \
-    --extra-args="$MODULATOR_EXTRA_ARGS" >"$log_file" 2>&1
-  local agent_exit=$?
+  local agent_exit stream_file=""
+  if [[ "$MODULATOR_AGENT_WRAPPER" == "cursor-agent" ]]; then
+    # stream-json gives exact token usage; the text converter keeps the log
+    # human-readable for the GUI tail.
+    stream_file="$MODULATOR_RUNS_DIR/modulator.$timestamp.stream.jsonl"
+    python3 scripts/agent_wrapper.py run \
+      --role modulator \
+      --wrapper "$MODULATOR_AGENT_WRAPPER" \
+      --model "$MODULATOR_MODEL" \
+      --workspace "$ROOT" \
+      --prompt-file "$prompt_file" \
+      --output-format stream-json \
+      --extra-args="$MODULATOR_EXTRA_ARGS" 2>>"$log_file" \
+      | tee "$stream_file" \
+      | python3 scripts/cursor_stream_to_text.py >>"$log_file"
+    agent_exit=${PIPESTATUS[0]}
+  else
+    python3 scripts/agent_wrapper.py run \
+      --role modulator \
+      --wrapper "$MODULATOR_AGENT_WRAPPER" \
+      --model "$MODULATOR_MODEL" \
+      --workspace "$ROOT" \
+      --prompt-file "$prompt_file" \
+      --extra-args="$MODULATOR_EXTRA_ARGS" >"$log_file" 2>&1
+    agent_exit=$?
+  fi
   finished_at="$(utc_now)"
   set -e
 
@@ -316,6 +448,7 @@ PROMPT
     --run-id "modulator.$timestamp" \
     --model "$MODULATOR_MODEL" \
     --log "$log_file" \
+    ${stream_file:+--stream "$stream_file"} \
     --started-at "$started_at" \
     --finished-at "$finished_at" \
     --exit-code "$agent_exit" \

@@ -14,6 +14,7 @@ DEFAULT_MESSAGE = "workflow: record ai workflow state"
 SUPERVISOR_PATHS = [
     ".ai/metrics",
     ".ai/supervisor/human_reviews",
+    ".ai/modulator",
     "docs",
     "skills",
 ]
@@ -46,6 +47,25 @@ def stable_job_ids(root: Path) -> set[str]:
     return stable
 
 
+def active_job_control_paths(root: Path) -> list[str]:
+    paths = []
+    control_names = {
+        "allowed_artifacts.txt",
+        "feedback.md",
+        "status.json",
+        "task.md",
+    }
+    for status_path in sorted((root / ".ai" / "jobs").glob("J*/status.json")):
+        if job_state(status_path) not in {"running", "reviewing"}:
+            continue
+        job_dir = status_path.parent
+        for name in sorted(control_names):
+            path = job_dir / name
+            if path.exists():
+                paths.append(str(path.relative_to(root)))
+    return paths
+
+
 def commit_doc_paths(root: Path, stable_jobs: set[str]) -> list[str]:
     paths = []
     for path in sorted((root / ".ai" / "commit_docs").glob("*.md")):
@@ -76,6 +96,7 @@ def existing_pathspecs(root: Path, include_design_prompt: bool) -> list[str]:
     pathspecs = []
     for job_id in sorted(stable_job_ids(root)):
         pathspecs.append(f".ai/jobs/{job_id}")
+    pathspecs.extend(active_job_control_paths(root))
     pathspecs.extend(commit_doc_paths(root, stable_job_ids(root)))
     pathspecs.extend(supervisor_markdown_paths(root, include_design_prompt))
     pathspecs.extend(SUPERVISOR_PATHS)

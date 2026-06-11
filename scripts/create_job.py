@@ -81,12 +81,40 @@ def run_progress_gate(root: Path, task_source: Path, jobs_dir: Path) -> dict[str
     return fields
 
 
+ACTIVE_JOB_STATES = {"queued", "running", "needs_review", "reviewing", "blocked"}
+
+
+def active_jobs(jobs_dir: Path) -> list[tuple[str, str]]:
+    found: list[tuple[str, str]] = []
+    if not jobs_dir.exists():
+        return found
+    for status_path in sorted(jobs_dir.glob("J*/status.json")):
+        try:
+            data = json.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        state = str(data.get("state", ""))
+        if state in ACTIVE_JOB_STATES:
+            found.append((str(data.get("id", status_path.parent.name)), state))
+    return found
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--title", required=True)
     parser.add_argument("--base-ref", required=True)
     parser.add_argument("--test-command", required=True)
     parser.add_argument("--task-file", required=True)
+    parser.add_argument(
+        "--allow-concurrent",
+        action="store_true",
+        help=(
+            "Create the job even though another job is in an active state. "
+            "Without this flag, creation is refused while any job is queued/"
+            "running/under review, which prevents accidental duplicate "
+            "dispatch (e.g. the 2026-06-11 J0305 duplicate of running J0304)."
+        ),
+    )
     args = parser.parse_args()
 
     root = git_root()
@@ -96,6 +124,15 @@ def main() -> int:
         raise SystemExit(f"task file does not exist: {task_source}")
 
     jobs_dir = root / ".ai" / "jobs"
+    if not args.allow_concurrent:
+        blockers = active_jobs(jobs_dir)
+        if blockers:
+            summary = ", ".join(f"{job_id}={state}" for job_id, state in blockers)
+            raise SystemExit(
+                "refusing to create a new job while active jobs exist: "
+                f"{summary}. Resolve them first or pass --allow-concurrent "
+                "if parallel dispatch is intentional."
+            )
     progress_fields = run_progress_gate(root, task_source, jobs_dir)
     job_id = next_job_id(jobs_dir)
     job_dir = jobs_dir / job_id

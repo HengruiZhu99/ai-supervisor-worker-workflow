@@ -13,6 +13,12 @@ SUPERVISOR_AGENT_WRAPPER="${SUPERVISOR_AGENT_WRAPPER:-${CODEX_AGENT_WRAPPER:-cur
 SUPERVISOR_MODEL="${SUPERVISOR_MODEL:-${CODEX_MODEL:-claude-fable-5-thinking-xhigh}}"
 SUPERVISOR_REASONING_EFFORT="${SUPERVISOR_REASONING_EFFORT:-${CODEX_REASONING_EFFORT:-}}"
 SUPERVISOR_EXTRA_ARGS="${SUPERVISOR_EXTRA_ARGS:-${CODEX_EXTRA_ARGS:-}}"
+# --force is required for non-interactive cursor-agent runs: without it the
+# agent session can be denied shell execution and the supervisor cannot run
+# integration/boundary/accounting commands (observed 2026-06-11 pre-M32 run).
+if [[ "$SUPERVISOR_AGENT_WRAPPER" == "cursor-agent" && -z "$SUPERVISOR_EXTRA_ARGS" ]]; then
+  SUPERVISOR_EXTRA_ARGS="--force"
+fi
 SUPERVISOR_AUTO_RELAUNCH_FAILURE="${SUPERVISOR_AUTO_RELAUNCH_FAILURE:-1}"
 SUPERVISOR_MAX_FAILURE_RELAUNCHES="${SUPERVISOR_MAX_FAILURE_RELAUNCHES:-1}"
 SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE="${SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE:-0}"
@@ -307,15 +313,34 @@ Rules:
 Return a concise summary of what you reviewed, accepted/rejected/dispatched, and whether the workflow is waiting for worker or human review.
 PROMPT
   } >"$prompt_file"
-  python3 scripts/agent_wrapper.py run \
-    --role supervisor \
-    --wrapper "$SUPERVISOR_AGENT_WRAPPER" \
-    --model "$SUPERVISOR_MODEL" \
-    --workspace "$ROOT" \
-    --prompt-file "$prompt_file" \
-    --reasoning-effort "$SUPERVISOR_REASONING_EFFORT" \
-    --extra-args="$SUPERVISOR_EXTRA_ARGS" >"$log_file" 2>&1
-  local agent_exit=$?
+  local agent_exit stream_file=""
+  if [[ "$SUPERVISOR_AGENT_WRAPPER" == "cursor-agent" ]]; then
+    # stream-json gives exact token usage; the text converter keeps the log
+    # human-readable for the GUI tail.
+    stream_file="$SUPERVISOR_RUNS_DIR/supervisor.$timestamp.stream.jsonl"
+    python3 scripts/agent_wrapper.py run \
+      --role supervisor \
+      --wrapper "$SUPERVISOR_AGENT_WRAPPER" \
+      --model "$SUPERVISOR_MODEL" \
+      --workspace "$ROOT" \
+      --prompt-file "$prompt_file" \
+      --reasoning-effort "$SUPERVISOR_REASONING_EFFORT" \
+      --output-format stream-json \
+      --extra-args="$SUPERVISOR_EXTRA_ARGS" 2>>"$log_file" \
+      | tee "$stream_file" \
+      | python3 scripts/cursor_stream_to_text.py >>"$log_file"
+    agent_exit=${PIPESTATUS[0]}
+  else
+    python3 scripts/agent_wrapper.py run \
+      --role supervisor \
+      --wrapper "$SUPERVISOR_AGENT_WRAPPER" \
+      --model "$SUPERVISOR_MODEL" \
+      --workspace "$ROOT" \
+      --prompt-file "$prompt_file" \
+      --reasoning-effort "$SUPERVISOR_REASONING_EFFORT" \
+      --extra-args="$SUPERVISOR_EXTRA_ARGS" >"$log_file" 2>&1
+    agent_exit=$?
+  fi
   supervisor_finished_at="$(utc_now)"
   set -e
 
@@ -326,6 +351,7 @@ PROMPT
     --model "$SUPERVISOR_MODEL" \
     --reasoning-effort "$SUPERVISOR_REASONING_EFFORT" \
     --log "$log_file" \
+    ${stream_file:+--stream "$stream_file"} \
     --started-at "$supervisor_started_at" \
     --finished-at "$supervisor_finished_at" \
     --exit-code "$agent_exit" \
