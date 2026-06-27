@@ -55,6 +55,36 @@ class UpdateJobStatusTests(unittest.TestCase):
             data = json.loads(status.read_text(encoding="utf-8"))
             self.assertEqual(data["state"], "running")
 
+    def test_terminal_state_change_requires_explicit_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            status = self.write_status(Path(tmp))
+            status.write_text(
+                json.dumps({"id": "J0001", "state": "accepted"}) + "\n",
+                encoding="utf-8",
+            )
+            result = self.run_status("--allow-state", str(status), "state=review_failed")
+            self.assertEqual(result.returncode, 3)
+            self.assertIn("refusing to change terminal state", result.stderr)
+            data = json.loads(status.read_text(encoding="utf-8"))
+            self.assertEqual(data["state"], "accepted")
+
+    def test_terminal_state_override_is_available_for_manual_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            status = self.write_status(Path(tmp))
+            status.write_text(
+                json.dumps({"id": "J0001", "state": "accepted"}) + "\n",
+                encoding="utf-8",
+            )
+            result = self.run_status(
+                "--allow-state",
+                "--allow-terminal-state-overwrite",
+                str(status),
+                "state=review_failed",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            data = json.loads(status.read_text(encoding="utf-8"))
+            self.assertEqual(data["state"], "review_failed")
+
     def test_merge_status_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

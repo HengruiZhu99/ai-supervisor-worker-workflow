@@ -7,10 +7,10 @@ cd "$ROOT"
 SUPERVISOR_POLL_SECONDS="${SUPERVISOR_POLL_SECONDS:-10}"
 SUPERVISOR_RUNS_DIR="${SUPERVISOR_RUNS_DIR:-.ai/supervisor_runs}"
 SUPERVISOR_VERBOSE="${SUPERVISOR_VERBOSE:-0}"
-# Default supervisor stack: Cursor agent CLI running Fable 1M extra high.
+# Default supervisor stack: Cursor agent CLI running GPT-5.5 high.
 # Legacy CODEX_* environment variables remain honored as fallback aliases.
 SUPERVISOR_AGENT_WRAPPER="${SUPERVISOR_AGENT_WRAPPER:-${CODEX_AGENT_WRAPPER:-cursor-agent}}"
-SUPERVISOR_MODEL="${SUPERVISOR_MODEL:-${CODEX_MODEL:-claude-fable-5-thinking-xhigh}}"
+SUPERVISOR_MODEL="${SUPERVISOR_MODEL:-${CODEX_MODEL:-gpt-5.5-high}}"
 SUPERVISOR_REASONING_EFFORT="${SUPERVISOR_REASONING_EFFORT:-${CODEX_REASONING_EFFORT:-}}"
 SUPERVISOR_EXTRA_ARGS="${SUPERVISOR_EXTRA_ARGS:-${CODEX_EXTRA_ARGS:-}}"
 # --force is required for non-interactive cursor-agent runs: without it the
@@ -253,6 +253,7 @@ Read:
 - `.ai/supervisor/autonomous_boundary_policy.md`, if present
 - `.ai/supervisor/autonomy_delegation.json`, if present
 - `.ai/supervisor/modulator_protocol.md`, if present
+- `.ai/supervisor/ROOT_CAUSE_PRIORITY_LOCK.md`, if present
 - `.ai/supervisor/MODULATOR_FINDINGS.md`, if present
 - `.ai/supervisor/workflow_improvement_queue.md`, if present
 - `.ai/supervisor/skill_decisions.md`, if present
@@ -268,7 +269,7 @@ Rules:
 - When reviewing a job, inspect `.worktrees/JNNNN/`, `git -C .worktrees/JNNNN ...`, job artifacts, commit docs, and the actual patch/diff. Do not fail review merely because worker-created files are absent from the main worktree.
 - Use immutable `base_sha` from `status.json` for all worker diff comparisons, for example `git -C .worktrees/JNNNN diff base_sha..HEAD`. Treat `base_ref` as human-readable context only.
 - Review jobs in `ready_for_review` according to the supervisor protocol.
-- Treat jobs in `review_failed` or `review_timeout` as needing supervisor action; either rerun reviewers, reject with feedback, revise/supersede the job with a better-scoped task, or open a human gate only for unresolved human/scope/science decisions.
+- Treat jobs in `blocked`, `review_failed`, or `review_timeout` as needing supervisor action; inspect the recorded worker/reviewer error, repair workflow-wrapper failures when that is the blocker, reject with feedback for a worker retry when the implementation is incomplete, revise/supersede the job with a better-scoped task when needed, or open a human gate only for unresolved human/scope/science decisions.
 - A job in `implemented` or `reviewing` is still in the worker/reviewer pipeline. Do not review or modify it yet; wait for `ready_for_review`.
 - For each `ready_for_review` job, inspect the worker report plus reviewer reports under `.ai/jobs/JNNNN/reviews/` when present.
 - Check `changed_files.attempt-N.txt` and reviewer `diff_coverage` YAML blocks. If reviewers did not inspect every changed file, or if the diff is too large to review comprehensively, reject with actionable feedback to split the work or remove noisy/generated changes. Do not accept work based only on the worker report.
@@ -293,6 +294,7 @@ Rules:
 - If a job is queued/running/rejected after your actions, stop with `WAITING_FOR_WORKER`.
 - If repeated worker attempts fail for the same reason, first diagnose the concrete failure mode across attempts and revise the worker assignment accordingly when possible: update `feedback.md`, edit the active job task before requeueing, supersede it with a narrower replacement job, split it into smaller jobs, pre-stage allowed reference/context material, adjust validation instructions, or open `.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md` for an operational workflow repair. Record the diagnosis and chosen correction in the ledger/status. Use a human gate only when the blocker is an unresolved human, scope, architecture, or scientific decision the supervisor cannot safely make.
 - If `.ai/supervisor/MODULATOR_FINDINGS.md` exists, treat it as a high-priority diagnostic input from the always-on modulator agent. Read it first, verify its referenced evidence (files, line ranges, logs, reproduction notes), and incorporate its corrective directive into your next action: typically dispatching exactly one corrective worker job it prescribes, repairing workflow state, or amending an open job's task/feedback. Record the modulator-driven decision in `.ai/supervisor/ledger.md`, then archive the findings file by moving it to `.ai/modulator/archive/MODULATOR_FINDINGS.<UTC timestamp>.md`. If you disagree with the findings, record the disagreement and rationale in the ledger and archive the file with a rejection note instead of acting on it; open a human gate only if the disagreement is a scope/science decision.
+- If `.ai/supervisor/ROOT_CAUSE_PRIORITY_LOCK.md` exists, read it before any new dispatch. Treat it as durable steering even when the original modulator findings or steering files have already been archived. Honor any `active_after_job` allowance, then restrict the next job to the locked root-cause path and require the `## Upstream Trace` section enforced by the progress gate.
 - The workflow is boundary-gated, not per-milestone gated. Before opening or skipping a human gate for a milestone transition, run `python3 scripts/check_autonomy_boundary.py --current MXX --next MYY --json` with the actual current and next milestone labels.
 - If the boundary check reports `human_review_required: false` and no exception trigger from `.ai/supervisor/autonomous_boundary_policy.md` applies, do not create `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` merely because the milestone is complete. Record the intermediate closure in `.ai/supervisor/ledger.md`, `.ai/supervisor/project_brief.md`, and `.ai/supervisor/roadmap.md`, then dispatch exactly one next small job inside the delegated boundary.
 - If the boundary check reports `human_review_required: true`, if the delegated tranche is complete or blocked after the failure-mode revision check, or if a human scope/science decision is needed, create or update `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md` using `.ai/supervisor/milestone_review_template.md`.

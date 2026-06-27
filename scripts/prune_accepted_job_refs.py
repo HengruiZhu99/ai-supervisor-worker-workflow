@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prune accepted worker branches/worktrees after human milestone approval."""
+"""Prune accepted worker branches/worktrees after human review approval."""
 
 from __future__ import annotations
 
@@ -141,10 +141,31 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--review-record", action="append", default=[], help="approved human review record to prune from")
     parser.add_argument("--all-approved-reviews", action="store_true", help="prune jobs listed in every approved review record")
+    parser.add_argument(
+        "--job",
+        action="append",
+        default=[],
+        help="prune a specific accepted job id directly (no review record required); "
+        "prune_job still refuses any job whose state is not 'accepted'",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     root = git_root()
+
+    # Direct per-job pruning (used by auto-integration). prune_job() enforces the
+    # accepted-state guard, so this cannot prune an unaccepted/active job.
+    if args.job:
+        direct_ids = unique([jid for jid in args.job if JOB_RE.fullmatch(jid)])
+        invalid = [jid for jid in args.job if not JOB_RE.fullmatch(jid)]
+        for jid in invalid:
+            print(f"skip invalid job id: {jid!r}")
+        for job_id in direct_ids:
+            for message in prune_job(root, job_id, args.dry_run):
+                print(message)
+        if not args.review_record and not args.all_approved_reviews:
+            return 0
+
     records = [Path(path) for path in args.review_record]
     if args.all_approved_reviews:
         records.extend(approved_review_records(root))

@@ -41,6 +41,20 @@ progress:
 """
 
 
+def upstream_trace() -> str:
+    return """
+## Upstream Trace
+
+- Failing milestone/gate: M32 real single-BH GH stationarity gate.
+- Measured symptom: Edge/corner interpatch growth reaches nonfinite state before the required run time.
+- Suspected upstream cause: Current strong-form collocation boundary coupling lacks a discrete energy estimate at multi-face intersections.
+- Public reference or derivation source: Public SpECTRE GH upwind penalty documentation and a project SBP-SAT derivation.
+- Algorithmic decision or implementation change expected: Select the two-sided characteristic penalty structure for the next implementation slice.
+- Validation close/falsify criterion: Linear wave and GH interface tests reduce the edge/corner growth while preserving face-interior behavior.
+- Why this is not peripheral cleanup: The task directly chooses the boundary algorithm blocking M32 closure.
+"""
+
+
 class ProgressGateTests(unittest.TestCase):
     def run_gate(self, task: Path, jobs_dir: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -239,6 +253,52 @@ class ProgressGateTests(unittest.TestCase):
             result = self.run_gate(target, jobs_dir)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("streak limit exceeded", result.stdout)
+
+    def write_priority_lock(self, root: Path, *, active_after: str = "J0002") -> None:
+        lock = root / ".ai" / "supervisor" / "ROOT_CAUSE_PRIORITY_LOCK.md"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text(
+            "# Root-Cause Priority Lock\n\n"
+            f"active_after_job: {active_after}\n",
+            encoding="utf-8",
+        )
+
+    def test_priority_lock_requires_upstream_trace_for_new_job(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jobs_dir = root / ".ai" / "jobs"
+            self.write_priority_lock(root, active_after="J0002")
+            target_dir = jobs_dir / "J0003"
+            target_dir.mkdir(parents=True)
+            task = target_dir / "task.md"
+            task.write_text(progress_block(), encoding="utf-8")
+            result = self.run_gate(task, jobs_dir)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Upstream Trace", result.stdout)
+
+    def test_priority_lock_accepts_concrete_upstream_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jobs_dir = root / ".ai" / "jobs"
+            self.write_priority_lock(root, active_after="J0002")
+            target_dir = jobs_dir / "J0003"
+            target_dir.mkdir(parents=True)
+            task = target_dir / "task.md"
+            task.write_text(progress_block() + upstream_trace(), encoding="utf-8")
+            result = self.run_gate(task, jobs_dir)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_priority_lock_does_not_block_exempt_active_job(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jobs_dir = root / ".ai" / "jobs"
+            self.write_priority_lock(root, active_after="J0003")
+            target_dir = jobs_dir / "J0003"
+            target_dir.mkdir(parents=True)
+            task = target_dir / "task.md"
+            task.write_text(progress_block(), encoding="utf-8")
+            result = self.run_gate(task, jobs_dir)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

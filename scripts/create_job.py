@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -124,14 +125,34 @@ def main() -> int:
         raise SystemExit(f"task file does not exist: {task_source}")
 
     jobs_dir = root / ".ai" / "jobs"
-    if not args.allow_concurrent:
-        blockers = active_jobs(jobs_dir)
+    # Parallel dispatch can also be enabled globally (e.g. by the supervisor loop
+    # or dashboard) via AI_WORKFLOW_ALLOW_CONCURRENT=1, without passing the flag
+    # on every invocation.
+    allow_concurrent = args.allow_concurrent or os.environ.get("AI_WORKFLOW_ALLOW_CONCURRENT") == "1"
+    blockers = active_jobs(jobs_dir)
+    if not allow_concurrent:
         if blockers:
             summary = ", ".join(f"{job_id}={state}" for job_id, state in blockers)
             raise SystemExit(
                 "refusing to create a new job while active jobs exist: "
                 f"{summary}. Resolve them first or pass --allow-concurrent "
-                "if parallel dispatch is intentional."
+                "(or set AI_WORKFLOW_ALLOW_CONCURRENT=1) if parallel dispatch is "
+                "intentional."
+            )
+    else:
+        # Even in concurrent mode, keep dispatch bounded so a runaway supervisor
+        # cannot flood the worker pool. AI_WORKFLOW_MAX_PARALLEL_JOBS=0 (default)
+        # leaves it unbounded; set it to match WORKER_MAX_PARALLEL_JOBS.
+        try:
+            max_parallel = int(os.environ.get("AI_WORKFLOW_MAX_PARALLEL_JOBS", "0"))
+        except ValueError:
+            max_parallel = 0
+        if max_parallel > 0 and len(blockers) >= max_parallel:
+            summary = ", ".join(f"{job_id}={state}" for job_id, state in blockers)
+            raise SystemExit(
+                f"refusing to create a new job: {len(blockers)} active jobs "
+                f">= AI_WORKFLOW_MAX_PARALLEL_JOBS={max_parallel} ({summary}). "
+                "Wait for an active job to finish or raise the cap."
             )
     progress_fields = run_progress_gate(root, task_source, jobs_dir)
     job_id = next_job_id(jobs_dir)

@@ -475,7 +475,7 @@ def default_loop_env(name: str) -> dict[str, str]:
     if name == "worker_loop":
         return {
             "CURSOR_MODEL": os.environ.get("CURSOR_MODEL", "claude-fable-5-thinking-high"),
-            "CURSOR_TIMEOUT": os.environ.get("CURSOR_TIMEOUT", "3600"),
+            "WORKER_TIMEOUT": os.environ.get("WORKER_TIMEOUT", os.environ.get("WORKER_AGENT_TIMEOUT", "0")),
             "CURSOR_REVIEWERS_ENABLED": os.environ.get("CURSOR_REVIEWERS_ENABLED", "1"),
             "CURSOR_REVIEW_TIMEOUT": os.environ.get("CURSOR_REVIEW_TIMEOUT", "2400"),
             "CURSOR_REVIEWER_A_MODEL": os.environ.get("CURSOR_REVIEWER_A_MODEL", "claude-opus-4-7-thinking-high"),
@@ -483,15 +483,20 @@ def default_loop_env(name: str) -> dict[str, str]:
             "WORKER_AUTO_RELAUNCH_FAILURE": "1",
         }
     if name == "modulator_loop":
+        modulator_wrapper = os.environ.get("MODULATOR_AGENT_WRAPPER", "cursor-agent")
+        modulator_model = os.environ.get(
+            "MODULATOR_MODEL",
+            "gpt-5.5" if modulator_wrapper == "codex" else "gpt-5.5-high",
+        )
         return {
-            "MODULATOR_AGENT_WRAPPER": os.environ.get("MODULATOR_AGENT_WRAPPER", "cursor-agent"),
-            "MODULATOR_MODEL": os.environ.get("MODULATOR_MODEL", "claude-fable-5-thinking-xhigh"),
+            "MODULATOR_AGENT_WRAPPER": modulator_wrapper,
+            "MODULATOR_MODEL": modulator_model,
             "MODULATOR_POLL_SECONDS": os.environ.get("MODULATOR_POLL_SECONDS", "30"),
         }
     return {
         "SUPERVISOR_AGENT_WRAPPER": os.environ.get("SUPERVISOR_AGENT_WRAPPER", "cursor-agent"),
         "SUPERVISOR_MODEL": os.environ.get(
-            "SUPERVISOR_MODEL", os.environ.get("CODEX_MODEL", "claude-fable-5-thinking-xhigh")
+            "SUPERVISOR_MODEL", os.environ.get("CODEX_MODEL", "gpt-5.5-high")
         ),
         "SUPERVISOR_POLL_SECONDS": os.environ.get("SUPERVISOR_POLL_SECONDS", "10"),
         "SUPERVISOR_VERBOSE": os.environ.get("SUPERVISOR_VERBOSE", "1"),

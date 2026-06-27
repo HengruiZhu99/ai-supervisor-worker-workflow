@@ -7,7 +7,12 @@ WORKFLOW_PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export AI_WORKFLOW_PACKAGE_ROOT="${AI_WORKFLOW_PACKAGE_ROOT:-$WORKFLOW_PACKAGE_ROOT}"
 cd "$ROOT"
 
-CURSOR_TIMEOUT="${CURSOR_TIMEOUT:-3600}"
+# A zero timeout means the worker agent is allowed to run until it exits.
+# Long refactor/reorganization jobs can legitimately exceed one hour. The
+# legacy CURSOR_TIMEOUT environment variable may still be exported by existing
+# launchers, so worker wall-clock limits are opt-in through WORKER_TIMEOUT or
+# WORKER_AGENT_TIMEOUT instead.
+WORKER_TIMEOUT="${WORKER_TIMEOUT:-${WORKER_AGENT_TIMEOUT:-0}}"
 WORKER_AGENT_WRAPPER="${WORKER_AGENT_WRAPPER:-${CURSOR_AGENT_WRAPPER:-cursor-agent}}"
 # Default worker model: Fable 1M high through the Cursor agent CLI.
 WORKER_MODEL="${WORKER_MODEL:-${CURSOR_MODEL:-claude-fable-5-thinking-high}}"
@@ -23,10 +28,31 @@ REVIEWER_B_MODEL="${REVIEWER_B_MODEL:-${CURSOR_REVIEWER_B_MODEL:-gpt-5.3-codex-h
 REVIEWER_AGENT_EXTRA_ARGS="${REVIEWER_AGENT_EXTRA_ARGS:-${CURSOR_REVIEWER_EXTRA_ARGS:-}}"
 CURSOR_REVIEWER_MAX_RELAUNCHES="${CURSOR_REVIEWER_MAX_RELAUNCHES:-1}"
 TEST_TIMEOUT="${TEST_TIMEOUT:-0}"
-WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-0}"
-WORKER_MAX_TIMEOUT_RESUMES="${WORKER_MAX_TIMEOUT_RESUMES:-1}"
+WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-1}"
+WORKER_MAX_TIMEOUT_RESUMES="${WORKER_MAX_TIMEOUT_RESUMES:-2}"
 WORKER_AUTO_RELAUNCH_FAILURE="${WORKER_AUTO_RELAUNCH_FAILURE:-1}"
 WORKER_MAX_FAILURE_RESUMES="${WORKER_MAX_FAILURE_RESUMES:-2}"
+# Hard ceiling on TOTAL attempts per job (failure resumes, timeout resumes, and
+# supervisor-driven `rejected` retries all increment the attempt counter). When
+# the next attempt would exceed this, the job is escalated to `blocked` with a
+# clear message instead of churning forever in a retry/rejection loop. Set to 0
+# to disable the cap.
+WORKER_MAX_ATTEMPTS="${WORKER_MAX_ATTEMPTS:-8}"
+# Number of jobs the worker loop may process concurrently per scan. The default
+# of 1 preserves the historical strictly-serial behavior exactly. Set >1 to let
+# the supervisor dispatch a batch of independent jobs (each already runs in its
+# own .worktrees/<id> worktree, ai/<id> branch, and per-job lock, so isolation
+# is unchanged). Within a scan, up to this many jobs run in parallel and the
+# loop waits for the whole batch before rescanning (so a job is never dispatched
+# twice).
+WORKER_MAX_PARALLEL_JOBS="${WORKER_MAX_PARALLEL_JOBS:-1}"
+# Optional auto-integration: when set to 1, after the dispatch batch the loop
+# integrates each ready_for_review job whose gates pass (integrate_job.py --apply
+# enforces state, reviewer completion/blocks, attempt consistency, and a clean
+# main worktree) and prunes its worktree/branch. Default 0 leaves integration to
+# the supervisor/human, preserving current behavior.
+WORKER_AUTO_INTEGRATE="${WORKER_AUTO_INTEGRATE:-0}"
+WORKER_AUTO_INTEGRATE_METHOD="${WORKER_AUTO_INTEGRATE_METHOD:-merge}"
 WORKER_INIT_SUBMODULES="${WORKER_INIT_SUBMODULES:-1}"
 WORKER_SUBMODULE_PATHS="${WORKER_SUBMODULE_PATHS:-}"
 WORKER_REQUIRED_SUBMODULE_PATHS="${WORKER_REQUIRED_SUBMODULE_PATHS:-}"
@@ -66,9 +92,19 @@ normalize_cursor_model() {
   esac
 }
 
-WORKER_MODEL="$(normalize_cursor_model "$WORKER_MODEL")"
-REVIEWER_A_MODEL="$(normalize_cursor_model "$REVIEWER_A_MODEL")"
-REVIEWER_B_MODEL="$(normalize_cursor_model "$REVIEWER_B_MODEL")"
+normalize_model_for_wrapper() {
+  local wrapper="$1"
+  local model="$2"
+  if [[ "$wrapper" == "cursor-agent" ]]; then
+    normalize_cursor_model "$model"
+  else
+    echo "$model"
+  fi
+}
+
+WORKER_MODEL="$(normalize_model_for_wrapper "$WORKER_AGENT_WRAPPER" "$WORKER_MODEL")"
+REVIEWER_A_MODEL="$(normalize_model_for_wrapper "$REVIEWER_A_AGENT_WRAPPER" "$REVIEWER_A_MODEL")"
+REVIEWER_B_MODEL="$(normalize_model_for_wrapper "$REVIEWER_B_AGENT_WRAPPER" "$REVIEWER_B_MODEL")"
 if [[ "$WORKER_AGENT_WRAPPER" == "cursor-agent" && -z "$WORKER_AGENT_EXTRA_ARGS" ]]; then
   WORKER_AGENT_EXTRA_ARGS="--force"
 fi
@@ -173,7 +209,7 @@ run_worker_agent() {
   if [[ "$CURSOR_STREAM_PARTIAL_OUTPUT" == "1" ]]; then
     stream_args=(--stream-partial-output)
   fi
-  timeout "$CURSOR_TIMEOUT" \
+  local command=(
     python3 scripts/agent_wrapper.py run \
       --role worker \
       --wrapper "$WORKER_AGENT_WRAPPER" \
@@ -183,6 +219,12 @@ run_worker_agent() {
       --output-format "$CURSOR_OUTPUT_FORMAT" \
       "${stream_args[@]}" \
       --extra-args="$WORKER_AGENT_EXTRA_ARGS"
+  )
+  if [[ "$WORKER_TIMEOUT" == "0" ]]; then
+    "${command[@]}"
+  else
+    timeout "$WORKER_TIMEOUT" "${command[@]}"
+  fi
 }
 
 run_reviewer_agent() {
@@ -906,6 +948,27 @@ process_job() {
   worktree=".worktrees/$id"
   local task_file="$job/task.md"
 
+  # Break infinite retry / repeated-rejection loops: once the next attempt would
+  # exceed WORKER_MAX_ATTEMPTS, escalate to blocked instead of churning. This is
+  # a no-op when WORKER_MAX_ATTEMPTS=0.
+  if [[ "$WORKER_MAX_ATTEMPTS" != "0" && "$attempt" -gt "$WORKER_MAX_ATTEMPTS" ]]; then
+    echo "ESCALATION: $id would start attempt $attempt > WORKER_MAX_ATTEMPTS=$WORKER_MAX_ATTEMPTS; blocking to break the retry loop"
+    update_status "$status_file" \
+      state=blocked \
+      worker_error="reached WORKER_MAX_ATTEMPTS=$WORKER_MAX_ATTEMPTS without acceptance; escalated instead of looping (raise/clear WORKER_MAX_ATTEMPTS or reset attempt to retry)"
+    record_event \
+      --kind failure \
+      --role worker \
+      --reason-code attempt_cap_exceeded \
+      --reason "attempt $attempt exceeded WORKER_MAX_ATTEMPTS=$WORKER_MAX_ATTEMPTS" \
+      --job-id "$id" \
+      --attempt "$attempt" \
+      --state blocked \
+      --path "$job" 2>/dev/null || true
+    cleanup_current_lock
+    return 0
+  fi
+
   if [[ -z "$id" || -z "$base_ref" || -z "$branch" ]]; then
     update_status "$status_file" state=blocked worker_error="missing id, base_ref, or branch"
     cleanup_current_lock
@@ -1081,13 +1144,13 @@ process_job() {
   worker_exit=${PIPESTATUS[0]}
   worker_finished_at="$(utc_now)"
   set -e
-  if [[ "$worker_exit" -eq 124 ]]; then
+  if [[ "$WORKER_TIMEOUT" != "0" && "$worker_exit" -eq 124 ]]; then
     timed_out=true
-    worker_error="cursor-agent timed out after ${CURSOR_TIMEOUT}s"
+    worker_error="worker agent timed out after ${WORKER_TIMEOUT}s"
     echo "$worker_error" | tee -a "$cursor_err" >&2
-  elif [[ "$worker_exit" -eq 137 ]]; then
+  elif [[ "$WORKER_TIMEOUT" != "0" && "$worker_exit" -eq 137 ]]; then
     timed_out=true
-    worker_error="cursor-agent was killed after timeout escalation after ${CURSOR_TIMEOUT}s"
+    worker_error="worker agent was killed after timeout escalation after ${WORKER_TIMEOUT}s"
     echo "$worker_error" | tee -a "$cursor_err" >&2
   elif [[ "$worker_exit" -ne 0 ]]; then
     worker_error="cursor-agent exited with code $worker_exit"
@@ -1239,6 +1302,13 @@ sycl-ls() {
   command sycl-ls "$@"
 }
 TEST_PREAMBLE
+    {
+      printf 'export JOB_ID=%q\n' "$id"
+      printf 'export JOB_ATTEMPT=%q\n' "$attempt"
+      printf 'export JOB_BRANCH=%q\n' "$branch"
+      printf 'export JOB_BASE_SHA=%q\n' "$base_sha"
+      printf 'export BASE_SHA=%q\n' "$base_sha"
+    } >>"$test_script"
     printf '%s\n' "$test_command" >>"$test_script"
     set +e
     git -C "$worktree" status --short >"$test_log"
@@ -1310,6 +1380,17 @@ TEST_PREAMBLE
     --raw-output "$cursor_out" \
     --output "$handoff_json" >/dev/null || true
 
+  # Surface handoff quality into status so the supervisor/reviewers can see when
+  # the worker's final report was missing/unstructured (a recurring source of
+  # stale or contradictory attempt artifacts) instead of it being silent.
+  local handoff_quality
+  handoff_quality="$(jq -r '.handoff_quality // "unknown"' "$handoff_json" 2>/dev/null || echo unknown)"
+  update_status "$status_file" handoff_quality="$handoff_quality"
+  if [[ "$handoff_quality" == "missing_or_unstructured" ]]; then
+    echo "WARNING: $id attempt $attempt produced a missing/unstructured worker handoff; report fields may be placeholders" \
+      | tee -a "$cursor_err" >&2
+  fi
+
   python3 scripts/render_worker_report.py \
     --job-id "$id" \
     --attempt "$attempt" \
@@ -1347,6 +1428,7 @@ TEST_PREAMBLE
     report="$job/report.md"
 
   local commit_doc_path=""
+  local commit_doc_log="$job/commit_doc.attempt-$attempt.log"
   commit_doc_path="$(python3 scripts/create_commit_doc.py \
     --job-id "$id" \
     --attempt "$attempt" \
@@ -1357,9 +1439,16 @@ TEST_PREAMBLE
     --test-exit "$test_exit" \
     --test-log "$test_log" \
     --summary-file "$handoff_json" \
-    --handoff-json "$handoff_json" 2>/dev/null || true)"
+    --handoff-json "$handoff_json" 2>"$commit_doc_log" || true)"
   if [[ -n "$commit_doc_path" ]]; then
     update_status "$status_file" commit_doc="$commit_doc_path"
+  else
+    # Do not silently discard a commit-doc generation failure: surface it and
+    # keep the log. The downstream attempt-consistency check still hard-blocks
+    # on the missing canonical commit doc, but the cause is now visible instead
+    # of swallowed by 2>/dev/null (see workflow review: silent-failure paths).
+    echo "WARNING: commit doc generation failed for $id attempt $attempt; see $commit_doc_log" \
+      | tee -a "$cursor_err" >&2
   fi
 
   local consistency_exit=0
@@ -1574,6 +1663,47 @@ review_existing_job() {
   cleanup_current_lock
 }
 
+dispatch_pids=()
+
+# Block until fewer than WORKER_MAX_PARALLEL_JOBS background dispatches remain.
+# Portable (no `wait -n`, which is unavailable on macOS bash 3.2): wait for the
+# oldest dispatched PID first (FIFO).
+throttle_dispatch() {
+  while (( ${#dispatch_pids[@]} >= WORKER_MAX_PARALLEL_JOBS )); do
+    wait "${dispatch_pids[0]}" 2>/dev/null || true
+    dispatch_pids=("${dispatch_pids[@]:1}")
+  done
+}
+
+auto_integrate_ready_jobs() {
+  [[ "$WORKER_AUTO_INTEGRATE" == "1" ]] || return 0
+  shopt -s nullglob
+  for status_file in .ai/jobs/J*/status.json; do
+    local state job id
+    state="$(jq -r '.state // ""' "$status_file")"
+    [[ "$state" == "ready_for_review" ]] || continue
+    job="$(dirname "$status_file")"
+    id="$(basename "$job")"
+    # integrate_job.py --apply re-verifies every gate (state, reviewers_complete,
+    # reviewer blocks, attempt consistency, clean main worktree) and is a no-op
+    # if any fails, so a gate-failing job is safely skipped here.
+    echo "Auto-integrating $id ($WORKER_AUTO_INTEGRATE_METHOD)"
+    if python3 scripts/integrate_job.py "$id" --apply --method "$WORKER_AUTO_INTEGRATE_METHOD"; then
+      local integration_commit
+      integration_commit="$(git rev-parse HEAD 2>/dev/null || echo "")"
+      # Mark accepted so the job is not re-merged on the next scan, recording the
+      # integration commit; then prune its worktree/branch.
+      python3 scripts/transition_job.py "$status_file" accepted \
+        "integration_commit=$integration_commit" 2>/dev/null \
+        || echo "WARNING: integrated $id but failed to mark accepted; will need manual state fix"
+      python3 scripts/prune_accepted_job_refs.py --job "$id" 2>/dev/null || true
+    else
+      echo "Auto-integration skipped for $id (gates not satisfied or merge blocked)"
+    fi
+  done
+  shopt -u nullglob
+}
+
 while true; do
   if [[ -f "$HUMAN_GATE" || -f "$STRUCTURAL_REQUEST" || -f "$HUMAN_REVIEW_ACTION_REQUEST" || -f "$SUPERVISOR_ACTION_REQUEST" ]]; then
     sleep "$POLL_SECONDS"
@@ -1586,15 +1716,34 @@ while true; do
   shopt -s nullglob
   for status_file in .ai/jobs/J*/status.json; do
     state="$(jq -r '.state // ""' "$status_file")"
+    job_dir="$(dirname "$status_file")"
+    action=""
     if [[ "$state" == "queued" || "$state" == "rejected" ]]; then
-      found=1
-      process_job "$(dirname "$status_file")"
+      action=process_job
     elif [[ "$state" == "implemented" ]]; then
-      found=1
-      review_existing_job "$(dirname "$status_file")"
+      action=review_existing_job
+    else
+      continue
+    fi
+    found=1
+    if [[ "$WORKER_MAX_PARALLEL_JOBS" -le 1 ]]; then
+      "$action" "$job_dir"
+    else
+      throttle_dispatch
+      "$action" "$job_dir" &
+      dispatch_pids+=("$!")
     fi
   done
   shopt -u nullglob
+
+  # Drain the parallel batch fully before rescanning so no job is dispatched
+  # twice (a still-queued job would otherwise be re-picked next scan).
+  if [[ "${#dispatch_pids[@]}" -gt 0 ]]; then
+    wait "${dispatch_pids[@]}" 2>/dev/null || true
+    dispatch_pids=()
+  fi
+
+  auto_integrate_ready_jobs
 
   if [[ "$found" -eq 0 ]]; then
     sleep "$POLL_SECONDS"

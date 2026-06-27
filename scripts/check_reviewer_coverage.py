@@ -4,8 +4,15 @@
 from __future__ import annotations
 
 import argparse
-import re
 from pathlib import Path
+
+from reviewer_report_parsing import (
+    parse_bool,
+    parse_list,
+    parse_scalar,
+    section_block,
+    select_machine_block,
+)
 
 
 def changed_files(path: Path) -> set[str]:
@@ -23,37 +30,16 @@ def changed_files(path: Path) -> set[str]:
 
 
 def extract_coverage_block(text: str) -> str:
-    fenced_blocks = re.findall(r"```(?:yaml|yml)\s*\n(.*?diff_coverage:.*?)```", text, re.S | re.I)
-    if fenced_blocks:
-        return fenced_blocks[-1]
-    marker = text.rfind("diff_coverage:")
-    return text[marker:] if marker >= 0 else ""
+    """Return the precise ``diff_coverage`` section of the last valid machine block.
 
-
-def parse_bool(raw: str) -> bool:
-    return raw.strip().lower() in {"true", "yes"}
-
-
-def parse_list(block: str, key: str) -> list[str]:
-    lines = block.splitlines()
-    values: list[str] = []
-    in_list = False
-    base_indent = 0
-    for line in lines:
-        if re.match(rf"^\s*{re.escape(key)}\s*:\s*\[\s*\]\s*$", line):
-            return []
-        match = re.match(rf"^(\s*){re.escape(key)}\s*:\s*$", line)
-        if match:
-            in_list = True
-            base_indent = len(match.group(1))
-            continue
-        if in_list:
-            if line.strip().startswith("- "):
-                values.append(line.strip()[2:].strip().strip("'\""))
-                continue
-            if line.strip() and len(line) - len(line.lstrip()) <= base_indent:
-                break
-    return values
+    Uses the shared block selector so an earlier echoed prompt template or a
+    tokenized transcript fragment cannot fail an otherwise-complete review.
+    """
+    block = select_machine_block(text, "diff_coverage:")
+    if not block:
+        return ""
+    scoped = section_block(block, "diff_coverage")
+    return scoped if scoped else block
 
 
 def parse_report(path: Path) -> tuple[bool, set[str], list[str]]:
@@ -62,8 +48,8 @@ def parse_report(path: Path) -> tuple[bool, set[str], list[str]]:
     errors: list[str] = []
     if not block:
         return False, set(), [f"{path}: missing diff_coverage block"]
-    full_match = re.search(r"^\s*full_diff_reviewed\s*:\s*(\S+)", block, re.M)
-    full = parse_bool(full_match.group(1)) if full_match else False
+    full_raw = parse_scalar(block, "full_diff_reviewed")
+    full = parse_bool(full_raw) if full_raw else False
     if not full:
         errors.append(f"{path}: full_diff_reviewed is not true")
     reviewed = set(parse_list(block, "files_reviewed"))

@@ -18,6 +18,7 @@ NO_COMMIT_RE = re.compile(
     re.I,
 )
 NO_TEST_RE = re.compile(r"\b(no|without)\s+(tests?|validation)\s+(ran|run|executed)\b|tests?\s+not\s+run", re.I)
+SHA_TOKEN_RE = re.compile(r"\b[0-9a-f]{7,40}\b", re.I)
 
 
 def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -58,6 +59,22 @@ def commit_count(root: Path, base_sha: str, commit: str) -> int:
         return int(result.stdout.strip() or "0")
     except ValueError:
         return 0
+
+
+def attempt_commits(root: Path, base_sha: str, commit: str) -> list[str]:
+    if not base_sha or not commit:
+        return []
+    result = run(["git", "rev-list", f"{base_sha}..{commit}"], root)
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def sha_matches_attempt(token: str, commits: list[str]) -> bool:
+    token = token.lower()
+    if len(token) == 40:
+        return token in {commit.lower() for commit in commits}
+    return any(commit.lower().startswith(token) for commit in commits)
 
 
 def test_log_has_command(text: str) -> bool:
@@ -110,17 +127,26 @@ def main() -> int:
     status = read_json(root / args.status)
     report_text = consistency_claim_text(read_text(root / args.report))
     test_log_text = read_text(root / args.test_log)
+    handoff = read_json(root / args.handoff_json) if args.handoff_json else {}
     docs = sorted((root / ".ai" / "commit_docs").glob(f"{job_dir.name}_attempt-{args.attempt}_*.md"))
+    exact_doc = root / ".ai" / "commit_docs" / f"{job_dir.name}_attempt-{args.attempt}_{args.commit}.md"
     doc_text = "\n\n".join(consistency_claim_text(read_text(path)) for path in docs)
     docs_names = "\n".join(path.name for path in docs)
 
     issues: list[str] = []
     commits_in_attempt = commit_count(root / args.worktree, args.base_sha, args.commit)
+    attempt_commit_shas = attempt_commits(root / args.worktree, args.base_sha, args.commit)
     status_commit = str(status.get("commit", ""))
     status_test_exit = status.get("test_exit")
 
     if status_commit and status_commit != args.commit:
         issues.append(f"status.json commit `{status_commit}` differs from final commit `{args.commit}`.")
+
+    if not exact_doc.exists():
+        issues.append(
+            "canonical current-attempt commit documentation is missing: "
+            f"`{exact_doc.relative_to(root)}`."
+        )
 
     if commits_in_attempt > 0:
         if NO_COMMIT_RE.search(report_text):
@@ -139,6 +165,26 @@ def main() -> int:
     if status.get("tests_passed") is False and str(status_test_exit) == "0":
         issues.append("status.json has tests_passed=false but test_exit is zero.")
 
+    handoff_commits_made = str(handoff.get("commits_made", ""))
+    if handoff_commits_made and attempt_commit_shas:
+        # Mentioning the attempt base commit (for example "Base `b4db99dc`")
+        # is accurate context, not a stale-commit claim; only flag hashes that
+        # are neither attempt commits nor the known base SHA.
+        base_sha_lower = args.base_sha.lower()
+        unmatched = sorted(
+            {
+                token
+                for token in SHA_TOKEN_RE.findall(handoff_commits_made)
+                if not sha_matches_attempt(token, attempt_commit_shas)
+                and not base_sha_lower.startswith(token.lower())
+            }
+        )
+        if unmatched:
+            issues.append(
+                "structured handoff `commits_made` lists commit hash(es) not "
+                f"present in the canonical attempt range: {', '.join(f'`{item}`' for item in unmatched)}."
+            )
+
     output_lines = [
         "# Attempt Consistency Check",
         "",
@@ -148,6 +194,7 @@ def main() -> int:
         f"- Commit: `{args.commit}`",
         f"- Commits in attempt range: `{commits_in_attempt}`",
         f"- Test exit: `{status_test_exit}`",
+        f"- Canonical current-attempt commit doc: `{exact_doc.relative_to(root)}`",
         f"- Commit docs: `{', '.join(path.name for path in docs) or 'none'}`",
         f"- Structured handoff: `{args.handoff_json or 'none'}`",
         "",

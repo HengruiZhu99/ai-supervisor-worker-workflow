@@ -12,6 +12,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+TERMINAL_STATES = {"accepted", "cancelled", "superseded"}
+
+
 def parse_value(raw: str):
     lowered = raw.lower()
     if lowered == "true":
@@ -49,6 +52,14 @@ def main() -> int:
         help="allow explicit state=... updates; prefer transition_job.py for manual state changes",
     )
     parser.add_argument(
+        "--allow-terminal-state-overwrite",
+        action="store_true",
+        help=(
+            "allow changing an existing terminal state; intended only for explicit "
+            "manual state repair"
+        ),
+    )
+    parser.add_argument(
         "--merge-status-fields",
         action="append",
         default=[],
@@ -64,21 +75,60 @@ def main() -> int:
         print(f"status file does not exist: {status_path}", file=sys.stderr)
         return 1
 
-    with status_path.open("r", encoding="utf-8") as handle:
-        data = json.load(handle)
+    try:
+        with status_path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except json.JSONDecodeError as exc:
+        # A corrupt status.json must fail loudly with an actionable message
+        # instead of an uncaught traceback that stalls the loop on a confusing
+        # stack trace. Recovery is a deliberate manual repair of the file.
+        print(
+            f"corrupt status file {status_path} is not valid JSON: {exc}; "
+            "repair the file manually before retrying",
+            file=sys.stderr,
+        )
+        return 4
+    if not isinstance(data, dict):
+        print(
+            f"status file {status_path} must contain a JSON object, got "
+            f"{type(data).__name__}",
+            file=sys.stderr,
+        )
+        return 4
+
+    old_state = str(data.get("state", ""))
+
+    def validate_state_update(value: object) -> int:
+        if not args.allow_state:
+            print(
+                "refusing state update without --allow-state; use transition_job.py "
+                "for manual state changes",
+                file=sys.stderr,
+            )
+            return 2
+        new_state = str(value)
+        if (
+            old_state in TERMINAL_STATES
+            and new_state != old_state
+            and not args.allow_terminal_state_overwrite
+        ):
+            print(
+                f"refusing to change terminal state {old_state!r} to {new_state!r} "
+                "without --allow-terminal-state-overwrite",
+                file=sys.stderr,
+            )
+            return 3
+        return 0
 
     for fields_path in args.merge_status_fields:
         for key, value in load_status_fields(Path(fields_path)).items():
-            if key == "state" and not args.allow_state:
-                print(
-                    "refusing to merge state without --allow-state; use transition_job.py "
-                    "for manual state changes",
-                    file=sys.stderr,
-                )
-                return 2
             if not isinstance(key, str) or not key:
                 print(f"invalid status key in {fields_path}: {key!r}", file=sys.stderr)
                 return 2
+            if key == "state":
+                state_validation = validate_state_update(value)
+                if state_validation:
+                    return state_validation
             data[key] = value
 
     for item in args.updates:
@@ -89,14 +139,12 @@ def main() -> int:
         if not key:
             print(f"empty key in argument: {item}", file=sys.stderr)
             return 2
-        if key == "state" and not args.allow_state:
-            print(
-                "refusing state update without --allow-state; use transition_job.py "
-                "for manual state changes",
-                file=sys.stderr,
-            )
-            return 2
-        data[key] = parse_value(raw_value)
+        value = parse_value(raw_value)
+        if key == "state":
+            state_validation = validate_state_update(value)
+            if state_validation:
+                return state_validation
+        data[key] = value
 
     data["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 

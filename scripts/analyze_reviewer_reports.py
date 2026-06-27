@@ -10,6 +10,16 @@ import re
 import tempfile
 from pathlib import Path
 
+from reviewer_report_parsing import (
+    parse_bool,
+    parse_list,
+    parse_list_in_section,
+    parse_scalar,
+    parse_scalar_in_section,
+    section_block,
+    select_machine_block,
+)
+
 
 def read_text(path: Path) -> str:
     try:
@@ -19,75 +29,8 @@ def read_text(path: Path) -> str:
 
 
 def extract_block(text: str) -> str:
-    blocks = re.findall(r"```(?:yaml|yml)?\s*\n(.*?)```", text, re.S | re.I)
-    for block in reversed(blocks):
-        if "review_decision:" in block:
-            return block
-    marker = text.rfind("review_decision:")
-    return text[marker:] if marker >= 0 else ""
-
-
-def parse_bool(raw: str) -> bool:
-    return raw.strip().lower().strip("'\"") in {"true", "yes", "1"}
-
-
-def parse_scalar(block: str, key: str) -> str:
-    match = re.search(rf"^\s*{re.escape(key)}\s*:\s*(.*?)\s*$", block, re.M)
-    return match.group(1).strip().strip("'\"") if match else ""
-
-
-def parse_list(block: str, key: str) -> list[str]:
-    if re.search(rf"^\s*{re.escape(key)}\s*:\s*\[\s*\]\s*$", block, re.M):
-        return []
-    lines = block.splitlines()
-    values: list[str] = []
-    in_list = False
-    base_indent = 0
-    for line in lines:
-        match = re.match(rf"^(\s*){re.escape(key)}\s*:\s*$", line)
-        if match:
-            in_list = True
-            base_indent = len(match.group(1))
-            continue
-        if in_list:
-            stripped = line.strip()
-            if stripped.startswith("- "):
-                values.append(stripped[2:].strip().strip("'\""))
-                continue
-            if stripped and len(line) - len(line.lstrip()) <= base_indent:
-                break
-    return values
-
-
-def section_block(block: str, section: str) -> str:
-    lines = block.splitlines()
-    for index, line in enumerate(lines):
-        match = re.match(rf"^(\s*){re.escape(section)}\s*:\s*(?:#.*)?$", line)
-        if not match:
-            continue
-        base_indent = len(match.group(1))
-        selected = []
-        for raw in lines[index + 1 :]:
-            stripped = raw.strip()
-            if not stripped:
-                selected.append(raw)
-                continue
-            indent = len(raw) - len(raw.lstrip(" "))
-            if indent <= base_indent and re.match(r"^[A-Za-z_][\w-]*\s*:", stripped):
-                break
-            selected.append(raw)
-        return "\n".join(selected)
-    return ""
-
-
-def parse_scalar_in_section(block: str, section: str, key: str) -> str:
-    scoped = section_block(block, section)
-    return parse_scalar(scoped, key) if scoped else ""
-
-
-def parse_list_in_section(block: str, section: str, key: str) -> list[str]:
-    scoped = section_block(block, section)
-    return parse_list(scoped, key) if scoped else []
+    """Select the last valid machine block (shared, template/noise-tolerant)."""
+    return select_machine_block(text, "review_decision:")
 
 
 def fallback_recommendation(text: str) -> str:

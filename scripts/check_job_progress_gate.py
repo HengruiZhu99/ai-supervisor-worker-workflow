@@ -100,6 +100,19 @@ VAGUE_UNLOCK_PATTERNS = (
     re.compile(r"\bto\s+be\s+determined\b"),
 )
 JOB_ID_RE = re.compile(r"^J(?P<num>\d{4,})$")
+LOCK_ACTIVE_AFTER_RE = re.compile(r"^\s*active_after_job:\s*(J\d{4,})\s*$", re.MULTILINE)
+
+UPSTREAM_TRACE_REQUIRED_FIELDS = {
+    "failing milestone gate": "Failing milestone/gate",
+    "measured symptom": "Measured symptom",
+    "suspected upstream cause": "Suspected upstream cause",
+    "public reference or derivation source": "Public reference or derivation source",
+    "algorithmic decision or implementation change expected": (
+        "Algorithmic decision or implementation change expected"
+    ),
+    "validation close falsify criterion": "Validation close/falsify criterion",
+    "why this is not peripheral cleanup": "Why this is not peripheral cleanup",
+}
 
 
 @dataclass(frozen=True)
@@ -185,6 +198,51 @@ def extract_progress_block(text: str) -> dict[str, str] | None:
                 block[match.group(1)] = unquote(match.group(2))
         return block
     return None
+
+
+def normalize_label(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def extract_markdown_section(text: str, heading: str) -> str | None:
+    pattern = re.compile(
+        r"^##\s+" + re.escape(heading) + r"\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    match = pattern.search(text)
+    if match is None:
+        return None
+    next_heading = re.search(r"^##\s+", text[match.end() :], re.MULTILINE)
+    if next_heading is None:
+        return text[match.end() :]
+    return text[match.end() : match.end() + next_heading.start()]
+
+
+def extract_labeled_bullets(section: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for raw in section.splitlines():
+        match = re.match(r"\s*[-*]\s*([^:]+):\s*(.*?)\s*$", raw)
+        if match is None:
+            continue
+        fields[normalize_label(match.group(1))] = match.group(2).strip()
+    return fields
+
+
+def validate_upstream_trace(task_path: Path, text: str) -> list[str]:
+    section = extract_markdown_section(text, "Upstream Trace")
+    if section is None:
+        return [f"{task_path}: root-cause priority lock requires an ## Upstream Trace section"]
+
+    fields = extract_labeled_bullets(section)
+    errors: list[str] = []
+    for normalized, label in UPSTREAM_TRACE_REQUIRED_FIELDS.items():
+        value = fields.get(normalized, "")
+        if vague_unlock(value):
+            errors.append(
+                f"{task_path}: root-cause priority lock requires a concrete "
+                f"Upstream Trace field: {label}"
+            )
+    return errors
 
 
 def vague_unlock(value: str) -> bool:
@@ -287,6 +345,38 @@ def target_progress(task_path: Path) -> tuple[Progress | None, list[str]]:
     if block is None:
         return None, [f"{task_path}: missing required progress: block"]
     return progress_from_block(block, str(task_path))
+
+
+def repository_root_from_jobs_dir(jobs_dir: Path) -> Path:
+    resolved = jobs_dir.resolve()
+    if resolved.name == "jobs" and resolved.parent.name == ".ai":
+        return resolved.parent.parent
+    return Path.cwd().resolve()
+
+
+def priority_lock_file(jobs_dir: Path) -> Path:
+    return repository_root_from_jobs_dir(jobs_dir) / ".ai" / "supervisor" / "ROOT_CAUSE_PRIORITY_LOCK.md"
+
+
+def priority_lock_applies(task_path: Path, jobs_dir: Path) -> bool:
+    lock = priority_lock_file(jobs_dir)
+    if not lock.exists():
+        return False
+
+    current = job_number(current_job_id(task_path))
+    try:
+        text = lock.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return True
+
+    match = LOCK_ACTIVE_AFTER_RE.search(text)
+    if match is None:
+        return True
+
+    active_after = job_number(match.group(1))
+    if active_after is None or current is None:
+        return True
+    return current > active_after
 
 
 def infer_subsystem(text: str) -> str:
@@ -442,6 +532,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     progress, errors = target_progress(task_path)
+    if priority_lock_applies(task_path, jobs_dir):
+        task_text = task_path.read_text(encoding="utf-8", errors="replace")
+        errors.extend(validate_upstream_trace(task_path, task_text))
     if progress is not None and progress.metadata_like:
         streak = metadata_streak(jobs_dir, progress, current_job_id(task_path))
         if len(streak) >= 2:

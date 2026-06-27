@@ -92,6 +92,37 @@ class AnalyzeReviewerReportsTests(unittest.TestCase):
             self.assertTrue(payload["reviewer_a_blocks"])
             self.assertIn("missing progress_review YAML block", "\n".join(payload["errors"]))
 
+    def test_echoed_template_before_real_block_is_ignored(self) -> None:
+        # The echoed reviewer prompt template uses the placeholder path
+        # `path/from/changed_files`; it must not be selected over the real block.
+        template = """```yaml
+diff_coverage:
+  full_diff_reviewed: true
+  files_reviewed:
+    - path/from/changed_files
+  unreviewed_files: []
+review_decision:
+  recommendation: accept
+  blocks_acceptance: false
+  blocking_reasons: []
+progress_review:
+  adds_executable_or_validation_value: true
+  metadata_unlock_is_credible: true
+  continues_metadata_streak: false
+  blocks_acceptance: false
+  blocking_reasons: []
+```
+"""
+        a_text = "Prompt template was:\n" + template + "\nMy actual review:\n" + report(progress_blocks=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = self.run_analyzer(root, a_text, report())
+            # The real (last, non-template) block blocks acceptance, so the
+            # echoed accepting template must NOT mask it.
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads((root / "decisions.json").read_text(encoding="utf-8"))
+            self.assertTrue(payload["reviewer_a_blocks"])
+
 
 if __name__ == "__main__":
     raise SystemExit(unittest.main())

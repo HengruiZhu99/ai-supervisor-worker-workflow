@@ -28,6 +28,10 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 GUI_ROOT = PACKAGE_ROOT / "gui"
 WORKFLOW_CHAT_JOBS: dict[str, dict] = {}
 WORKFLOW_CHAT_JOBS_LOCK = threading.Lock()
+STATE_CACHE_LOCK = threading.Lock()
+STATE_CACHE_ROOT = ""
+STATE_CACHE_PAYLOAD = b""
+STATE_CACHE_AT = 0.0
 DEFAULT_LOG_DISPLAY_LINES = 2_000
 ACTIVE_JOB_STATES = {
     "queued",
@@ -75,16 +79,26 @@ DEFAULT_GUI_PORT = 8765
 GUI_PORT_SEARCH_LIMIT = 100
 
 
-def run(args: list[str], cwd: Path) -> tuple[int, str, str]:
-    result = subprocess.run(
-        args,
-        cwd=str(cwd),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    return result.returncode, result.stdout.strip(), result.stderr.strip()
+def run(args: list[str], cwd: Path, timeout: float = 10.0) -> tuple[int, str, str]:
+    try:
+        result = subprocess.run(
+            args,
+            cwd=str(cwd),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout,
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        return 124, stdout.strip(), (stderr.strip() + f"\ncommand timed out after {timeout}s").strip()
 
 
 def read_text(path: Path, limit: int | None = 80_000) -> str:
@@ -223,6 +237,40 @@ def logged_workflow_commit(log_tail: str) -> str:
     return matches[-1] if matches else ""
 
 
+def latest_loop_launch_env(root: Path, name: str) -> dict[str, str]:
+    """Parse the most recent launch header from a loop log.
+
+    The GUI needs the active wrapper/model, not the static form defaults. Loop
+    logs can be long enough that the launch header falls outside the displayed
+    tail, so scan the full local log and keep only simple key=value header
+    entries from the latest launch block.
+    """
+    path = log_file(root, name)
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return {}
+
+    latest: dict[str, str] = {}
+    in_header = False
+    for line in lines:
+        if line.startswith("--- launched "):
+            latest = {}
+            in_header = True
+            continue
+        if not in_header:
+            continue
+        if "=" not in line:
+            in_header = False
+            continue
+        key, value = line.split("=", 1)
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            latest[key] = value.strip()
+        else:
+            in_header = False
+    return latest
+
+
 def lock_workflow_commit(root: Path, name: str) -> str:
     if read_pid(loop_lock_pid_file(root, name)) is None:
         return ""
@@ -302,6 +350,7 @@ def control_info(root: Path, name: str) -> dict:
         "workflow_commit": running_commit,
         "expected_workflow_commit": expected_commit,
         "version_warning": version_warning,
+        "launch_env": latest_loop_launch_env(root, name),
     }
 
 
@@ -744,7 +793,7 @@ def supervisor_preparing_human_review(supervisor: dict, job_rows: list[dict]) ->
 def activity_state(job_rows: list[dict], processes: dict, controls: dict, supervisor: dict) -> dict:
     active = active_job_summary(job_rows)
     ready_job = next((job for job in job_rows if job.get("state") == "ready_for_review"), None)
-    review_failed_job = next((job for job in job_rows if job.get("state") in {"review_failed", "review_timeout"}), None)
+    recovery_job = next((job for job in job_rows if job.get("state") in {"blocked", "review_failed", "review_timeout"}), None)
     supervisor_agent_active = bool(processes.get("supervisor_agent"))
     supervisor_running = bool(controls.get("supervisor", {}).get("running"))
     worker_running = bool(controls.get("worker", {}).get("running"))
@@ -775,8 +824,11 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
             if supervisor_agent_active
             else f"{ready_job.get('id', 'A job')} is ready for supervisor review."
         )
-    elif review_failed_job:
-        summary = f"Reviewer stage failed on {review_failed_job.get('id', 'a job')}; supervisor action is needed."
+    elif recovery_job:
+        if recovery_job.get("state") == "blocked":
+            summary = f"Worker is blocked on {recovery_job.get('id', 'a job')}; supervisor action is needed."
+        else:
+            summary = f"Reviewer stage failed on {recovery_job.get('id', 'a job')}; supervisor action is needed."
     elif active and active.get("state") in {"implemented", "reviewing"}:
         summary = f"Cursor reviewers are reviewing {active.get('id', 'a job')}."
     elif active and active.get("timed_out"):
@@ -831,8 +883,8 @@ def activity_state(job_rows: list[dict], processes: dict, controls: dict, superv
         supervisor_text = f"Supervisor is waiting for worker state changes on {active.get('id')}."
     elif any(job.get("state") == "ready_for_review" for job in job_rows):
         supervisor_text = "Supervisor should review a job that is ready_for_review."
-    elif any(job.get("state") in {"review_failed", "review_timeout"} for job in job_rows):
-        supervisor_text = "Supervisor should inspect reviewer failure artifacts and decide whether to retry, reject, or open a gate."
+    elif any(job.get("state") in {"blocked", "review_failed", "review_timeout"} for job in job_rows):
+        supervisor_text = "Supervisor should inspect blocked/reviewer-failure artifacts and decide whether to repair, retry, reject, or open a gate."
     elif preparing_human_review:
         supervisor_text = "Supervisor is preparing the milestone review summary and checklist."
     elif supervisor_agent_active:
@@ -1086,6 +1138,37 @@ def state(root: Path) -> dict:
     }
 
 
+def state_payload(root: Path) -> bytes:
+    global STATE_CACHE_AT, STATE_CACHE_PAYLOAD, STATE_CACHE_ROOT
+
+    cache_ttl = env_nonnegative_int("AI_WORKFLOW_GUI_STATE_CACHE_SECONDS", 5)
+    cache_root = str(root)
+    now = time.monotonic()
+    if (
+        cache_ttl > 0
+        and STATE_CACHE_ROOT == cache_root
+        and STATE_CACHE_PAYLOAD
+        and now - STATE_CACHE_AT <= cache_ttl
+    ):
+        return STATE_CACHE_PAYLOAD
+
+    with STATE_CACHE_LOCK:
+        now = time.monotonic()
+        if (
+            cache_ttl > 0
+            and STATE_CACHE_ROOT == cache_root
+            and STATE_CACHE_PAYLOAD
+            and now - STATE_CACHE_AT <= cache_ttl
+        ):
+            return STATE_CACHE_PAYLOAD
+
+        payload = json.dumps(state(root), indent=2).encode("utf-8")
+        STATE_CACHE_ROOT = cache_root
+        STATE_CACHE_PAYLOAD = payload
+        STATE_CACHE_AT = time.monotonic()
+        return payload
+
+
 def agent_wrapper_catalog(root: Path) -> dict:
     script = PACKAGE_ROOT / "scripts" / "agent_wrapper.py"
     if not script.exists():
@@ -1266,7 +1349,7 @@ def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
         "WORKER_AGENT_WRAPPER": str(payload.get("wrapper", "cursor-agent")),
         "WORKER_MODEL": worker_model,
         "CURSOR_MODEL": worker_model,
-        "CURSOR_TIMEOUT": str(payload.get("timeout", "3600")),
+        "WORKER_TIMEOUT": str(payload.get("timeout", "0")),
         "WORKER_AGENT_EXTRA_ARGS": extra_args,
         "CURSOR_AGENT_EXTRA_ARGS": extra_args,
         "CURSOR_REVIEWERS_ENABLED": "1" if payload.get("reviewers_enabled", True) else "0",
@@ -1287,7 +1370,7 @@ def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
 
 def supervisor_loop_env(payload: dict | None = None) -> dict[str, str]:
     payload = payload or {}
-    supervisor_model = str(payload.get("model", "claude-fable-5-thinking-xhigh"))
+    supervisor_model = str(payload.get("model", "gpt-5.5-high"))
     return {
         "SUPERVISOR_AGENT_WRAPPER": str(payload.get("wrapper", "cursor-agent")),
         "SUPERVISOR_MODEL": supervisor_model,
@@ -1303,14 +1386,31 @@ def supervisor_loop_env(payload: dict | None = None) -> dict[str, str]:
 
 def modulator_loop_env(payload: dict | None = None) -> dict[str, str]:
     payload = payload or {}
-    modulator_model = str(payload.get("model", "claude-fable-5-thinking-xhigh"))
+    wrapper = str(payload.get("wrapper", os.environ.get("MODULATOR_AGENT_WRAPPER", "codex")))
+    default_model = "gpt-5.5" if wrapper == "codex" else "gpt-5.5-high"
+    modulator_model = str(payload.get("model", os.environ.get("MODULATOR_MODEL", default_model)))
+    default_extra_args = "" if wrapper == "codex" else "--force"
     return {
-        "MODULATOR_AGENT_WRAPPER": str(payload.get("wrapper", "cursor-agent")),
+        "MODULATOR_AGENT_WRAPPER": wrapper,
         "MODULATOR_MODEL": modulator_model,
         "MODULATOR_POLL_SECONDS": str(payload.get("poll_seconds", "30")),
-        "MODULATOR_EXTRA_ARGS": str(payload.get("extra_args", "--force")),
+        "MODULATOR_EXTRA_ARGS": str(payload.get("extra_args", default_extra_args)),
         "MODULATOR_CLEARS_PRESET_BOUNDARIES": str(payload.get("clears_preset_boundaries", "0")),
     }
+
+
+def running_modulator_agent(root: Path) -> tuple[str, str]:
+    wrapper = os.environ.get("MODULATOR_AGENT_WRAPPER", "codex")
+    model = os.environ.get(
+        "MODULATOR_MODEL",
+        "gpt-5.5" if wrapper == "codex" else "gpt-5.5-high",
+    )
+    launch_env = latest_loop_launch_env(root, "modulator_loop")
+    wrapper = launch_env.get("modulator_agent_wrapper", wrapper) or wrapper
+    model = launch_env.get("modulator_model", model) or model
+    if model == "claude-fable-5-thinking-xhigh" and wrapper == "codex" and "MODULATOR_MODEL" not in os.environ:
+        model = "gpt-5.5"
+    return wrapper, model
 
 
 def auto_relaunch_worker_if_needed(
@@ -1721,7 +1821,7 @@ Hard constraints:
         os.environ.get("AI_WORKFLOW_CHAT_MODEL")
         or os.environ.get("SUPERVISOR_MODEL")
         or os.environ.get("CODEX_MODEL")
-        or "claude-fable-5-thinking-xhigh"
+        or "gpt-5.5-high"
     )
     effort = os.environ.get("AI_WORKFLOW_CHAT_REASONING_EFFORT") or "model-default"
     timeout_seconds = max(30, env_int("AI_WORKFLOW_CHAT_TIMEOUT", 300))
@@ -1848,8 +1948,10 @@ def modulator_terminal_chat(root: Path, message: str, model_override: str = "") 
     message = message.strip()
     if not message:
         return {"ok": False, "message": "Enter a message for the modulator terminal."}
-    if not shutil.which("cursor-agent"):
-        return {"ok": False, "message": "cursor-agent executable was not found in PATH."}
+    wrapper, running_model = running_modulator_agent(root)
+    executable = "codex" if wrapper == "codex" else "cursor-agent"
+    if not shutil.which(executable):
+        return {"ok": False, "message": f"{executable} executable was not found in PATH."}
 
     code, jobs_summary, jobs_err = run(["python3", "scripts/summarize_jobs.py"], root)
     if code != 0:
@@ -1943,25 +2045,39 @@ Rules for this terminal session:
 {context}
 """
 
-    model = (
-        model_override.strip()
-        or os.environ.get("AI_WORKFLOW_TERMINAL_MODEL")
-        or os.environ.get("MODULATOR_MODEL")
-        or "claude-fable-5-thinking-xhigh"
-    )
+    requested_model = model_override.strip()
+    if requested_model:
+        catalog = agent_wrapper_catalog(root)
+        wrapper_info = next(
+            (
+                item for item in catalog.get("wrappers", [])
+                if isinstance(item, dict) and item.get("id") == wrapper
+            ),
+            {},
+        )
+        allowed_models = wrapper_info.get("models") if isinstance(wrapper_info, dict) else []
+        if isinstance(allowed_models, list) and allowed_models and requested_model not in allowed_models:
+            requested_model = ""
+    model = requested_model or os.environ.get("AI_WORKFLOW_TERMINAL_MODEL") or running_model
     timeout_seconds = max(30, env_int("AI_WORKFLOW_TERMINAL_TIMEOUT", 900))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = runs_dir(root) / f"modulator_terminal_{stamp}.log"
+    prompt_path = runs_dir(root) / f"modulator_terminal_{stamp}.prompt.md"
+    prompt_path.write_text(prompt, encoding="utf-8")
     args = [
-        "cursor-agent",
-        "-p",
-        "--trust",
-        "--force",
-        "--workspace",
-        str(root),
+        "python3",
+        "scripts/agent_wrapper.py",
+        "run",
+        "--role",
+        "modulator",
+        "--wrapper",
+        wrapper,
         "--model",
         model,
-        prompt,
+        "--workspace",
+        str(root),
+        "--prompt-file",
+        str(prompt_path.relative_to(root)),
     ]
     append_terminal_entry(root, "user", message)
     try:
@@ -1994,6 +2110,7 @@ Rules for this terminal session:
             [
                 "# Modulator Terminal",
                 "",
+                f"- Wrapper: `{wrapper}`",
                 f"- Model: `{model}`",
                 f"- Exit code: `{result.returncode}`",
                 "",
@@ -2371,7 +2488,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/state":
-            payload = json.dumps(state(self.project_root), indent=2).encode("utf-8")
+            payload = state_payload(self.project_root)
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")

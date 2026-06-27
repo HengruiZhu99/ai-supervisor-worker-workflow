@@ -10,8 +10,20 @@ MODULATOR_POLL_SECONDS="${MODULATOR_POLL_SECONDS:-30}"
 MODULATOR_RUNS_DIR="${MODULATOR_RUNS_DIR:-.ai/modulator_runs}"
 LOOP_LOCK_DIR="${MODULATOR_LOOP_LOCK_DIR:-.ai/supervisor_runs}"
 MODULATOR_AGENT_WRAPPER="${MODULATOR_AGENT_WRAPPER:-cursor-agent}"
-MODULATOR_MODEL="${MODULATOR_MODEL:-claude-fable-5-thinking-xhigh}"
-MODULATOR_EXTRA_ARGS="${MODULATOR_EXTRA_ARGS:---force}"
+if [[ -z "${MODULATOR_MODEL:-}" ]]; then
+  if [[ "$MODULATOR_AGENT_WRAPPER" == "codex" ]]; then
+    MODULATOR_MODEL="gpt-5.5"
+  else
+    MODULATOR_MODEL="gpt-5.5-high"
+  fi
+fi
+if [[ -z "${MODULATOR_EXTRA_ARGS+x}" ]]; then
+  if [[ "$MODULATOR_AGENT_WRAPPER" == "cursor-agent" ]]; then
+    MODULATOR_EXTRA_ARGS="--force"
+  else
+    MODULATOR_EXTRA_ARGS=""
+  fi
+fi
 MODULATOR_CLEARS_PRESET_BOUNDARIES="${MODULATOR_CLEARS_PRESET_BOUNDARIES:-0}"
 MODULATOR_RESTART_LOOPS="${MODULATOR_RESTART_LOOPS:-1}"
 # Minutes without worker-loop log progress before an alive-but-hung run wakes
@@ -148,6 +160,9 @@ for status_path in sorted(Path(".ai/jobs").glob("J*/status.json")):
     )
 
 for job_id, (state, attempt) in sorted(job_states.items()):
+    if state == "blocked":
+        reasons.append(f"worker_blocked:{job_id}")
+        signature_parts.append(f"{job_id}:{state}:{attempt}")
     if state in {"review_failed", "review_timeout"}:
         reasons.append(f"review_failure:{job_id}")
         signature_parts.append(f"{job_id}:{state}:{attempt}")
@@ -275,6 +290,78 @@ if new_steering:
         "\n".join(sorted(seen | set(pending))) + "\n", encoding="utf-8"
     )
 
+# Root-cause priority lock enforcement. This catches a later supervisor
+# dispatch that bypasses the lock even when no new steering file exists.
+root_lock = Path(".ai/supervisor/ROOT_CAUSE_PRIORITY_LOCK.md")
+if root_lock.exists():
+    try:
+        lock_text = root_lock.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        lock_text = ""
+    active_after_match = re.search(r"^\s*active_after_job:\s*(J\d{4,})\s*$", lock_text, re.MULTILINE)
+
+    def job_number(name: str) -> int | None:
+        match = re.match(r"^J(\d{4,})$", name)
+        return int(match.group(1)) if match else None
+
+    active_after_num = (
+        job_number(active_after_match.group(1)) if active_after_match is not None else None
+    )
+
+    def has_upstream_trace(task_text: str) -> bool:
+        if not re.search(r"^##\s+Upstream Trace\s*$", task_text, re.IGNORECASE | re.MULTILINE):
+            return False
+        required = [
+            "Failing milestone/gate",
+            "Measured symptom",
+            "Suspected upstream cause",
+            "Public reference or derivation source",
+            "Algorithmic decision or implementation change expected",
+            "Validation close/falsify criterion",
+            "Why this is not peripheral cleanup",
+        ]
+        for label in required:
+            if not re.search(r"^\s*[-*]\s*" + re.escape(label) + r"\s*:", task_text, re.IGNORECASE | re.MULTILINE):
+                return False
+        return True
+
+    post_lock_states = {
+        "queued",
+        "running",
+        "rejected",
+        "implemented",
+        "reviewing",
+        "ready_for_review",
+        "blocked",
+        "review_failed",
+        "review_timeout",
+        "accepted",
+    }
+    violations = []
+    for status_path in sorted(Path(".ai/jobs").glob("J*/status.json")):
+        try:
+            data = json.loads(status_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        job_id = str(data.get("id") or status_path.parent.name)
+        number = job_number(job_id)
+        if active_after_num is not None and number is not None and number <= active_after_num:
+            continue
+        state = str(data.get("state", ""))
+        if state not in post_lock_states:
+            continue
+        task_path = status_path.parent / "task.md"
+        try:
+            task_text = task_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            task_text = ""
+        if not has_upstream_trace(task_text):
+            violations.append(f"{job_id}:{state}:missing_or_incomplete_upstream_trace")
+    if violations:
+        reasons.append("root_lock_violation")
+        digest = hashlib.sha256("\n".join(violations).encode("utf-8")).hexdigest()[:16]
+        signature_parts.append(f"root_lock:{digest}")
+
 signature = hashlib.sha256("|".join(signature_parts).encode("utf-8")).hexdigest()
 print(",".join(reasons) + "|" + signature)
 PY
@@ -327,6 +414,7 @@ Read first:
 - `.ai/supervisor/modulator_protocol.md` (your full protocol and authority limits)
 - `AGENTS.md` (roles overview, including the Modulator section)
 - `.ai/supervisor/autonomous_boundary_policy.md` (which gates you may and may not clear)
+- `.ai/supervisor/ROOT_CAUSE_PRIORITY_LOCK.md`, if present
 - `.ai/supervisor/HUMAN_REVIEW_REQUIRED.md`, if present
 - `.ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md`, if present
 - `.ai/supervisor/ledger.md` (recent tail)
@@ -356,25 +444,26 @@ Act strictly within the modulator protocol:
   timestamp>.md`, and stop. The supervisor will dispatch the corrective job.
 - For an open non-preset gate that asks for a scope, architecture, or
   scientific-convention decision: make the decision yourself. Ground it in
-  the design prompt, the roadmap target, the cited public references, and
-  the accepted evidence; choose the option that preserves scientific meaning
-  and the smallest scope consistent with the roadmap. Record the decision with full rationale and references in
+  the design prompt, the roadmap target (stable controlled BBH evolution),
+  the cited public references, and the accepted evidence; choose the option
+  that preserves scientific meaning and the smallest scope consistent with
+  the roadmap. Record the decision with full rationale and references in
   `.ai/modulator/decisions/decision.<UTC timestamp>.md`, write
   `MODULATOR_FINDINGS.md` carrying the decision and its corrective/dispatch
   directive, archive the gate file, and stop. Do NOT leave such gates waiting
   for a human. Only escalate to a human if the decision would contradict an
-  explicit prior human instruction or exceed the approved roadmap itself.
+  explicit prior human instruction or exceed the M32-M37 roadmap itself.
   When the decision changes the numerics of the scheme under test, the
   directive must instruct the supervisor to audit every frozen validation
   gate of the affected job for observability under the new scheme and to
   redesign dominated gates in the requeue amendment.
-- If the gate is a preset boundary gate (listed in
-  `.ai/supervisor/autonomous_boundary_policy.md`), leave it in place unless
-  MODULATOR_CLEARS_PRESET_BOUNDARIES is 1. When leaving a
+- If the gate is a preset boundary gate (pre-M32, pre-M33, pre-M35), leave it
+  in place unless MODULATOR_CLEARS_PRESET_BOUNDARIES is 1. When leaving a
   gate in place, append a short `## Modulator Triage` note to the gate file
   with your independent verification so the human review is better informed,
   but do not alter the existing gate content.
-- For `SUPERVISOR_ACTION_REQUIRED`, `review_failed`/`review_timeout`, or
+- For `SUPERVISOR_ACTION_REQUIRED`, `worker_blocked:<job>`,
+  `review_failed`/`review_timeout`, or
   repeated rejections: diagnose the failure mode from logs and artifacts. If
   it is a mechanical/workflow-state problem you can safely repair (stale lock,
   stale status file, missing directory), repair it and record the repair in
@@ -390,9 +479,9 @@ Act strictly within the modulator protocol:
   `MODULATOR_FINDINGS.md` prescribing a job revision (e.g. split the test,
   add a timeout) for the supervisor.
 - For `milestone_activity` or `mid_tranche_audit`: run the progress audit
-  from the protocol. Compare accepted evidence against the main design target
-  stated in `.ai/supervisor/design_prompt.md` and the roadmap milestone text.
-  Write
+  from the protocol. Compare accepted evidence against the design target
+  (stable controlled BBH evolution, dual-frame first-order generalized
+  harmonic, all-I3 cubed-sphere domain). Write
   `.ai/modulator/milestone_audits/<milestone-or-audit>.<UTC timestamp>.md`.
   Flag drift (proxy evidence labeled as evolution, audit-only chains,
   weakened validation, roadmap divergence) and, when supervisor action is
@@ -404,6 +493,11 @@ Act strictly within the modulator protocol:
   `MODULATOR_FINDINGS.md` if the supervisor must act, and record how each
   directive was honored in your triage record. Then move each processed file
   to `.ai/modulator/steering/processed/`.
+- For `root_lock_violation`: read `.ai/supervisor/ROOT_CAUSE_PRIORITY_LOCK.md`
+  and the violating post-lock job task/status files. If a queued or running job
+  bypasses the locked root-cause path or lacks the required `## Upstream Trace`,
+  write `MODULATOR_FINDINGS.md` directing the supervisor to supersede or stop
+  that dispatch chain and return to the locked boundary-method path.
 - Never edit `src/`, `tests/`, `CMakeLists.txt`, or supervisor-owned planning
   files. Never accept/reject/create jobs. Never loosen tolerances or waive
   reviewer blocks. Prescribe; do not implement.
