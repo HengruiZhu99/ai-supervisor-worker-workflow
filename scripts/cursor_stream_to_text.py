@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 """Convert Cursor stream-json output to readable text.
 
 The Cursor stream schema is CLI-version dependent, so this parser is intentionally

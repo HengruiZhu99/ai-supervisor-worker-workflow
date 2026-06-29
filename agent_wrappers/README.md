@@ -17,10 +17,10 @@ python3 scripts/agent_wrapper.py list --json
 
 Built-in wrappers:
 
-- `cursor-agent`: available for worker, reviewer, supervisor, and chat roles;
-  recommended for workers and reviewers.
-- `codex`: available for worker, reviewer, supervisor, and chat roles;
-  recommended for supervisors and chat.
+- `cursor-agent`: available for worker, reviewer, supervisor, modulator, and
+  chat roles; recommended for workers and reviewers.
+- `codex`: available for worker, reviewer, supervisor, modulator, and chat
+  roles; recommended for supervisors and chat.
 
 To add another wrapper, such as Claude Code:
 
@@ -44,3 +44,27 @@ Command templates may use:
 
 Keep wrapper scripts role-neutral. The workflow loops decide whether an agent is
 acting as worker, reviewer, supervisor, or chat.
+
+## Consensus panels
+
+The multi-model consensus orchestrator (`scripts/orchestrator.py`) reads panel
+definitions from:
+
+```text
+agent_wrappers/panels/<panel-id>.json
+```
+
+Each panel lists `panelists` (id, wrapper, model, optional focus), a
+`decision_schema` (`reviewer`, `supervisor`, or `generic`), a `quorum`
+(`unanimous` or `majority`), and `max_rounds`. List them with:
+
+```bash
+python3 scripts/orchestrator.py list-panels
+```
+
+The built-in `reviewer` and `supervisor` panels use `gpt-5.5-high`,
+`claude-opus-4-8-thinking-high`, and `gpt-5.3-codex-high`. Override models per
+run without editing the file via `--models "m1,m2,m3"` (or the
+`REVIEWER_CONSENSUS_MODELS` / `SUPERVISOR_CONSENSUS_MODELS` environment
+variables). Panelists always run read-only; prefer read-only-capable wrappers
+(such as `cursor-agent`) for panel members.

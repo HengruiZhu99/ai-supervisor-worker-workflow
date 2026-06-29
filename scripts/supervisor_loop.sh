@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 set -euo pipefail
 
-ROOT="$(git rev-parse --show-toplevel)"
+ROOT="${AIFLOW_PROJECT_ROOT:-$(git rev-parse --show-toplevel)}"
 cd "$ROOT"
 
 SUPERVISOR_POLL_SECONDS="${SUPERVISOR_POLL_SECONDS:-10}"
@@ -22,6 +27,19 @@ fi
 SUPERVISOR_AUTO_RELAUNCH_FAILURE="${SUPERVISOR_AUTO_RELAUNCH_FAILURE:-1}"
 SUPERVISOR_MAX_FAILURE_RELAUNCHES="${SUPERVISOR_MAX_FAILURE_RELAUNCHES:-1}"
 SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE="${SUPERVISOR_PUSH_AFTER_STRUCTURAL_GATE:-0}"
+# Multi-model supervisor consensus (scripts/orchestrator.py). When enabled
+# (default), a panel of models deliberates read-only over the current workflow
+# state and converges on the next supervisor action; a single supervisor
+# executor then applies that agreed decision, so all state mutation stays
+# single-threaded. Set SUPERVISOR_CONSENSUS_ENABLED=0 for the legacy single-agent
+# supervisor.
+SUPERVISOR_CONSENSUS_ENABLED="${SUPERVISOR_CONSENSUS_ENABLED:-1}"
+SUPERVISOR_CONSENSUS_PANEL="${SUPERVISOR_CONSENSUS_PANEL:-supervisor}"
+SUPERVISOR_CONSENSUS_MODELS="${SUPERVISOR_CONSENSUS_MODELS:-}"
+SUPERVISOR_CONSENSUS_WRAPPERS="${SUPERVISOR_CONSENSUS_WRAPPERS:-}"
+SUPERVISOR_CONSENSUS_MAX_ROUNDS="${SUPERVISOR_CONSENSUS_MAX_ROUNDS:-3}"
+SUPERVISOR_CONSENSUS_QUORUM="${SUPERVISOR_CONSENSUS_QUORUM:-unanimous}"
+SUPERVISOR_CONSENSUS_TIMEOUT="${SUPERVISOR_CONSENSUS_TIMEOUT:-2400}"
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 STRUCTURAL_REQUEST=".ai/supervisor/STRUCTURAL_CHANGE_REQUESTED.md"
 HUMAN_REVIEW_ACTION_REQUEST=".ai/supervisor/HUMAN_REVIEW_ACTION_REQUESTED.md"
@@ -42,12 +60,21 @@ done
 
 mkdir -p "$SUPERVISOR_RUNS_DIR"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/agent_run.sh
+source "$SCRIPT_DIR/lib/agent_run.sh"
 WORKFLOW_PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export AI_WORKFLOW_PACKAGE_ROOT="${AI_WORKFLOW_PACKAGE_ROOT:-$WORKFLOW_PACKAGE_ROOT}"
 workflow_commit="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo "workflow_commit=$workflow_commit"
 echo "supervisor_agent_wrapper=$SUPERVISOR_AGENT_WRAPPER"
 echo "supervisor_model=$SUPERVISOR_MODEL"
+echo "supervisor_consensus_enabled=$SUPERVISOR_CONSENSUS_ENABLED"
+if [[ "$SUPERVISOR_CONSENSUS_ENABLED" == "1" ]]; then
+  echo "supervisor_consensus_panel=$SUPERVISOR_CONSENSUS_PANEL"
+  echo "supervisor_consensus_models=${SUPERVISOR_CONSENSUS_MODELS:-<panel default>}"
+  echo "supervisor_consensus_max_rounds=$SUPERVISOR_CONSENSUS_MAX_ROUNDS"
+  echo "supervisor_consensus_quorum=$SUPERVISOR_CONSENSUS_QUORUM"
+fi
 supervisor_failure_relaunches=0
 
 lock_pid_alive() {
@@ -224,6 +251,88 @@ else:
 PY
 }
 
+supervisor_consensus_deliberate() {
+  # Read-only multi-model deliberation over the current workflow state. On
+  # success it appends a "Panel consensus decision" section to the executor
+  # prompt ($1) so the single supervisor executor applies the agreed action.
+  local base_prompt="$1"
+  local timestamp="$2"
+  local consensus_dir="$SUPERVISOR_RUNS_DIR/consensus.$timestamp"
+  local delib_prompt="$SUPERVISOR_RUNS_DIR/supervisor.$timestamp.deliberation.md"
+  mkdir -p "$consensus_dir"
+
+  {
+    cat "$base_prompt"
+    cat <<'DELIB'
+
+---
+
+## DELIBERATION MODE (read-only)
+
+You are one model on a multi-model supervisor panel. This round is a READ-ONLY
+deliberation. Do NOT modify files, run git mutations, change job status, create
+jobs, accept/reject/integrate jobs, or write any workflow file. Inspect the
+state described above and determine the single correct next supervisor action,
+then emit this block (in addition to the consensus_vote block):
+
+```yaml
+supervisor_decision:
+  action: accept_job   # accept_job|reject_job|dispatch_next|open_human_gate|wait|no_action|other
+  job_id: ""           # the job this action targets, if any
+  rationale: <why this is the correct next action, grounded in the evidence>
+  next_job_outline: <one-line scope if action is dispatch_next, else "">
+```
+
+Set consensus_vote.verdict to the SAME token as supervisor_decision.action.
+DELIB
+  } >"$delib_prompt"
+
+  local orch_extra_args=()
+  [[ -n "$SUPERVISOR_CONSENSUS_MODELS" ]] && orch_extra_args+=(--models "$SUPERVISOR_CONSENSUS_MODELS")
+  [[ -n "$SUPERVISOR_CONSENSUS_WRAPPERS" ]] && orch_extra_args+=(--wrappers "$SUPERVISOR_CONSENSUS_WRAPPERS")
+
+  # Capture the exit without flipping the caller's global set -e/+e state.
+  local orch_exit=0
+  python3 scripts/orchestrator.py run \
+    --role supervisor \
+    --decision-schema supervisor \
+    --panel-id "$SUPERVISOR_CONSENSUS_PANEL" \
+    "${orch_extra_args[@]}" \
+    --base-prompt-file "$delib_prompt" \
+    --workspace "$ROOT" \
+    --output-dir "$consensus_dir" \
+    --max-rounds "$SUPERVISOR_CONSENSUS_MAX_ROUNDS" \
+    --quorum "$SUPERVISOR_CONSENSUS_QUORUM" \
+    --output-format stream-json \
+    --extra-args="$SUPERVISOR_EXTRA_ARGS" \
+    --timeout "$SUPERVISOR_CONSENSUS_TIMEOUT" \
+    --metrics-role supervisor-panel \
+    >"$consensus_dir/deliberation.log" 2>&1 || orch_exit=$?
+  echo "supervisor consensus deliberation exit=$orch_exit (see $consensus_dir/consensus.md)"
+
+  if [[ -f "$consensus_dir/consensus.md" ]]; then
+    {
+      echo
+      echo "---"
+      echo
+      echo "## Panel consensus decision (multi-model deliberation)"
+      echo
+      echo "A panel of models deliberated read-only over this exact workflow state and produced the consensus below. Execute the agreed next action faithfully. If you find it clearly wrong with concrete evidence, you may deviate, but you MUST record the deviation and rationale in \`.ai/supervisor/ledger.md\`."
+      echo
+      cat "$consensus_dir/consensus.md"
+      echo
+      echo "Per-panelist final positions are under $consensus_dir/. If the panel did NOT converge (method: no_consensus), be conservative: prefer WAITING_FOR_WORKER or opening a human/supervisor gate over a risky acceptance or integration."
+    } >>"$base_prompt"
+  else
+    {
+      echo
+      echo "## Panel consensus decision"
+      echo
+      echo "The supervisor consensus panel produced no decision file (orchestrator exit $orch_exit). Proceed using your own judgment and note in the ledger that consensus deliberation was unavailable for this cycle."
+    } >>"$base_prompt"
+  fi
+}
+
 run_supervisor_agent() {
   local timestamp log_file prompt_file metrics_file supervisor_started_at supervisor_finished_at
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -315,34 +424,22 @@ Rules:
 Return a concise summary of what you reviewed, accepted/rejected/dispatched, and whether the workflow is waiting for worker or human review.
 PROMPT
   } >"$prompt_file"
+
+  if [[ "$SUPERVISOR_CONSENSUS_ENABLED" == "1" ]]; then
+    supervisor_consensus_deliberate "$prompt_file" "$timestamp"
+  fi
+
   local agent_exit stream_file=""
   if [[ "$SUPERVISOR_AGENT_WRAPPER" == "cursor-agent" ]]; then
-    # stream-json gives exact token usage; the text converter keeps the log
-    # human-readable for the GUI tail.
     stream_file="$SUPERVISOR_RUNS_DIR/supervisor.$timestamp.stream.jsonl"
-    python3 scripts/agent_wrapper.py run \
-      --role supervisor \
-      --wrapper "$SUPERVISOR_AGENT_WRAPPER" \
-      --model "$SUPERVISOR_MODEL" \
-      --workspace "$ROOT" \
-      --prompt-file "$prompt_file" \
-      --reasoning-effort "$SUPERVISOR_REASONING_EFFORT" \
-      --output-format stream-json \
-      --extra-args="$SUPERVISOR_EXTRA_ARGS" 2>>"$log_file" \
-      | tee "$stream_file" \
-      | python3 scripts/cursor_stream_to_text.py >>"$log_file"
-    agent_exit=${PIPESTATUS[0]}
-  else
-    python3 scripts/agent_wrapper.py run \
-      --role supervisor \
-      --wrapper "$SUPERVISOR_AGENT_WRAPPER" \
-      --model "$SUPERVISOR_MODEL" \
-      --workspace "$ROOT" \
-      --prompt-file "$prompt_file" \
-      --reasoning-effort "$SUPERVISOR_REASONING_EFFORT" \
-      --extra-args="$SUPERVISOR_EXTRA_ARGS" >"$log_file" 2>&1
-    agent_exit=$?
   fi
+  # Capture started_at just before the executor run so consensus deliberation
+  # time (above) is not folded into the executor's recorded wall time.
+  supervisor_started_at="$(utc_now)"
+  run_streamed_agent supervisor "$SUPERVISOR_AGENT_WRAPPER" "$SUPERVISOR_MODEL" \
+    "$ROOT" "$prompt_file" "$SUPERVISOR_EXTRA_ARGS" "$SUPERVISOR_REASONING_EFFORT" \
+    "$log_file" "$stream_file"
+  agent_exit=$AGENT_RUN_EXIT
   supervisor_finished_at="$(utc_now)"
   set -e
 

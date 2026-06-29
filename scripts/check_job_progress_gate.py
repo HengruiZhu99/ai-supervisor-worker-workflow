@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 """Validate worker-job progress classification before dispatch.
 
 The gate is intentionally small and conservative.  New tasks must contain a

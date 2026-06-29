@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 """Print a compact summary of collected AI agent metrics."""
 
 from __future__ import annotations

@@ -37,6 +37,33 @@ In milestone-gated autonomous mode, the supervisor may review completed jobs, ac
 
 When a human milestone review requests a major structural change, the supervisor should treat the response as a supervisor-owned planning revision. The supervisor should update the roadmap, project brief, ledger, and related architecture documents itself, then create a new human review gate summarizing the changed milestones and proposed next worker jobs. The supervisor should not continue implementation until that revised plan is approved. Do not dispatch a worker job whose purpose is to revise the roadmap, project brief, ledger, or milestone sequence.
 
+### Architect (intake)
+
+The Architect is the optional automated front door that scopes a NEW project
+before the supervisor/worker loops run. It interviews the user, builds a
+structured spec (`.ai/architect/`), and compiles it into the supervisor
+bootstrap artifacts. It is implemented by `scripts/architect.py` (pure logic in
+`scripts/architect_core.py`) and exposed through both `scripts/aiflow.py` and the
+dashboard.
+
+Responsibilities:
+- Interview the user until the spec is complete: project summary, runtime
+  build/test/lint commands, MoSCoW requirements, an acceptance criterion per
+  requirement, milestones whose Definition-of-Done references acceptance ids,
+  constraints, out-of-scope, risks, and a glossary.
+- Never invent scope the user did not ask for; resolve ambiguities by asking.
+- Refuse handoff until the spec passes the completeness gate
+  (`scripts/check_spec_completeness.py`): deterministic checks plus a multi-model
+  consensus review (the `spec` panel) that must broadly agree the spec is
+  `ready`.
+- On pass, compile (`scripts/architect_compile.py`) the supervisor bootstrap
+  files (`design_prompt.md`, `project_brief.md`, `roadmap.md` with
+  machine-readable Definition-of-Done, `ledger.md`, seeded
+  `autonomy_delegation.json`) plus a stack-agnostic `project.yaml`, then hand off
+  to the supervisor. The Architect does not implement project code.
+- After handoff, scope changes are recorded under
+  `.ai/architect/change_requests/` and reviewed at milestone boundaries.
+
 ### Modulator
 
 The modulator is an always-on watchdog/steering agent (Cursor agent running Fable 1M extra high) launched by `scripts/modulator_loop.sh`. Its protocol lives in `.ai/supervisor/modulator_protocol.md` and its state under `.ai/modulator/`.
@@ -94,6 +121,27 @@ review_decision:
 If either reviewer sets `blocks_acceptance: true`, the job should not become supervisor-ready for acceptance until the supervisor has reviewed the concern and either rejects the job with feedback or explicitly waives the concern with rationale.
 
 Reviewers should also assess any worker skill suggestions: whether they would avoid real duplication, whether they duplicate existing skills, and whether they should be project-specific or generally reusable.
+
+### Consensus orchestrator
+
+The reviewer and supervisor roles can run through the multi-model consensus
+orchestrator (`scripts/orchestrator.py`, pure logic in `scripts/consensus_core.py`).
+The same prompt is fed to a panel of models (declared under
+`agent_wrappers/panels/<id>.json`); they compare notes across rounds and only
+produce a decision once they broadly agree (the quorum). The full rules - rounds,
+quorum, `no_consensus` escalation, and read-only execution safety - are in
+`.ai/supervisor/consensus_policy.md`.
+
+- Reviewer consensus replaces the two independent reviewer passes with one panel
+  that reviews the full diff; the result is mapped onto the existing
+  `reviewer_decisions` schema, so the reviewer YAML contract and block-acceptance
+  semantics above are unchanged.
+- Supervisor consensus is deliberate-then-execute: the panel deliberates
+  read-only and converges on the next supervisor action, then a single
+  supervisor executor applies it, so all state mutation stays single-threaded.
+- A `no_consensus` outcome blocks acceptance / escalates; it is never silently
+  accepted. Each role can fall back to its legacy single/dual-agent path via
+  `*_CONSENSUS_ENABLED=0`.
 
 ### Skill stewardship
 

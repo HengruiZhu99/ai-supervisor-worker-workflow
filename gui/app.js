@@ -11,6 +11,8 @@ const state = {
   modulatorTerminalRenderSignature: "",
   modulatorTerminalAtBottom: true,
   modulatorTerminalHistoryLoaded: false,
+  architectHistory: [],
+  architectBusy: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -153,6 +155,63 @@ function roleDefaultWrapper(role) {
   return "cursor-agent";
 }
 
+function activeLaunchEnvForRole(role) {
+  const loopByRole = {
+    worker: "worker",
+    supervisor: "supervisor",
+    modulator: "modulator",
+  };
+  return state.data?.controls?.[loopByRole[role]]?.launch_env || {};
+}
+
+function envValue(env, ...keys) {
+  for (const key of keys) {
+    const value = env?.[key];
+    if (value !== undefined && value !== null && String(value) !== "") return String(value);
+  }
+  return "";
+}
+
+function activeWrapperForControl(role, select) {
+  const env = activeLaunchEnvForRole(role === "reviewer" ? "worker" : role);
+  if (select?.name === "reviewer_a_wrapper") {
+    return envValue(env, "reviewer_a_agent_wrapper", "REVIEWER_A_AGENT_WRAPPER");
+  }
+  if (select?.name === "reviewer_b_wrapper") {
+    return envValue(env, "reviewer_b_agent_wrapper", "REVIEWER_B_AGENT_WRAPPER");
+  }
+  if (role === "worker") {
+    return envValue(env, "worker_agent_wrapper", "WORKER_AGENT_WRAPPER");
+  }
+  if (role === "supervisor") {
+    return envValue(env, "supervisor_agent_wrapper", "SUPERVISOR_AGENT_WRAPPER");
+  }
+  if (role === "modulator") {
+    return envValue(env, "modulator_agent_wrapper", "MODULATOR_AGENT_WRAPPER");
+  }
+  return "";
+}
+
+function activeModelForControl(role, select) {
+  const env = activeLaunchEnvForRole(role === "reviewer" ? "worker" : role);
+  if (select?.name === "reviewer_a_wrapper") {
+    return envValue(env, "reviewer_a_model", "REVIEWER_A_MODEL", "cursor_reviewer_a_model", "CURSOR_REVIEWER_A_MODEL");
+  }
+  if (select?.name === "reviewer_b_wrapper") {
+    return envValue(env, "reviewer_b_model", "REVIEWER_B_MODEL", "cursor_reviewer_b_model", "CURSOR_REVIEWER_B_MODEL");
+  }
+  if (role === "worker") {
+    return envValue(env, "worker_model", "WORKER_MODEL", "cursor_model", "CURSOR_MODEL");
+  }
+  if (role === "supervisor") {
+    return envValue(env, "supervisor_model", "SUPERVISOR_MODEL", "codex_model", "CODEX_MODEL");
+  }
+  if (role === "modulator") {
+    return envValue(env, "modulator_model", "MODULATOR_MODEL");
+  }
+  return "";
+}
+
 function wrapperOptionLabel(wrapper, role) {
   const recommended = (wrapper.recommended_roles || []).includes(role) ? " recommended" : "";
   const unavailable = wrapper.available === false ? " not in PATH" : "";
@@ -196,7 +255,9 @@ function populateAgentControls() {
     const role = select.dataset.role;
     const modelInput = $(select.dataset.modelInput);
     const wrappers = wrappersForRole(role);
-    const preferred = select.value || roleDefaultWrapper(role);
+    const activeWrapper = activeWrapperForControl(role, select);
+    const activeModel = activeModelForControl(role, select);
+    const preferred = activeWrapper || select.value || roleDefaultWrapper(role);
     select.innerHTML = wrappers.map((wrapper) => `
       <option value="${escapeHtml(wrapper.id)}" ${wrapper.id === preferred ? "selected" : ""}>
         ${escapeHtml(wrapperOptionLabel(wrapper, role))}
@@ -204,13 +265,20 @@ function populateAgentControls() {
     `).join("");
     if (!select.value && wrappers.length) select.value = wrappers[0].id;
     const selected = wrappers.find((wrapper) => wrapper.id === select.value) || wrappers[0];
-    populateModelOptions(modelInput, selected, role, modelInput?.dataset.preferredModel || "");
+    populateModelOptions(modelInput, selected, role, activeModel || modelInput?.dataset.preferredModel || "");
     select.addEventListener("change", () => {
       const next = wrappersForRole(role).find((wrapper) => wrapper.id === select.value);
       populateModelOptions(modelInput, next, role);
     });
   });
   state.wrapperControlsInitialized = true;
+}
+
+function refreshModulatorTerminalModel() {
+  const input = $("modulatorTerminalModel");
+  if (!input || document.activeElement === input || state.modulatorTerminalBusy) return;
+  const model = envValue(activeLaunchEnvForRole("modulator"), "modulator_model", "MODULATOR_MODEL");
+  if (model && input.value !== model) input.value = model;
 }
 
 function collectHumanReviewDraft() {
@@ -581,6 +649,7 @@ function render(data, options = {}) {
     renderTree(data.tree);
   }
   renderHumanReview(data.supervisor);
+  refreshModulatorTerminalModel();
   renderModulatorTerminal();
 }
 
@@ -793,4 +862,120 @@ refresh({ refreshStaticPanels: true }).catch((error) => {
   $("supervisorLoopLog").textContent = error.stack || String(error);
 });
 loadModulatorTerminalHistory().catch(console.error);
+
+// ----- Architect intake -----
+function renderArchitectLog() {
+  const log = $("architectLog");
+  if (!log) return;
+  const entries = state.architectHistory.map((entry) => `
+    <div class="chat-message ${entry.role === "user" ? "user" : "assistant"}">
+      <span class="role">${entry.role === "user" ? "You" : "Architect"}</span>
+      ${escapeHtml(entry.content || "")}
+    </div>
+  `);
+  if (state.architectBusy) {
+    entries.push('<div class="chat-message assistant"><span class="role">Architect</span>thinking...</div>');
+  }
+  log.innerHTML = entries.join("") || '<div class="chat-empty">Start by describing the software you want to build.</div>';
+  log.scrollTop = log.scrollHeight;
+}
+
+async function pollArchitect(chatId) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    const result = await getJson(`/api/architect/result?id=${encodeURIComponent(chatId)}`);
+    if (result.state === "done") return result;
+    await delay(2000);
+  }
+  throw new Error("Architect is still running after 20 minutes.");
+}
+
+async function refreshArchitectState() {
+  const box = $("architectStatus");
+  if (!box) return;
+  try {
+    const result = await getJson("/api/architect/state");
+    const lines = [result.summary || ""];
+    if (result.status) lines.push(`\nstatus: ${result.status}`);
+    box.textContent = lines.join("\n");
+    const meta = $("architectMeta");
+    if (meta) meta.textContent = result.complete ? "Spec complete - ready to gate/hand off" : "Scope a new project, then hand off to the build";
+  } catch (error) {
+    box.textContent = `Could not load spec state: ${error.message}`;
+  }
+}
+
+if ($("architectForm")) {
+  $("architectForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = $("architectInput");
+    const message = input.value.trim();
+    if (!message || state.architectBusy) return;
+    state.architectHistory.push({ role: "user", content: message });
+    input.value = "";
+    state.architectBusy = true;
+    renderArchitectLog();
+    try {
+      const started = await postJson("/api/architect/message", {
+        message,
+        model: $("architectModel")?.value || "",
+      });
+      const result = started.state === "running" && started.chat_id ? await pollArchitect(started.chat_id) : started;
+      state.architectHistory.push({ role: "architect", content: result.answer || result.message || "(spec updated)" });
+    } catch (error) {
+      state.architectHistory.push({ role: "architect", content: `Architect failed: ${error.message}` });
+    } finally {
+      state.architectBusy = false;
+      renderArchitectLog();
+      await refreshArchitectState();
+    }
+  });
+
+  $("architectInput").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+    event.preventDefault();
+    $("architectForm").requestSubmit();
+  });
+
+  $("architectGateButton").addEventListener("click", async () => {
+    if (state.architectBusy) return;
+    state.architectBusy = true;
+    state.architectHistory.push({ role: "architect", content: "Running completeness gate (deterministic + consensus panel)..." });
+    renderArchitectLog();
+    try {
+      const started = await postJson("/api/architect/gate", {});
+      const result = started.state === "running" && started.chat_id ? await pollArchitect(started.chat_id) : started;
+      const missing = (result.missing || []).map((m) => `\n- ${m}`).join("");
+      state.architectHistory.push({ role: "architect", content: `${result.answer || "gate done"}${missing}` });
+    } catch (error) {
+      state.architectHistory.push({ role: "architect", content: `Gate failed: ${error.message}` });
+    } finally {
+      state.architectBusy = false;
+      renderArchitectLog();
+      await refreshArchitectState();
+    }
+  });
+
+  $("architectHandoffButton").addEventListener("click", async () => {
+    if (state.architectBusy) return;
+    state.architectBusy = true;
+    renderArchitectLog();
+    try {
+      const result = await postJson("/api/architect/handoff", {
+        start: $("architectStartLoops")?.checked || false,
+      });
+      const written = (result.written || []).map((p) => `\n- ${p}`).join("");
+      state.architectHistory.push({ role: "architect", content: `Compiled bootstrap artifacts:${written || " (none)"}` });
+      await refresh({ refreshStaticPanels: true });
+    } catch (error) {
+      state.architectHistory.push({ role: "architect", content: `Handoff failed: ${error.message}` });
+    } finally {
+      state.architectBusy = false;
+      renderArchitectLog();
+      await refreshArchitectState();
+    }
+  });
+
+  renderArchitectLog();
+  refreshArchitectState().catch(console.error);
+}
 state.timer = setInterval(() => refresh({ refreshStaticPanels: false }).catch(console.error), 5000);

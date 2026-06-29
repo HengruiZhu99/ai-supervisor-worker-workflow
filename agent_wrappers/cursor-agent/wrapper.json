@@ -8,9 +8,9 @@
   "default_models": {
     "worker": "claude-fable-5-thinking-high",
     "reviewer": "gpt-5.3-codex-high",
-    "supervisor": "claude-fable-5-thinking-xhigh",
-    "modulator": "claude-fable-5-thinking-xhigh",
-    "chat": "claude-fable-5-thinking-xhigh"
+    "supervisor": "gpt-5.5-high",
+    "modulator": "gpt-5.5-high",
+    "chat": "gpt-5.5-high"
   },
   "models": [
     "claude-fable-5-thinking-xhigh",

@@ -1,0 +1,28 @@
+{
+  "id": "reviewer",
+  "role": "reviewer",
+  "decision_schema": "reviewer",
+  "max_rounds": 3,
+  "quorum": "unanimous",
+  "description": "Three-model consensus review panel. Replaces the legacy independent reviewer-a/reviewer-b pair: every panelist reviews the full diff, they compare notes across rounds, and the job only advances when the panel broadly agrees.",
+  "panelists": [
+    {
+      "id": "reviewer-1",
+      "wrapper": "cursor-agent",
+      "model": "gpt-5.5-high",
+      "focus": "scientific and numerical correctness, mathematical assumptions, units/dimensions, tolerances, edge cases, and validation quality"
+    },
+    {
+      "id": "reviewer-2",
+      "wrapper": "cursor-agent",
+      "model": "claude-opus-4-8-thinking-high",
+      "focus": "code quality, build behavior, Kokkos/MPI/OpenMP/SYCL portability, memory layout, race/rank/backend risks, and maintainability"
+    },
+    {
+      "id": "reviewer-3",
+      "wrapper": "cursor-agent",
+      "model": "gpt-5.3-codex-high",
+      "focus": "test adequacy, scope discipline, Git hygiene, and whether the documented behavior matches the actual diff"
+    }
+  ]
+}

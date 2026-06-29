@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"

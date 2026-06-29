@@ -471,6 +471,23 @@ textarea {
   gap: 10px;
 }
 
+.architect-layout {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 16px;
+}
+
+.architect-chat {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.architect-status .text-box {
+  max-height: 360px;
+  overflow: auto;
+}
+
 .workflow-chat {
   min-height: 0;
 }
@@ -718,7 +735,7 @@ textarea {
 }
 
 @media (max-width: 1080px) {
-  .hero-grid, .content-grid, .detail-grid, .review-layout, .reviewer-grid, .chat-options { grid-template-columns: 1fr; }
+  .hero-grid, .content-grid, .detail-grid, .review-layout, .reviewer-grid, .chat-options, .architect-layout { grid-template-columns: 1fr; }
   .topbar { align-items: flex-start; flex-direction: column; }
   .jobs-panel { max-height: min(680px, 70vh); }
 }

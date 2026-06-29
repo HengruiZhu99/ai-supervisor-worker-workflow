@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 """Serve a local dashboard for the AI supervisor/worker workflow."""
 
 from __future__ import annotations
@@ -402,6 +407,18 @@ def jobs(root: Path) -> list[dict]:
         reviews_dir = job_dir / "reviews"
         data["_reviewer_a_tail"] = tail(reviews_dir / f"reviewer-a.attempt-{attempt}.md", 80) if load_detail else ""
         data["_reviewer_b_tail"] = tail(reviews_dir / f"reviewer-b.attempt-{attempt}.md", 80) if load_detail else ""
+        data["_consensus_tail"] = ""
+        if load_detail:
+            consensus_dir = reviews_dir / f"consensus.attempt-{attempt}"
+            if consensus_dir.is_dir():
+                data["_consensus_tail"] = tail(consensus_dir / "consensus.md", 120)
+                finals = sorted(consensus_dir.glob("*.final.md"))
+                # Surface panelist final reports in the two reviewer slots when
+                # the legacy reviewer-a/b files are absent (consensus mode).
+                if not data["_reviewer_a_tail"] and finals:
+                    data["_reviewer_a_tail"] = tail(finals[0], 80)
+                if not data["_reviewer_b_tail"] and len(finals) > 1:
+                    data["_reviewer_b_tail"] = tail(finals[1], 80)
         out.append(data)
     return out
 
@@ -437,18 +454,36 @@ def reviewer_state(root: Path, job_rows: list[dict]) -> dict:
     job = candidates[0]
     attempt = job.get("attempt", 0)
     job_id = str(job.get("id", ""))
+    consensus_mode = str(job.get("reviewers_mode", "")) == "consensus"
+    title = f"{job_id} reviewer reports"
+    reviewer_a_path = f".ai/jobs/{job_id}/reviews/reviewer-a.attempt-{attempt}.md" if job_id else ""
+    reviewer_b_path = f".ai/jobs/{job_id}/reviews/reviewer-b.attempt-{attempt}.md" if job_id else ""
+    if consensus_mode:
+        verdict = job.get("consensus_verdict", "?")
+        method = job.get("consensus_method", "?")
+        title = f"{job_id} consensus review (verdict {verdict}, {method})"
+        consensus_dir = root / ".ai" / "jobs" / job_id / "reviews" / f"consensus.attempt-{attempt}"
+        finals = sorted(consensus_dir.glob("*.final.md")) if consensus_dir.is_dir() else []
+        if finals:
+            reviewer_a_path = str(finals[0].relative_to(root))
+        if len(finals) > 1:
+            reviewer_b_path = str(finals[1].relative_to(root))
     return {
-        "title": f"{job_id} reviewer reports",
+        "title": title,
         "job_id": job_id,
         "state": job.get("state", ""),
+        "consensus_mode": consensus_mode,
+        "consensus_verdict": job.get("consensus_verdict", ""),
+        "consensus_method": job.get("consensus_method", ""),
+        "consensus": job.get("_consensus_tail", ""),
         "reviewer_a_model": job.get("reviewer_a_model", ""),
         "reviewer_b_model": job.get("reviewer_b_model", ""),
         "reviewer_a_exit": job.get("reviewer_a_exit", ""),
         "reviewer_b_exit": job.get("reviewer_b_exit", ""),
         "reviewer_a": job.get("_reviewer_a_tail") or "Reviewer A has not emitted a report yet.",
         "reviewer_b": job.get("_reviewer_b_tail") or "Reviewer B has not emitted a report yet.",
-        "reviewer_a_path": f".ai/jobs/{job_id}/reviews/reviewer-a.attempt-{attempt}.md" if job_id else "",
-        "reviewer_b_path": f".ai/jobs/{job_id}/reviews/reviewer-b.attempt-{attempt}.md" if job_id else "",
+        "reviewer_a_path": reviewer_a_path,
+        "reviewer_b_path": reviewer_b_path,
     }
 
 
@@ -1361,6 +1396,11 @@ def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
         "CURSOR_REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "claude-opus-4-7-thinking-high")),
         "CURSOR_REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.3-codex-high")),
         "CURSOR_REVIEWER_MAX_RELAUNCHES": str(payload.get("reviewer_max_relaunches", "1")),
+        "REVIEWER_CONSENSUS_ENABLED": "1" if payload.get("reviewer_consensus_enabled", True) else "0",
+        "REVIEWER_CONSENSUS_PANEL": str(payload.get("reviewer_consensus_panel", "reviewer")),
+        "REVIEWER_CONSENSUS_MODELS": str(payload.get("reviewer_consensus_models", "")),
+        "REVIEWER_CONSENSUS_MAX_ROUNDS": str(payload.get("reviewer_consensus_max_rounds", "3")),
+        "REVIEWER_CONSENSUS_QUORUM": str(payload.get("reviewer_consensus_quorum", "unanimous")),
         "WORKER_AUTO_RELAUNCH_FAILURE": "1",
         "WORKER_MAX_FAILURE_RESUMES": str(payload.get("max_failure_resumes", "2")),
         "WORKER_AUTO_RESUME_TIMEOUT": "1" if payload.get("auto_resume_timeout", False) else "0",
@@ -1381,6 +1421,11 @@ def supervisor_loop_env(payload: dict | None = None) -> dict[str, str]:
         "SUPERVISOR_EXTRA_ARGS": str(payload.get("extra_args", "--force")),
         "SUPERVISOR_AUTO_RELAUNCH_FAILURE": "1",
         "SUPERVISOR_MAX_FAILURE_RELAUNCHES": str(payload.get("max_failure_relaunches", "1")),
+        "SUPERVISOR_CONSENSUS_ENABLED": "1" if payload.get("supervisor_consensus_enabled", True) else "0",
+        "SUPERVISOR_CONSENSUS_PANEL": str(payload.get("supervisor_consensus_panel", "supervisor")),
+        "SUPERVISOR_CONSENSUS_MODELS": str(payload.get("supervisor_consensus_models", "")),
+        "SUPERVISOR_CONSENSUS_MAX_ROUNDS": str(payload.get("supervisor_consensus_max_rounds", "3")),
+        "SUPERVISOR_CONSENSUS_QUORUM": str(payload.get("supervisor_consensus_quorum", "unanimous")),
     }
 
 
@@ -1396,6 +1441,9 @@ def modulator_loop_env(payload: dict | None = None) -> dict[str, str]:
         "MODULATOR_POLL_SECONDS": str(payload.get("poll_seconds", "30")),
         "MODULATOR_EXTRA_ARGS": str(payload.get("extra_args", default_extra_args)),
         "MODULATOR_CLEARS_PRESET_BOUNDARIES": str(payload.get("clears_preset_boundaries", "0")),
+        "MODULATOR_CONSENSUS_ENABLED": "1" if payload.get("consensus_enabled", False) else "0",
+        "MODULATOR_CONSENSUS_PANEL": str(payload.get("consensus_panel", "supervisor")),
+        "MODULATOR_CONSENSUS_MODELS": str(payload.get("consensus_models", "")),
     }
 
 
@@ -2214,6 +2262,140 @@ def workflow_chat_result(chat_id: str) -> dict:
     return result
 
 
+def _scripts_dir() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def architect_state(root: Path) -> dict:
+    """Return the current Architect intake state (fast, no agent call)."""
+    try:
+        import architect
+        import architect_core as ac
+    except Exception as exc:  # pragma: no cover - import guard
+        return {"ok": False, "message": f"architect modules unavailable: {exc}"}
+    session = architect.load_session(root)
+    completeness = ac.spec_completeness(session["spec"])
+    return {
+        "ok": True,
+        "status": session.get("status", "interviewing"),
+        "complete": completeness["complete"],
+        "missing": completeness["missing"],
+        "warnings": completeness["warnings"],
+        "summary": ac.render_spec_summary(session["spec"]),
+        "last_ask": session.get("last_ask", ""),
+    }
+
+
+def _register_async_job(label: str) -> tuple[str, str]:
+    prune_workflow_chat_jobs()
+    chat_id = uuid4().hex
+    created_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    with WORKFLOW_CHAT_JOBS_LOCK:
+        WORKFLOW_CHAT_JOBS[chat_id] = {
+            "ok": True,
+            "chat_id": chat_id,
+            "label": label,
+            "state": "running",
+            "created_at": created_at,
+            "created_monotonic": time.time(),
+        }
+    return chat_id, created_at
+
+
+def _finish_async_job(chat_id: str, result: dict) -> None:
+    with WORKFLOW_CHAT_JOBS_LOCK:
+        current = WORKFLOW_CHAT_JOBS.get(chat_id, {})
+        current.update(
+            {
+                "state": "done",
+                "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+                "result": result,
+            }
+        )
+        WORKFLOW_CHAT_JOBS[chat_id] = current
+
+
+def start_architect_job(root: Path, message: str, model: str = "", wrapper: str = "") -> dict:
+    """Run one Architect interview turn asynchronously (mirrors the chat-job pattern)."""
+    chat_id, _ = _register_async_job("architect")
+
+    def run() -> None:
+        try:
+            import architect
+            runner = architect.make_default_runner(
+                workspace=str(root),
+                wrapper=wrapper or "cursor-agent",
+                model=model or "gpt-5.5-high",
+            )
+            turn = architect.interview_turn(root, message, runner=runner)
+            result = {
+                "ok": True,
+                "ask_user": turn["ask_user"],
+                "answer": turn["ask_user"] or "(spec updated)",
+                "status": turn["status"],
+                "complete": turn["completeness"]["complete"],
+                "missing": turn["completeness"]["missing"],
+            }
+        except Exception as exc:
+            result = {"ok": False, "message": f"Architect failed: {exc}"}
+        _finish_async_job(chat_id, result)
+
+    threading.Thread(target=run, name=f"architect-{chat_id[:8]}", daemon=True).start()
+    return {"ok": True, "state": "running", "chat_id": chat_id, "message": "Architect request started."}
+
+
+def start_architect_gate_job(root: Path, no_consensus: bool = False) -> dict:
+    """Run the spec completeness gate asynchronously."""
+    chat_id, _ = _register_async_job("architect-gate")
+
+    def run() -> None:
+        cmd = [sys.executable, str(_scripts_dir() / "check_spec_completeness.py"), "--json"]
+        if no_consensus:
+            cmd.append("--no-consensus")
+        try:
+            completed = subprocess.run(cmd, cwd=str(root), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            try:
+                data = json.loads(completed.stdout)
+            except json.JSONDecodeError:
+                data = {"passed": False, "reason": (completed.stdout or "no output")[-2000:]}
+            result = {
+                "ok": True,
+                "passed": bool(data.get("passed")),
+                "reason": data.get("reason", ""),
+                "missing": data.get("missing", []),
+                "warnings": data.get("warnings", []),
+                "consensus": data.get("consensus"),
+                "answer": f"Gate {'PASS' if data.get('passed') else 'FAIL'}: {data.get('reason', '')}",
+            }
+        except Exception as exc:
+            result = {"ok": False, "message": f"Gate failed to run: {exc}"}
+        _finish_async_job(chat_id, result)
+
+    threading.Thread(target=run, name=f"architect-gate-{chat_id[:8]}", daemon=True).start()
+    return {"ok": True, "state": "running", "chat_id": chat_id, "message": "Spec gate started."}
+
+
+def architect_handoff(root: Path, overwrite: bool = False, create_first_job: bool = False, start: bool = False) -> dict:
+    """Compile the spec into bootstrap artifacts (synchronous; no agent call)."""
+    cmd = [sys.executable, str(_scripts_dir() / "architect_compile.py"), "--json"]
+    if overwrite:
+        cmd.append("--overwrite")
+    if create_first_job:
+        cmd.append("--create-first-job")
+    if start:
+        cmd.append("--start")
+    try:
+        completed = subprocess.run(cmd, cwd=str(root), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+        try:
+            data = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            return {"ok": False, "message": (completed.stdout or "no output")[-2000:]}
+        data.setdefault("ok", completed.returncode == 0)
+        return data
+    except Exception as exc:
+        return {"ok": False, "message": f"Compile failed: {exc}"}
+
+
 def create_structural_change_request(
     root: Path,
     reviews_dir: Path,
@@ -2509,6 +2691,15 @@ class Handler(SimpleHTTPRequestHandler):
             history = load_terminal_history(self.project_root, limit=60)
             json_response(self, HTTPStatus.OK, {"ok": True, "history": history})
             return
+        if parsed.path == "/api/architect/state":
+            json_response(self, HTTPStatus.OK, architect_state(self.project_root))
+            return
+        if parsed.path == "/api/architect/result":
+            query = parse_qs(parsed.query)
+            chat_id = (query.get("id") or [""])[0]
+            result = workflow_chat_result(chat_id)
+            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.NOT_FOUND, result)
+            return
         if parsed.path.startswith("/api/"):
             json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "message": f"unknown endpoint: {parsed.path}"})
             return
@@ -2588,6 +2779,31 @@ class Handler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/open-file":
             result = open_project_file(self.project_root, str(payload.get("path", "")))
+            json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            return
+
+        if parsed.path == "/api/architect/message":
+            result = start_architect_job(
+                self.project_root,
+                str(payload.get("message", "")),
+                str(payload.get("model", "")),
+                str(payload.get("wrapper", "")),
+            )
+            json_response(self, HTTPStatus.ACCEPTED if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            return
+
+        if parsed.path == "/api/architect/gate":
+            result = start_architect_gate_job(self.project_root, bool(payload.get("no_consensus", False)))
+            json_response(self, HTTPStatus.ACCEPTED if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+            return
+
+        if parsed.path == "/api/architect/handoff":
+            result = architect_handoff(
+                self.project_root,
+                bool(payload.get("overwrite", False)),
+                bool(payload.get("create_first_job", False)),
+                bool(payload.get("start", False)),
+            )
             json_response(self, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
             return
 

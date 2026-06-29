@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 set -euo pipefail
 
-ROOT="$(git rev-parse --show-toplevel)"
+ROOT="${AIFLOW_PROJECT_ROOT:-$(git rev-parse --show-toplevel)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKFLOW_PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export AI_WORKFLOW_PACKAGE_ROOT="${AI_WORKFLOW_PACKAGE_ROOT:-$WORKFLOW_PACKAGE_ROOT}"
@@ -27,6 +32,17 @@ REVIEWER_A_MODEL="${REVIEWER_A_MODEL:-${CURSOR_REVIEWER_A_MODEL:-claude-opus-4-7
 REVIEWER_B_MODEL="${REVIEWER_B_MODEL:-${CURSOR_REVIEWER_B_MODEL:-gpt-5.3-codex-high}}"
 REVIEWER_AGENT_EXTRA_ARGS="${REVIEWER_AGENT_EXTRA_ARGS:-${CURSOR_REVIEWER_EXTRA_ARGS:-}}"
 CURSOR_REVIEWER_MAX_RELAUNCHES="${CURSOR_REVIEWER_MAX_RELAUNCHES:-1}"
+# Multi-model consensus review panel (scripts/orchestrator.py). When enabled
+# (default), the two independent reviewer-a/reviewer-b passes are replaced by a
+# single panel of models that review the full diff, compare notes across rounds,
+# and only let the job advance once they broadly agree. Set
+# REVIEWER_CONSENSUS_ENABLED=0 to fall back to the legacy two-reviewer path.
+REVIEWER_CONSENSUS_ENABLED="${REVIEWER_CONSENSUS_ENABLED:-1}"
+REVIEWER_CONSENSUS_PANEL="${REVIEWER_CONSENSUS_PANEL:-reviewer}"
+REVIEWER_CONSENSUS_MODELS="${REVIEWER_CONSENSUS_MODELS:-}"
+REVIEWER_CONSENSUS_WRAPPERS="${REVIEWER_CONSENSUS_WRAPPERS:-}"
+REVIEWER_CONSENSUS_MAX_ROUNDS="${REVIEWER_CONSENSUS_MAX_ROUNDS:-3}"
+REVIEWER_CONSENSUS_QUORUM="${REVIEWER_CONSENSUS_QUORUM:-unanimous}"
 TEST_TIMEOUT="${TEST_TIMEOUT:-0}"
 WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-1}"
 WORKER_MAX_TIMEOUT_RESUMES="${WORKER_MAX_TIMEOUT_RESUMES:-2}"
@@ -182,10 +198,18 @@ echo "worker_model=$WORKER_MODEL"
 echo "worker_agent_extra_args=${WORKER_AGENT_EXTRA_ARGS:-<none>}"
 echo "worker_submodule_paths=${WORKER_SUBMODULE_PATHS:-<all>}"
 echo "worker_required_submodule_paths=${WORKER_REQUIRED_SUBMODULE_PATHS:-<none>}"
-echo "reviewer_a_agent_wrapper=$REVIEWER_A_AGENT_WRAPPER"
-echo "reviewer_a_model=$REVIEWER_A_MODEL"
-echo "reviewer_b_agent_wrapper=$REVIEWER_B_AGENT_WRAPPER"
-echo "reviewer_b_model=$REVIEWER_B_MODEL"
+echo "reviewer_consensus_enabled=$REVIEWER_CONSENSUS_ENABLED"
+if [[ "$REVIEWER_CONSENSUS_ENABLED" == "1" ]]; then
+  echo "reviewer_consensus_panel=$REVIEWER_CONSENSUS_PANEL"
+  echo "reviewer_consensus_models=${REVIEWER_CONSENSUS_MODELS:-<panel default>}"
+  echo "reviewer_consensus_max_rounds=$REVIEWER_CONSENSUS_MAX_ROUNDS"
+  echo "reviewer_consensus_quorum=$REVIEWER_CONSENSUS_QUORUM"
+else
+  echo "reviewer_a_agent_wrapper=$REVIEWER_A_AGENT_WRAPPER"
+  echo "reviewer_a_model=$REVIEWER_A_MODEL"
+  echo "reviewer_b_agent_wrapper=$REVIEWER_B_AGENT_WRAPPER"
+  echo "reviewer_b_model=$REVIEWER_B_MODEL"
+fi
 echo "reviewer_agent_extra_args=${REVIEWER_AGENT_EXTRA_ARGS:-<none>}"
 
 write_available_skills() {
@@ -602,6 +626,8 @@ write_reviewer_prompt() {
 
   if [[ "$role" == "reviewer-a" ]]; then
     focus="scientific and numerical correctness, mathematical assumptions, units/dimensions, tolerances, edge cases, validation quality, documentation of scientific meaning, and scope discipline"
+  elif [[ "$role" == "panel" ]]; then
+    focus="the FULL diff end to end: scientific and numerical correctness, units/dimensions, tolerances, and edge cases; AND code quality, CMake/build behavior, tests, Git hygiene, Kokkos/MPI/OpenMP/SYCL portability, memory layout, race/rank/backend risks, maintainability, and scope discipline"
   else
     focus="code quality, CMake/build behavior, tests, Git hygiene, Kokkos/MPI/OpenMP/SYCL portability, memory layout, race/rank/backend risks, and maintainability"
   fi
@@ -609,7 +635,11 @@ write_reviewer_prompt() {
   {
     echo "# Cursor Reviewer Instructions"
     echo
-    echo "You are $role for job $id attempt $attempt."
+    if [[ "$role" == "panel" ]]; then
+      echo "You are a member of a multi-model review panel for job $id attempt $attempt. Other models are reviewing the same diff; you will later compare notes with them and converge on a shared decision."
+    else
+      echo "You are $role for job $id attempt $attempt."
+    fi
     echo
     echo "This is a read-only review. Do not edit files, create commits, change branches, or modify the worktree."
     echo "Focus on: $focus."
@@ -675,6 +705,15 @@ write_reviewer_prompt() {
     echo "  continues_metadata_streak: false"
     echo "  blocks_acceptance: false"
     echo "  blocking_reasons: []"
+    if [[ "$role" == "panel" ]]; then
+      echo "consensus_vote:"
+      echo "  verdict: accept  # MUST match review_decision.recommendation"
+      echo "  agreement: initial  # round 1: initial; later rounds: agree|disagree"
+      echo "  confidence: high  # high|medium|low"
+      echo "  key_points:"
+      echo "    - <the few load-bearing reasons for your verdict>"
+      echo "  dissent_reasons: []  # required and non-empty when agreement is disagree"
+    fi
     echo '```'
     echo
     echo "## Output Format"
@@ -784,6 +823,140 @@ run_reviewer_with_retries() {
   return 0
 }
 
+run_reviewers_consensus() {
+  # Multi-model consensus review: one panel reviews the full diff, compares
+  # notes across rounds, and only lets the job advance on broad agreement.
+  # Returns 0 (accept), 1 (blocked/no-consensus), or 124 (a panelist timed out).
+  local job="$1"
+  local status_file="$2"
+  local id="$3"
+  local attempt="$4"
+  local worktree="$5"
+  local base_sha="$6"
+  local final_commit="$7"
+
+  local reviews_dir="$job/reviews"
+  local consensus_dir="$reviews_dir/consensus.attempt-$attempt"
+  local prompt_file="$reviews_dir/panel.prompt.attempt-$attempt.md"
+  local decisions_file="$reviews_dir/reviewer_decisions.attempt-$attempt.json"
+  local consensus_log="$reviews_dir/consensus.attempt-$attempt.log"
+  mkdir -p "$consensus_dir"
+
+  update_status "$status_file" \
+    state=reviewing \
+    reviewers_enabled=true \
+    reviewers_mode=consensus \
+    reviewers_complete=false \
+    reviewer_a_blocks=false \
+    reviewer_b_blocks=false \
+    review_blocked_by="" \
+    consensus_dir="$consensus_dir" \
+    reviewer_decision_file="$decisions_file" \
+    reviewer_consensus_panel="$REVIEWER_CONSENSUS_PANEL" \
+    reviewer_consensus_max_rounds="$REVIEWER_CONSENSUS_MAX_ROUNDS" \
+    reviewer_consensus_quorum="$REVIEWER_CONSENSUS_QUORUM"
+
+  write_reviewer_prompt "panel" "$job" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit" "$prompt_file"
+
+  local orch_extra_args=()
+  [[ -n "$REVIEWER_CONSENSUS_MODELS" ]] && orch_extra_args+=(--models "$REVIEWER_CONSENSUS_MODELS")
+  [[ -n "$REVIEWER_CONSENSUS_WRAPPERS" ]] && orch_extra_args+=(--wrappers "$REVIEWER_CONSENSUS_WRAPPERS")
+
+  local orch_exit=0
+  set +e
+  python3 scripts/orchestrator.py run \
+    --role reviewer \
+    --decision-schema reviewer \
+    --panel-id "$REVIEWER_CONSENSUS_PANEL" \
+    "${orch_extra_args[@]}" \
+    --base-prompt-file "$ROOT/$prompt_file" \
+    --workspace "$ROOT/$worktree" \
+    --output-dir "$ROOT/$consensus_dir" \
+    --max-rounds "$REVIEWER_CONSENSUS_MAX_ROUNDS" \
+    --quorum "$REVIEWER_CONSENSUS_QUORUM" \
+    --output-format "$CURSOR_OUTPUT_FORMAT" \
+    --extra-args="$REVIEWER_AGENT_EXTRA_ARGS" \
+    --timeout "$CURSOR_REVIEW_TIMEOUT" \
+    --job-id "$id" \
+    --attempt "$attempt" \
+    --metrics-role reviewer \
+    --reviewer-decisions-out "$ROOT/$decisions_file" \
+    >"$consensus_log" 2>&1
+  orch_exit=$?
+  set -e
+  cat "$consensus_log" 2>/dev/null || true
+
+  if ! attempt_still_active "$status_file" "$id" "$attempt" "consensus finalization" reviewing; then
+    return 125
+  fi
+
+  local coverage_exit=0
+  local final_reports=()
+  while IFS= read -r report; do
+    if [[ -n "$report" ]]; then
+      final_reports+=("$report")
+    fi
+  done < <(ls "$consensus_dir"/*.final.md 2>/dev/null || true)
+  if [[ "${#final_reports[@]}" -gt 0 ]]; then
+    python3 scripts/check_reviewer_coverage.py "$job/changed_files.attempt-$attempt.txt" \
+      "${final_reports[@]}" >"$reviews_dir/coverage.attempt-$attempt.txt" 2>&1 || coverage_exit=$?
+  else
+    coverage_exit=1
+    echo "no panelist final reports found in $consensus_dir" >"$reviews_dir/coverage.attempt-$attempt.txt"
+  fi
+
+  local blocks reviewers_complete blocked_by converged method verdict
+  local ra_blocks rb_blocks ra_rec rb_rec
+  blocks="$(jq -r '.blocks_acceptance // true' "$decisions_file" 2>/dev/null || echo true)"
+  reviewers_complete="$(jq -r '.reviewers_complete // false' "$decisions_file" 2>/dev/null || echo false)"
+  blocked_by="$(jq -r '(.blocked_by // []) | join(",")' "$decisions_file" 2>/dev/null || echo "")"
+  converged="$(jq -r '.consensus_converged // false' "$decisions_file" 2>/dev/null || echo false)"
+  method="$(jq -r '.consensus_method // "unknown"' "$decisions_file" 2>/dev/null || echo unknown)"
+  verdict="$(jq -r '.consensus_verdict // "unknown"' "$decisions_file" 2>/dev/null || echo unknown)"
+  ra_blocks="$(jq -r '.reviewer_a_blocks // false' "$decisions_file" 2>/dev/null || echo false)"
+  rb_blocks="$(jq -r '.reviewer_b_blocks // false' "$decisions_file" 2>/dev/null || echo false)"
+  ra_rec="$(jq -r '.reviewer_a_recommendation // "unknown"' "$decisions_file" 2>/dev/null || echo unknown)"
+  rb_rec="$(jq -r '.reviewer_b_recommendation // "unknown"' "$decisions_file" 2>/dev/null || echo unknown)"
+
+  local complete_flag=false
+  if [[ "$reviewers_complete" == "true" && "$coverage_exit" -eq 0 && "$orch_exit" -ne 124 && "$orch_exit" -ne 2 ]]; then
+    complete_flag=true
+  fi
+
+  update_status "$status_file" \
+    reviewers_complete="$complete_flag" \
+    reviewer_coverage_exit="$coverage_exit" \
+    reviewer_decision_file="$decisions_file" \
+    reviewer_decision_exit="$orch_exit" \
+    consensus_converged="$converged" \
+    consensus_method="$method" \
+    consensus_verdict="$verdict" \
+    consensus_blocks_acceptance="$blocks" \
+    review_blocked_by="$blocked_by" \
+    reviewer_a_blocks="$ra_blocks" \
+    reviewer_b_blocks="$rb_blocks" \
+    reviewer_a_recommendation="$ra_rec" \
+    reviewer_b_recommendation="$rb_rec"
+
+  if [[ "$orch_exit" -eq 124 ]]; then
+    return 124
+  fi
+  if [[ "$complete_flag" != true || "$blocks" == "true" ]]; then
+    record_event \
+      --kind review_block \
+      --role reviewer \
+      --reason-code reviewer_consensus_blocked \
+      --reason "review panel did not reach an accepting consensus (method=$method verdict=$verdict)" \
+      --job-id "$id" \
+      --attempt "$attempt" \
+      --state review_failed \
+      --blocked-by "$blocked_by" \
+      --path "$decisions_file" 2>/dev/null || true
+    return 1
+  fi
+  return 0
+}
+
 run_reviewers() {
   local job="$1"
   local status_file="$2"
@@ -802,6 +975,11 @@ run_reviewers() {
   if [[ "$CURSOR_REVIEWERS_ENABLED" != "1" ]]; then
     update_status "$status_file" reviewers_enabled=false
     return 0
+  fi
+
+  if [[ "$REVIEWER_CONSENSUS_ENABLED" == "1" ]]; then
+    run_reviewers_consensus "$job" "$status_file" "$id" "$attempt" "$worktree" "$base_sha" "$final_commit"
+    return $?
   fi
 
   update_status "$status_file" \

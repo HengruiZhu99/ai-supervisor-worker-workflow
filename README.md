@@ -12,6 +12,9 @@ It provides:
 - structured workflow event records for failures, reviewer blocks, and human interventions
 - guarded job integration from immutable `base_sha` boundaries
 - pluggable agent wrapper registry for worker, reviewer, supervisor, and chat roles
+- multi-model consensus orchestrator: the same prompt is reviewed/decided by a panel of models that compare notes across rounds until they broadly agree (used for reviewer and supervisor decisions)
+- Architect intake stage: interview -> structured spec with executable Definition-of-Done -> completeness gate (deterministic + consensus) -> auto-compiled supervisor bootstrap
+- standalone `bin/aiflow` launcher to run the tool against any git repo
 - reusable scientific coding skills
 - dependency-free Python helper scripts
 - generic `.ai/` templates
@@ -23,6 +26,38 @@ It intentionally excludes project-specific state:
 - ledgers with scientific assumptions
 - worker jobs
 - worker logs, diffs, reports, and commit docs
+
+## Standalone tool (recommended)
+
+Install the workflow once on your machine and point it at any git repo, instead
+of vendoring it into each project as a submodule. Clone this package and put its
+`bin/` on your PATH (or symlink `bin/aiflow`):
+
+```bash
+git clone git@github.com:HengruiZhu99/ai-supervisor-worker-workflow.git ~/.aiflow
+ln -s ~/.aiflow/bin/aiflow ~/.local/bin/aiflow   # ensure ~/.local/bin is on PATH
+```
+
+Then scope and build a NEW project from anywhere:
+
+```bash
+mkdir my-project && cd my-project && git init
+aiflow init          # interview -> spec completeness gate -> compile bootstrap
+aiflow status        # show intake progress
+aiflow dashboard     # web dashboard for this repo
+aiflow setup         # one-time: vendor the loop scripts into the repo (copy, not a submodule)
+aiflow supervisor    # run the supervisor loop (after setup)
+aiflow worker        # run the worker loop (after setup)
+```
+
+You can target a repo explicitly with `--project-root DIR` or `AIFLOW_PROJECT_ROOT`.
+
+The intake commands (`init`/`spec`/`gate`/`compile`/`status`) and `dashboard`
+run directly from the tool and write only `.ai/` state into the target. The
+autonomous loops (`worker`/`supervisor`/`modulator`) currently require a one-time
+`aiflow setup`, which copies the workflow scripts into the target repo (the loops
+and their agent prompts reference repo-local `scripts/`); this is copy-mode
+vendoring, not a git submodule.
 
 ## Install into a Project
 

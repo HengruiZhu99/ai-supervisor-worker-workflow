@@ -1,0 +1,28 @@
+{
+  "id": "supervisor",
+  "role": "supervisor",
+  "decision_schema": "supervisor",
+  "max_rounds": 3,
+  "quorum": "unanimous",
+  "description": "Three-model supervisor deliberation panel. The panel reasons over the current workflow state and converges on a single recommended supervisor decision (accept/reject/dispatch/open-gate/wait). A single supervisor executor then applies the agreed decision, so state mutation stays single-threaded.",
+  "panelists": [
+    {
+      "id": "supervisor-1",
+      "wrapper": "cursor-agent",
+      "model": "gpt-5.5-high",
+      "focus": "roadmap progress, milestone/boundary gating, and whether the next dispatched job advances the design target"
+    },
+    {
+      "id": "supervisor-2",
+      "wrapper": "cursor-agent",
+      "model": "claude-opus-4-8-thinking-high",
+      "focus": "review rigor: reviewer coverage, attempt consistency, diff quality, and whether acceptance is actually justified by evidence"
+    },
+    {
+      "id": "supervisor-3",
+      "wrapper": "cursor-agent",
+      "model": "gpt-5.3-codex-high",
+      "focus": "process and safety: integration correctness, workflow-state hygiene, and avoiding metadata-only job streaks"
+    }
+  ]
+}

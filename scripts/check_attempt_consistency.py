@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 """Check worker attempt artifacts against canonical worker-loop facts."""
 
 from __future__ import annotations

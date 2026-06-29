@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 """Extract a structured worker handoff from raw agent output.
 
 The raw worker transcript is audit evidence.  It can contain prompt echoes,

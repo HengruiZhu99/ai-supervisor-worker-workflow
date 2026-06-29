@@ -69,7 +69,7 @@
                     <div class="chat-options">
                       <label>
                         Model
-                        <input id="modulatorTerminalModel" name="model" value="claude-fable-5-thinking-xhigh" />
+                        <input id="modulatorTerminalModel" name="model" value="" />
                       </label>
                     </div>
                     <div class="button-row">
@@ -94,8 +94,8 @@
                 <select id="workerModel" name="model" data-model-select></select>
               </label>
               <label>
-                Timeout seconds
-                <input name="timeout" type="number" min="60" step="60" value="3600" />
+                Worker timeout seconds (0 = no cap)
+                <input name="timeout" type="number" min="0" step="60" value="0" />
               </label>
               <label>
                 Timeout resume attempts
@@ -185,7 +185,7 @@
               </label>
               <label>
                 Modulator model
-                <select id="modulatorModel" name="model" data-model-select data-preferred-model="claude-fable-5-thinking-xhigh"></select>
+                <select id="modulatorModel" name="model" data-model-select data-preferred-model="gpt-5.5-high"></select>
               </label>
               <label>
                 Poll seconds
@@ -202,6 +202,40 @@
             </form>
             <div id="modulatorProcesses" class="process-list"></div>
           </article>
+        </section>
+
+        <section class="panel architect-panel">
+          <div class="panel-title">
+            <span>Architect Intake</span>
+            <span id="architectMeta" class="muted">Scope a new project, then hand off to the build</span>
+          </div>
+          <div class="architect-layout">
+            <div class="architect-chat">
+              <div id="architectLog" class="chat-log"></div>
+              <form id="architectForm" class="chat-form">
+                <textarea id="architectInput" name="message" placeholder="Describe the software you want to build, then answer the Architect's questions until the spec is complete."></textarea>
+                <div class="chat-options">
+                  <label>
+                    Model
+                    <input id="architectModel" name="model" value="gpt-5.5-high" />
+                  </label>
+                  <label class="check-line">
+                    <input id="architectStartLoops" type="checkbox" />
+                    <span>Start loops after handoff</span>
+                  </label>
+                </div>
+                <div class="button-row">
+                  <button type="submit">Send</button>
+                  <button type="button" id="architectGateButton">Run completeness gate</button>
+                  <button type="button" id="architectHandoffButton">Compile &amp; hand off</button>
+                </div>
+              </form>
+            </div>
+            <div class="architect-status">
+              <div class="status-title">Spec status</div>
+              <pre id="architectStatus" class="text-box">Loading...</pre>
+            </div>
+          </div>
         </section>
 
         <section id="humanReviewSection" class="panel human-review hidden">

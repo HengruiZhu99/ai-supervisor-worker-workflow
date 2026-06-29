@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 """Lightweight tests for check_reviewer_coverage.py robustness.
 
 These pin the historically-fragile behaviors (workflow_improvement_queue

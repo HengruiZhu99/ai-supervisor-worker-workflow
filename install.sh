@@ -107,6 +107,26 @@ files=(
   "skills/paper-equation-implementation/SKILL.md"
   "skills/performance-portability-review/SKILL.md"
   "skills/scientific-code-review/SKILL.md"
+  "scripts/reviewer_report_parsing.py"
+  "scripts/check_autonomy_boundary.py"
+  "scripts/orchestrator.py"
+  "scripts/consensus_core.py"
+  "scripts/lib/agent_run.sh"
+  "scripts/architect_core.py"
+  "scripts/architect.py"
+  "scripts/check_spec_completeness.py"
+  "scripts/architect_compile.py"
+  "scripts/aiflow.py"
+  "scripts/test_consensus_core.py"
+  "scripts/test_orchestrator.py"
+  "scripts/test_architect_core.py"
+  "scripts/test_architect.py"
+  "agent_wrappers/panels/default.json"
+  "agent_wrappers/panels/reviewer.json"
+  "agent_wrappers/panels/supervisor.json"
+  "agent_wrappers/panels/spec.json"
+  ".ai/supervisor/consensus_policy.md"
+  "project.yaml.example"
 )
 
 for file in "${files[@]}"; do
@@ -135,6 +155,12 @@ chmod +x \
   "$TARGET_DIR/scripts/modulator_loop.sh" \
   "$TARGET_DIR/scripts/human_milestone_review.py" \
   "$TARGET_DIR/scripts/list_skills.py" \
-  "$TARGET_DIR/scripts/workflow_gui.py"
+  "$TARGET_DIR/scripts/workflow_gui.py" \
+  "$TARGET_DIR/scripts/check_autonomy_boundary.py" \
+  "$TARGET_DIR/scripts/orchestrator.py" \
+  "$TARGET_DIR/scripts/architect.py" \
+  "$TARGET_DIR/scripts/check_spec_completeness.py" \
+  "$TARGET_DIR/scripts/architect_compile.py" \
+  "$TARGET_DIR/scripts/aiflow.py"
 
 echo "AI workflow installation complete."

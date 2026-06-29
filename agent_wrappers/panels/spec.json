@@ -1,0 +1,28 @@
+{
+  "id": "spec",
+  "role": "architect",
+  "decision_schema": "spec",
+  "max_rounds": 3,
+  "quorum": "unanimous",
+  "description": "Three-model panel that reviews a compiled project spec for completeness, feasibility, and internal consistency before the autonomous build starts. Verdict is 'ready' or 'needs_revision'; the panel must broadly agree the spec is buildable before kickoff.",
+  "panelists": [
+    {
+      "id": "spec-1",
+      "wrapper": "cursor-agent",
+      "model": "gpt-5.5-high",
+      "focus": "completeness: every requirement has an acceptance criterion, every milestone has a Definition-of-Done, every requirement is covered by a milestone, and the runtime test command is real"
+    },
+    {
+      "id": "spec-2",
+      "wrapper": "cursor-agent",
+      "model": "claude-opus-4-8-thinking-high",
+      "focus": "feasibility and risk: are the milestones and acceptance criteria realistic for the chosen stack, and are the major risks identified with mitigations"
+    },
+    {
+      "id": "spec-3",
+      "wrapper": "cursor-agent",
+      "model": "gpt-5.3-codex-high",
+      "focus": "internal consistency and testability: acceptance criteria are concrete and executable, ids are consistent, scope is bounded, and there are no contradictions"
+    }
+  ]
+}

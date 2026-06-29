@@ -1,0 +1,13 @@
+{
+  "id": "default",
+  "role": "chat",
+  "decision_schema": "generic",
+  "max_rounds": 3,
+  "quorum": "unanimous",
+  "description": "Generic fallback consensus panel for any role that does not have a dedicated panel file.",
+  "panelists": [
+    {"id": "panelist-1", "wrapper": "cursor-agent", "model": "gpt-5.5-high"},
+    {"id": "panelist-2", "wrapper": "cursor-agent", "model": "claude-opus-4-8-thinking-high"},
+    {"id": "panelist-3", "wrapper": "cursor-agent", "model": "gpt-5.3-codex-high"}
+  ]
+}

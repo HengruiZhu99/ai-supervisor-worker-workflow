@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 """Shared, robust parsing of reviewer-report machine blocks.
 
 A reviewer report must contain one fenced ```yaml block with the `diff_coverage`,

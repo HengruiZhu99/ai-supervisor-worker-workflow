@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 """Interactively process a human review gate checklist."""
 
 from __future__ import annotations
@@ -433,8 +438,14 @@ def pid_running(pid: int) -> bool:
         os.kill(pid, 0)
     except OSError:
         return False
+    # The /proc zombie filter is Linux-only. On platforms without /proc (macOS,
+    # BSD) a successful kill(pid, 0) is the best available liveness signal, so
+    # treat the process as running rather than reporting every live PID as dead.
+    proc_stat = Path(f"/proc/{pid}/stat")
+    if not proc_stat.exists():
+        return True
     try:
-        state = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()[2]
+        state = proc_stat.read_text(encoding="utf-8").split()[2]
     except OSError:
         return False
     return state != "Z"

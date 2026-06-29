@@ -2,7 +2,16 @@
 
 ## Overview
 
-Codex is the supervisor. Cursor is the worker.
+The workflow runs four roles through pluggable agent wrappers (default
+`cursor-agent`): a **worker** that implements one job per worktree, a
+**reviewer** stage, a **supervisor** that reviews/accepts/dispatches, and an
+always-on **modulator** watchdog. Wrappers are selected independently from model
+names (see `agent_wrappers/README.md`).
+
+By default the reviewer and supervisor roles run through the **multi-model
+consensus orchestrator** (`scripts/orchestrator.py`): the same prompt is fed to a
+panel of models that compare notes across rounds and only produce a decision
+once they broadly agree. See [Consensus Orchestrator](#consensus-orchestrator).
 
 `.ai/supervisor/` contains durable high-level state, including the design prompt, project brief, roadmap, ledger, review checklist, and protocols.
 
@@ -12,7 +21,50 @@ Codex is the supervisor. Cursor is the worker.
 
 `.worktrees/` contains isolated implementation worktrees created by the worker loop.
 
+## Architect Intake (automated bootstrap)
+
+The Architect stage is the automated, hardened version of the manual Step 1/2
+below: it interviews you to produce a complete spec, gates it, and compiles the
+supervisor bootstrap artifacts for you.
+
+```bash
+python3 scripts/aiflow.py init      # interview -> gate -> compile (-> optionally start)
+python3 scripts/aiflow.py spec      # resume the interactive interview
+python3 scripts/aiflow.py gate      # run the spec completeness gate
+python3 scripts/aiflow.py compile   # write the supervisor bootstrap artifacts
+python3 scripts/aiflow.py status    # show intake progress
+```
+
+Stages and artifacts:
+
+- The interview (`scripts/architect.py`, pure logic in `scripts/architect_core.py`)
+  builds a structured spec under `.ai/architect/` (`spec_session.json`,
+  `requirements.md`, `acceptance.md`, `milestones.md`, `risks.md`,
+  `glossary.md`). Each milestone carries an executable Definition-of-Done.
+- The completeness gate (`scripts/check_spec_completeness.py`) runs deterministic
+  checks (every requirement has an acceptance criterion, every milestone has a
+  Definition-of-Done referencing acceptance ids, every requirement is covered by
+  a milestone, the runtime test command is set, no open questions) and then a
+  multi-model consensus review (the `spec` panel via the orchestrator) that must
+  broadly agree the spec is `ready`.
+- Compile/handoff (`scripts/architect_compile.py`) renders
+  `.ai/supervisor/design_prompt.md`, `project_brief.md`, `roadmap.md` (with the
+  machine-readable Definition-of-Done), `ledger.md`, and a seeded
+  `autonomy_delegation.json`, plus a stack-agnostic `project.yaml` at the repo
+  root. By default it will not overwrite existing supervisor files
+  (`--overwrite` to replace). After handoff, new scope requests go under
+  `.ai/architect/change_requests/` for review at milestone boundaries.
+
+The dashboard exposes the same flow under "Architect Intake": chat to scope the
+project, run the gate, and compile/hand off, then launch the loops.
+
+`project.yaml` (see `project.yaml.example`) is stack-agnostic and selects the
+language, the `build`/`test`/`lint`/`format_check` commands, the worker model,
+the reviewer/supervisor panels, consensus settings, and budgets.
+
 ## Basic Usage
+
+If you prefer to bootstrap by hand instead of using the Architect:
 
 ### Step 1
 
@@ -104,6 +156,83 @@ accidental superproject gitlink commits. Jobs that intentionally maintain
 submodules must declare those paths in `.ai/jobs/JNNNN/allowed_submodule_paths.txt`
 or run with `WORKER_ALLOW_SUBMODULE_CHANGES=1`. Set
 `WORKER_CLEAN_UNDECLARED_SUBMODULES=0` to disable this repair path.
+
+## Consensus Orchestrator
+
+`scripts/orchestrator.py` feeds one base prompt to a panel of models and lets
+them reach a shared decision before the workflow acts on it:
+
+- **Round 0 (independent):** every panelist answers the prompt on its own.
+- **Rounds 1..K (compare notes):** each panelist sees the other panelists'
+  distilled positions and revises toward a shared decision, or records a
+  reasoned dissent.
+- The loop stops as soon as the configured **quorum** is reached
+  (default `unanimous`: all panelists share the same verdict and report
+  agreement) or `--max-rounds` is hit. If the panel cannot agree, the decision
+  is `no_consensus` and acceptance is blocked / escalated, never silently
+  accepted.
+
+Panels are declared as JSON under `agent_wrappers/panels/<id>.json` and listed
+with:
+
+```bash
+python3 scripts/orchestrator.py list-panels
+```
+
+The default panels (`reviewer`, `supervisor`) use
+`gpt-5.5-high`, `claude-opus-4-8-thinking-high`, and `gpt-5.3-codex-high`.
+Pure decision logic lives in `scripts/consensus_core.py`; both modules are unit
+tested (`scripts/test_consensus_core.py`, `scripts/test_orchestrator.py`).
+
+### Reviewer consensus
+
+The reviewer stage replaces the two independent reviewer-a/reviewer-b passes
+with one consensus panel that reviews the full diff. It writes per-panelist
+reports and `consensus.json` / `consensus.md` under
+`.ai/jobs/JNNNN/reviews/consensus.attempt-N/`, and maps the result onto the
+existing `reviewer_decisions.attempt-N.json` schema so coverage checking,
+status fields, and supervisor review are unchanged.
+
+```bash
+REVIEWER_CONSENSUS_ENABLED=1 \
+REVIEWER_CONSENSUS_PANEL=reviewer \
+REVIEWER_CONSENSUS_MAX_ROUNDS=3 \
+REVIEWER_CONSENSUS_QUORUM=unanimous \
+./scripts/worker_loop.sh
+```
+
+Set `REVIEWER_CONSENSUS_ENABLED=0` to fall back to the legacy two-reviewer path.
+Override panel models in order with `REVIEWER_CONSENSUS_MODELS="m1,m2,m3"`.
+
+### Supervisor consensus (deliberate-then-execute)
+
+Because the supervisor mutates Git/workflow state, the panel runs a **read-only
+deliberation** that converges on the next supervisor action, then a single
+supervisor executor applies the agreed decision. The deliberation artifacts are
+written under `.ai/supervisor_runs/consensus.<timestamp>/`.
+
+```bash
+SUPERVISOR_CONSENSUS_ENABLED=1 \
+SUPERVISOR_CONSENSUS_PANEL=supervisor \
+SUPERVISOR_CONSENSUS_MAX_ROUNDS=3 \
+SUPERVISOR_CONSENSUS_QUORUM=unanimous \
+./scripts/supervisor_loop.sh
+```
+
+Set `SUPERVISOR_CONSENSUS_ENABLED=0` for the legacy single-agent supervisor.
+
+### Modulator consensus (optional)
+
+The modulator can also corroborate a high-stakes diagnosis through the panel.
+It is OFF by default because the watchdog wakes frequently; enable it with
+`MODULATOR_CONSENSUS_ENABLED=1`.
+
+Consensus panelists always run read-only (`agent_wrapper.py --read-only`, i.e.
+cursor-agent `--mode ask`). Use read-only-capable wrappers for panels; the
+`codex` wrapper does not yet enforce a read-only sandbox for panelists.
+
+The tie-break and escalation policy is documented in
+`.ai/supervisor/consensus_policy.md`.
 
 ## Agent Metrics
 
@@ -317,7 +446,9 @@ Each file records:
 ```bash
 bash -n scripts/worker_loop.sh
 bash -n scripts/supervisor_loop.sh
-python3 -m py_compile scripts/agent_wrapper.py scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/clean_worker_submodules.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/check_attempt_consistency.py scripts/collect_agent_metrics.py scripts/summarize_agent_metrics.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
+python3 -m py_compile scripts/agent_wrapper.py scripts/orchestrator.py scripts/consensus_core.py scripts/architect_core.py scripts/architect.py scripts/check_spec_completeness.py scripts/architect_compile.py scripts/aiflow.py scripts/create_job.py scripts/update_job_status.py scripts/summarize_jobs.py scripts/create_commit_doc.py scripts/commit_workflow_records.py scripts/check_reviewer_coverage.py scripts/analyze_reviewer_reports.py scripts/filter_allowed_artifacts.py scripts/clean_worker_submodules.py scripts/integrate_job.py scripts/record_workflow_event.py scripts/transition_job.py scripts/check_attempt_consistency.py scripts/collect_agent_metrics.py scripts/summarize_agent_metrics.py scripts/human_milestone_review.py scripts/list_skills.py scripts/record_workflow_improvement.py scripts/workflow_gui.py
+(cd scripts && python3 -m unittest test_consensus_core test_orchestrator test_architect_core test_architect)
+python3 scripts/orchestrator.py list-panels
 python3 scripts/summarize_jobs.py
 python3 scripts/summarize_agent_metrics.py
 ```

@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 set -euo pipefail
 
-ROOT="$(git rev-parse --show-toplevel)"
+ROOT="${AIFLOW_PROJECT_ROOT:-$(git rev-parse --show-toplevel)}"
 cd "$ROOT"
 
 # Always-on modulator: watchdog/steering agent for the AI workflow.
@@ -32,6 +37,16 @@ MODULATOR_STALL_MINUTES="${MODULATOR_STALL_MINUTES:-30}"
 # Run a mid-tranche progress audit every N newly accepted jobs; 0 disables.
 MODULATOR_AUDIT_EVERY_ACCEPTED="${MODULATOR_AUDIT_EVERY_ACCEPTED:-3}"
 export MODULATOR_STALL_MINUTES MODULATOR_AUDIT_EVERY_ACCEPTED
+# Optional multi-model consensus deliberation for high-stakes diagnoses. The
+# modulator wakes frequently, so this is OFF by default; enable it when you want
+# a panel of models to corroborate a diagnosis before the modulator acts.
+MODULATOR_CONSENSUS_ENABLED="${MODULATOR_CONSENSUS_ENABLED:-0}"
+MODULATOR_CONSENSUS_PANEL="${MODULATOR_CONSENSUS_PANEL:-supervisor}"
+MODULATOR_CONSENSUS_MODELS="${MODULATOR_CONSENSUS_MODELS:-}"
+MODULATOR_CONSENSUS_WRAPPERS="${MODULATOR_CONSENSUS_WRAPPERS:-}"
+MODULATOR_CONSENSUS_MAX_ROUNDS="${MODULATOR_CONSENSUS_MAX_ROUNDS:-3}"
+MODULATOR_CONSENSUS_QUORUM="${MODULATOR_CONSENSUS_QUORUM:-unanimous}"
+MODULATOR_CONSENSUS_TIMEOUT="${MODULATOR_CONSENSUS_TIMEOUT:-1800}"
 MODULATOR_STATE_DIR=".ai/modulator"
 HUMAN_GATE=".ai/supervisor/HUMAN_REVIEW_REQUIRED.md"
 SUPERVISOR_ACTION_REQUEST=".ai/supervisor/SUPERVISOR_ACTION_REQUIRED.md"
@@ -53,6 +68,8 @@ mkdir -p "$MODULATOR_RUNS_DIR" "$LOOP_LOCK_DIR" \
   "$MODULATOR_STATE_DIR/triage" "$MODULATOR_STATE_DIR/milestone_audits" \
   "$MODULATOR_STATE_DIR/archive"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/agent_run.sh
+source "$SCRIPT_DIR/lib/agent_run.sh"
 WORKFLOW_PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export AI_WORKFLOW_PACKAGE_ROOT="${AI_WORKFLOW_PACKAGE_ROOT:-$WORKFLOW_PACKAGE_ROOT}"
 workflow_commit="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo unknown)"
@@ -392,6 +409,75 @@ restart_dead_loops() {
   fi
 }
 
+modulator_consensus_deliberate() {
+  # Optional read-only multi-model deliberation. On success it appends a panel
+  # consensus diagnosis to the modulator prompt ($1).
+  local base_prompt="$1"
+  local timestamp="$2"
+  local consensus_dir="$MODULATOR_RUNS_DIR/consensus.$timestamp"
+  local delib_prompt="$MODULATOR_RUNS_DIR/modulator.$timestamp.deliberation.md"
+  mkdir -p "$consensus_dir"
+
+  {
+    cat "$base_prompt"
+    cat <<'DELIB'
+
+---
+
+## DELIBERATION MODE (read-only)
+
+You are one model on a multi-model modulator panel. This round is a READ-ONLY
+deliberation. Do NOT modify files or workflow state. Diagnose the wake reason(s)
+and determine the single best modulator action, then emit this block (in
+addition to the consensus_vote block):
+
+```yaml
+modulator_decision:
+  action: write_findings   # write_findings|restart_loop|kill_hung|escalate_human|no_action|other
+  rationale: <evidence-grounded reason>
+```
+
+Set consensus_vote.verdict to the SAME token as modulator_decision.action.
+DELIB
+  } >"$delib_prompt"
+
+  local orch_extra_args=()
+  [[ -n "$MODULATOR_CONSENSUS_MODELS" ]] && orch_extra_args+=(--models "$MODULATOR_CONSENSUS_MODELS")
+  [[ -n "$MODULATOR_CONSENSUS_WRAPPERS" ]] && orch_extra_args+=(--wrappers "$MODULATOR_CONSENSUS_WRAPPERS")
+
+  # Capture the exit without flipping the caller's global set -e/+e state.
+  local orch_exit=0
+  python3 scripts/orchestrator.py run \
+    --role modulator \
+    --decision-schema generic \
+    --panel-id "$MODULATOR_CONSENSUS_PANEL" \
+    "${orch_extra_args[@]}" \
+    --base-prompt-file "$delib_prompt" \
+    --workspace "$ROOT" \
+    --output-dir "$consensus_dir" \
+    --max-rounds "$MODULATOR_CONSENSUS_MAX_ROUNDS" \
+    --quorum "$MODULATOR_CONSENSUS_QUORUM" \
+    --output-format stream-json \
+    --extra-args="$MODULATOR_EXTRA_ARGS" \
+    --timeout "$MODULATOR_CONSENSUS_TIMEOUT" \
+    --metrics-role modulator-panel \
+    >"$consensus_dir/deliberation.log" 2>&1 || orch_exit=$?
+  echo "modulator consensus deliberation exit=$orch_exit (see $consensus_dir/consensus.md)"
+
+  if [[ -f "$consensus_dir/consensus.md" ]]; then
+    {
+      echo
+      echo "---"
+      echo
+      echo "## Panel consensus diagnosis (multi-model deliberation)"
+      echo
+      echo "A panel of models deliberated read-only over these wake reasons and produced the consensus below. Use it as a high-priority input; you remain responsible for the final modulator action and may deviate with recorded rationale."
+      echo
+      cat "$consensus_dir/consensus.md"
+    } >>"$base_prompt"
+  fi
+}
+
 run_modulator_agent() {
   local reasons="$1"
   local timestamp log_file prompt_file metrics_file started_at finished_at
@@ -510,32 +596,22 @@ action taken, files written, and whether the supervisor or a human needs to
 act next.
 PROMPT
   } >"$prompt_file"
+
+  if [[ "$MODULATOR_CONSENSUS_ENABLED" == "1" ]]; then
+    modulator_consensus_deliberate "$prompt_file" "$timestamp"
+  fi
+
   local agent_exit stream_file=""
   if [[ "$MODULATOR_AGENT_WRAPPER" == "cursor-agent" ]]; then
-    # stream-json gives exact token usage; the text converter keeps the log
-    # human-readable for the GUI tail.
     stream_file="$MODULATOR_RUNS_DIR/modulator.$timestamp.stream.jsonl"
-    python3 scripts/agent_wrapper.py run \
-      --role modulator \
-      --wrapper "$MODULATOR_AGENT_WRAPPER" \
-      --model "$MODULATOR_MODEL" \
-      --workspace "$ROOT" \
-      --prompt-file "$prompt_file" \
-      --output-format stream-json \
-      --extra-args="$MODULATOR_EXTRA_ARGS" 2>>"$log_file" \
-      | tee "$stream_file" \
-      | python3 scripts/cursor_stream_to_text.py >>"$log_file"
-    agent_exit=${PIPESTATUS[0]}
-  else
-    python3 scripts/agent_wrapper.py run \
-      --role modulator \
-      --wrapper "$MODULATOR_AGENT_WRAPPER" \
-      --model "$MODULATOR_MODEL" \
-      --workspace "$ROOT" \
-      --prompt-file "$prompt_file" \
-      --extra-args="$MODULATOR_EXTRA_ARGS" >"$log_file" 2>&1
-    agent_exit=$?
   fi
+  # Recapture started_at just before the run so optional consensus deliberation
+  # time is not folded into the modulator agent's recorded wall time.
+  started_at="$(utc_now)"
+  run_streamed_agent modulator "$MODULATOR_AGENT_WRAPPER" "$MODULATOR_MODEL" \
+    "$ROOT" "$prompt_file" "$MODULATOR_EXTRA_ARGS" "" \
+    "$log_file" "$stream_file"
+  agent_exit=$AGENT_RUN_EXIT
   finished_at="$(utc_now)"
   set -e
 

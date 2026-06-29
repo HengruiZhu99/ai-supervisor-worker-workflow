@@ -1,0 +1,25 @@
+project:
+  name: my-new-project
+  language: python
+  description: one-line description of what this builds
+runtime:
+  build: pip install -e .
+  test: pytest -q
+  lint: ruff check .
+  format_check: ruff format --check .
+agents:
+  worker_wrapper: cursor-agent
+  worker_model: claude-fable-5-thinking-high
+  reviewer_panel: reviewer
+  supervisor_panel: supervisor
+consensus:
+  reviewer_enabled: true
+  reviewer_quorum: unanimous
+  reviewer_max_rounds: 3
+  supervisor_enabled: true
+  supervisor_quorum: unanimous
+  supervisor_max_rounds: 3
+budgets:
+  max_attempts_per_job: 8
+  max_tokens_per_milestone: 0
+  max_wallclock_per_milestone: 0

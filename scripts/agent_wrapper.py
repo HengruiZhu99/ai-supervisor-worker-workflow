@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#========================================================================================
+# BBHK spectral numerical relativity code
+# Copyright(C) 2026 Hengrui Zhu
+#========================================================================================
+
 """List and run pluggable AI agent wrappers.
 
 Wrapper extensions live under:
@@ -88,7 +93,9 @@ def run_cursor_agent(args: argparse.Namespace) -> int:
         "-p",
         "--trust",
     ]
-    if args.role == "reviewer":
+    # Reviewers are always read-only; --read-only lets any role (e.g. a
+    # supervisor consensus deliberation panelist) run without mutating state.
+    if args.role == "reviewer" or getattr(args, "read_only", False):
         command.extend(["--mode", "ask"])
     command.extend(["--workspace", args.workspace])
     if args.output_format:
@@ -135,6 +142,7 @@ def expand_custom_command(wrapper: dict, args: argparse.Namespace) -> list[str]:
         "output_format": args.output_format,
         "reasoning_effort": args.reasoning_effort,
         "extra_args": args.extra_args,
+        "read_only": "1" if getattr(args, "read_only", False) else "",
     }
     return [str(part).format(**mapping) for part in template]
 
@@ -197,6 +205,11 @@ def main() -> int:
     run_parser.add_argument("--stream-partial-output", action="store_true")
     run_parser.add_argument("--reasoning-effort", default="")
     run_parser.add_argument("--extra-args", default="")
+    run_parser.add_argument(
+        "--read-only",
+        action="store_true",
+        help="run the agent in read-only mode regardless of role (cursor-agent: --mode ask)",
+    )
     run_parser.set_defaults(func=cmd_run)
 
     args = parser.parse_args()
