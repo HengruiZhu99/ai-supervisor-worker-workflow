@@ -33,6 +33,23 @@ def _gate_evidence_valid(value: object) -> bool:
     )
 
 
+def _exact_writer_candidate(worktree: Path, base_sha: str, candidate: str) -> bool:
+    status = run_owned_process(
+        ["git", "status", "--porcelain"], cwd=worktree, timeout=10
+    )
+    ancestry = run_owned_process(
+        ["git", "merge-base", "--is-ancestor", base_sha, candidate],
+        cwd=worktree,
+        timeout=10,
+    )
+    return bool(
+        _git_value(worktree, "rev-parse", "HEAD") == candidate
+        and status.returncode == 0
+        and not status.stdout.strip()
+        and ancestry.returncode == 0
+    )
+
+
 def pending_integration_matches(root: Path, integration: Mapping[str, Any]) -> bool:
     integrated = str(integration.get("integrated_commit", ""))
     tested_tree = str(integration.get("tested_tree", ""))
@@ -75,6 +92,60 @@ def pending_result(
         raise IntegrationRecoveryError("pending integration inbox escaped the run")
     result = read_json(inbox)
     verify_signed(result, "pending integration inbox")
+    return result, inbox, integration
+
+
+def orphaned_result(
+    store: RunStore,
+    record: Mapping[str, Any],
+    *,
+    agent_id: str,
+    attempt: int,
+) -> tuple[dict[str, Any], Path, dict[str, Any]] | None:
+    relative = (
+        Path("inbox")
+        / str(record.get("id", ""))
+        / (f"{agent_id}-{attempt}")
+        / "result.json"
+    )
+    inbox = (store.path / relative).resolve()
+    if store.path.resolve() not in inbox.parents:
+        raise IntegrationRecoveryError("orphaned integration inbox escaped the run")
+    if not inbox.exists():
+        return None
+    result = read_json(inbox)
+    verify_signed(result, "orphaned integration inbox")
+    orchestration = result.get("orchestration")
+    if not isinstance(orchestration, Mapping):
+        raise IntegrationRecoveryError("orphaned integration metadata is invalid")
+    candidate = str(orchestration.get("candidate", ""))
+    base_sha = str(orchestration.get("base_sha", ""))
+    target_before = str(orchestration.get("target_before", ""))
+    if not all(
+        re.fullmatch(r"[0-9a-f]{40,64}", value)
+        for value in (candidate, base_sha, target_before)
+    ):
+        raise IntegrationRecoveryError(
+            "orphaned integration commit identity is invalid"
+        )
+    if git_head(store.context.root) != target_before:
+        raise IntegrationRecoveryError("orphaned integration target has drifted")
+    worktree = Path(str(orchestration.get("writer_worktree_path", ""))).resolve()
+    parent = (store.runtime / "agent-worktrees").resolve()
+    if parent not in worktree.parents or not worktree.is_dir():
+        raise IntegrationRecoveryError("orphaned writer worktree is unavailable")
+    if not _exact_writer_candidate(worktree, base_sha, candidate):
+        raise IntegrationRecoveryError(
+            "orphaned writer candidate is not exact and clean"
+        )
+    integration = {
+        "candidate": candidate,
+        "base_sha": base_sha,
+        "target_before": target_before,
+        "inbox": str(relative),
+        "attempt": attempt,
+        "writer_worktree_path": str(worktree),
+    }
     return result, inbox, integration
 
 

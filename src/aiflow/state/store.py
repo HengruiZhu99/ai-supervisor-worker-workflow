@@ -24,6 +24,7 @@ from aiflow.state.errors import (
     StateError,
 )
 from aiflow.state.identifiers import SAFE_ID
+from aiflow.state.inbox import write_once
 from aiflow.state.time import utc_now
 
 
@@ -470,10 +471,8 @@ class RunStore:
         directory = self.path / "inbox" / task_id / agent_id
         directory.mkdir(parents=True, exist_ok=True)
         target = directory / "result.json"
-        if target.exists():
-            raise StateError(f"inbox result already exists: {target}")
-        atomic_write_json(target, signed(dict(result)))
-        return target
+        payload = signed(dict(result))
+        return write_once(target, payload)
 
     def repair(self) -> dict[str, Any]:
         from aiflow.state.repair import repair_store

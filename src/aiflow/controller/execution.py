@@ -17,12 +17,14 @@ from aiflow.controller.capsules import execution_capsule
 from aiflow.controller.gates import integration_gates
 from aiflow.controller.orchestration import OrchestratedTaskRunner
 from aiflow.controller.pending import (
+    adopt_orphaned_integration,
     mark_reconciliation_required,
     pending_record_matches,
     terminal_state,
     update_prepared_record,
 )
 from aiflow.controller.runner import Budgets, ControllerOutcome, ControllerRunner
+from aiflow.controller.staging import stage_integration
 from aiflow.controller.watchdog import DeterministicWatchdog
 from aiflow.domain.evidence import validate_cycle
 from aiflow.controller.tasks import record_to_task
@@ -227,34 +229,21 @@ class TaskExecutionEngine:
         base_sha: str,
         identities: Mapping[str, str],
     ) -> Mapping[str, str]:
-        validate_child_result(result, identities=identities, task_id=task.id)
-        target_before = git_head(self.workspace)
-        inbox = self.store.write_inbox_result(
+        staged, inbox = stage_integration(
+            self.store,
+            self.workspace,
+            self._record(str(record["id"])),
             task_id=task.id,
-            agent_id=f"{self.agent_id}-{attempt}",
+            attempt=attempt,
             result=result,
-        )
-        relative = str(inbox.relative_to(self.store.path))
-        mutable = self._record(str(record["id"]))
-        mutable["status"] = "INTEGRATION_PENDING"
-        mutable["evidence"] = sorted(
-            {str(value) for value in mutable.get("evidence", [])} | {relative}
-        )
-        mutable["integration"] = {
-            "candidate": candidate,
-            "base_sha": base_sha,
-            "target_before": target_before,
-            "inbox": relative,
-            "attempt": attempt,
-            "writer_worktree_path": str(
-                result.get("orchestration", {}).get("writer_worktree_path", "")
-            ),
-        }
-        self._persist(
-            event_type="task_integration_prepared", evidence=list(mutable["evidence"])
+            candidate=candidate,
+            base_sha=base_sha,
+            identities=identities,
+            agent_id=self.agent_id,
+            persist=self._persist,
         )
         self._prepared_inbox = inbox
-        return {"target_before": target_before, "inbox": relative}
+        return staged
 
     def _record_prepared_integration(
         self, task_id: str, details: Mapping[str, Any]
@@ -426,6 +415,11 @@ class TaskExecutionEngine:
         )
 
     def _step(self) -> str:
+        adopted = adopt_orphaned_integration(
+            self.store, self.records, agent_id=self.agent_id, persist=self._persist
+        )
+        if adopted == "blocked":
+            return "blocked"
         recovered = self._recover_pending_integration()
         if recovered is not None:
             return recovered
