@@ -2,16 +2,16 @@
 
 ## Current checkpoint
 
-- Phase: `P0`
-- State: `BASELINE_COMPLETE`
+- Phase: `RED`
+- State: `REQUIRED_REGRESSIONS_FAILING_AS_INTENDED`
 - Branch: `codex/aiflow-v2-lightweight-multiproject`
 - Base: `e9311a932dc2d5bab57c2cfd7ed734b8e1ca5466`
-- Active acceptance target: RED regression suite for `AC-PERM-001`,
-  `AC-QUALITY-002`, `AC-PROGRESS-001`, `AC-STATE-001`, `AC-QUALITY-001`,
-  `AC-INTEGRATE-001`, and `AC-EXEC-001`
+- Active acceptance target: P1 permission safety, Codex/GPT-5.6 role defaults, and
+  generic project resolution for `AC-PERM-001`, `AC-BACKEND-001`, `AC-BACKEND-002`,
+  `AC-ID-002`, and `AC-QUALITY-002`
 - Acceptance IDs closed: none (P0 is the permitted baseline phase)
-- Next action: write the prescribed regression tests, run them against the legacy
-  implementation, and retain each intended failure signature before production changes.
+- Next action: make only the P1 permission/backend/resolution/contamination tests green,
+  rerun the legacy suite, and record the first implementation acceptance closure.
 
 ## Immutable inputs
 
@@ -30,7 +30,7 @@ for narrow high-volume classification/routing. Deterministic style gates use no 
 
 ## Circuit-breaker counters
 
-- unchanged failing command repeats: 0
+- unchanged failing command repeats: 1 (deliberate complete RED suite; no repeat before code changes)
 - same normalized implementation failure: 0
 - consecutive accepted checkpoints without acceptance delta: 0
 - environment corrections: 0
