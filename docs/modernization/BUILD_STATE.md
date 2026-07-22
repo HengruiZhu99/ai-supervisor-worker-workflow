@@ -2,16 +2,17 @@
 
 ## Current checkpoint
 
-- Phase: `P5`
-- State: `P4_ACCEPTED_LOCALLY`
+- Phase: `P6-P8`
+- State: `P5_ACCEPTED_LOCALLY`
 - Branch: `codex/aiflow-v2-lightweight-multiproject`
 - Base: `e9311a932dc2d5bab57c2cfd7ed734b8e1ca5466`
-- Active acceptance target: acceptance-ID task value, progress debt, post-execution
-  evidence, and starvation gates for `AC-PROGRESS-001` through `AC-PROGRESS-003`
+- Active acceptance target: quality/deprecation migration, finite Solo/orchestrated
+  execution, native custom agents, schema repair, and two-phase Git integration
 - Acceptance IDs closed: `AC-PERM-001`, `AC-BACKEND-001`, `AC-ID-001`, `AC-ID-002`,
-  `AC-ID-003`, `AC-ID-004`, `AC-STATE-001`, `AC-INSTALL-001`, `AC-SKILL-001`
-- Next action: verify the modular progress policy and legacy compatibility gate, then
-  record and commit P5 acceptance evidence.
+  `AC-ID-003`, `AC-ID-004`, `AC-STATE-001`, `AC-INSTALL-001`, `AC-SKILL-001`,
+  `AC-PROGRESS-001`, `AC-PROGRESS-002`, `AC-PROGRESS-003`
+- Next action: write functional quality, controller, custom-agent, migration, and
+  integration tests before replacing the remaining legacy implementations.
 
 ## Immutable inputs
 
@@ -32,7 +33,7 @@ for narrow high-volume classification/routing. Deterministic style gates use no 
 
 - unchanged failing command repeats: 0
 - same normalized implementation failure: 0
-- consecutive accepted checkpoints without acceptance delta: 0 (P2-P3 closed five IDs)
+- consecutive accepted checkpoints without acceptance delta: 0 (P5 closed three IDs)
 - environment corrections: 0
 
 ## Safe resume

@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-#========================================================================================
-# BBHK spectral numerical relativity code
-# Copyright(C) 2026 Hengrui Zhu
-#========================================================================================
-
 """Validate worker-job progress classification before dispatch.
 
 The gate is intentionally small and conservative.  New tasks must contain a
@@ -106,6 +101,8 @@ VAGUE_UNLOCK_PATTERNS = (
 )
 JOB_ID_RE = re.compile(r"^J(?P<num>\d{4,})$")
 LOCK_ACTIVE_AFTER_RE = re.compile(r"^\s*active_after_job:\s*(J\d{4,})\s*$", re.MULTILINE)
+ACCEPTANCE_ID_RE = re.compile(r"\bAC-[A-Z0-9][A-Z0-9._-]*\b")
+TASK_ID_RE = re.compile(r"^T[A-Z0-9._-]*\d[A-Z0-9._-]*$")
 
 UPSTREAM_TRACE_REQUIRED_FIELDS = {
     "failing milestone gate": "Failing milestone/gate",
@@ -295,10 +292,23 @@ def progress_from_block(block: dict[str, str], source: str) -> tuple[Progress | 
 
     capability_target = block.get("capability_target", "").strip()
     unlocks_next = block.get("unlocks_next", "").strip()
+    acceptance_ids = set(ACCEPTANCE_ID_RE.findall(capability_target))
     if "capability_target" in block and vague_unlock(capability_target):
         errors.append(f"{source}: capability_target is too vague")
 
     metadata_like = (metadata_only is True) or job_type in METADATA_LIKE_TYPES
+    if acceptance_ids and metadata_like:
+        unblocks_task_id = block.get("unblocks_task_id", "").strip()
+        if not TASK_ID_RE.fullmatch(unblocks_task_id):
+            errors.append(
+                f"{source}: acceptance-targeting enabler requires a concrete "
+                "unblocks_task_id; free-text unlocks_next is not authoritative"
+            )
+    if acceptance_ids and job_type in {"implementation", "numerical_test", "backend_test"}:
+        if not block.get("acceptance_evidence", "").strip():
+            errors.append(
+                f"{source}: delivery claim requires retained executable acceptance evidence"
+            )
     if metadata_like and vague_unlock(unlocks_next):
         errors.append(
             f"{source}: metadata-like jobs require a concrete unlocks_next "
@@ -504,6 +514,31 @@ def metadata_streak(jobs_dir: Path, target: Progress, target_job_id: str | None)
     return streak
 
 
+def no_acceptance_delta_streak(jobs_dir: Path, target_job_id: str | None) -> list[Progress]:
+    """Count consecutive accepted checkpoints without any retained acceptance delta."""
+    target_num = job_number(target_job_id)
+    entries: list[tuple[int, Progress]] = []
+    for job_dir in jobs_dir.glob("J*"):
+        num = job_number(job_dir.name)
+        if num is None or (target_num is not None and num >= target_num):
+            continue
+        progress = history_progress(job_dir)
+        if progress is not None:
+            entries.append((num, progress))
+    streak: list[Progress] = []
+    for _, progress in sorted(entries, reverse=True):
+        status_path = Path(progress.source.split("/task.md", 1)[0]) / "status.json"
+        try:
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            break
+        closed = status.get("acceptance_ids_closed", [])
+        if isinstance(closed, list) and closed:
+            break
+        streak.append(progress)
+    return streak
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("task", type=Path, help="task.md or proposed task file")
@@ -540,6 +575,14 @@ def main(argv: list[str] | None = None) -> int:
     if priority_lock_applies(task_path, jobs_dir):
         task_text = task_path.read_text(encoding="utf-8", errors="replace")
         errors.extend(validate_upstream_trace(task_path, task_text))
+    no_delta = no_acceptance_delta_streak(jobs_dir, current_job_id(task_path))
+    if len(no_delta) >= 2:
+        errors.append(
+            "NO_ACCEPTANCE_DELTA: two consecutive accepted checkpoints closed no "
+            "acceptance ID; perform one controller-owned replan, then block unless "
+            "an acceptance-closing delivery or validation task is ready. Area labels "
+            "cannot reset this debt."
+        )
     if progress is not None and progress.metadata_like:
         streak = metadata_streak(jobs_dir, progress, current_job_id(task_path))
         if len(streak) >= 2:
