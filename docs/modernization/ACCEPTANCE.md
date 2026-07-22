@@ -96,6 +96,15 @@ labels, prose, or accepted commits alone never close it.
 - `AC-AUDIT-001`: fresh architecture, security, scientific/TDD, contamination, UI, and
   release audits have no unresolved critical/high finding.
 
+## Closure
+
+All mandatory IDs above are closed. `AC-AUDIT-001` closed at implementation freeze
+`307169a8cb95f6907a3230bf36bc659706f1ba7d`: two independent full-diff audits accepted it
+with no unresolved critical/high finding, adversarial security/identity regressions and
+the secret scan passed, and the only audit finding was corrected documentation. Exact
+commands, counts, verdicts, and artifact hashes are retained in `P12_AUDITS.md` and
+`P12_TERMINAL_EVIDENCE.md`.
+
 ## Terminal rule
 
 The modernization may finish only when every mandatory ID above is closed with fresh

@@ -36,7 +36,9 @@ closed.
 Only the controller owns canonical state. Revision CAS, same-directory atomic replacement,
 checksums, event sequence, intent recovery, and leases prevent silent multi-writer drift.
 Integration checks a captured target HEAD immediately before apply and never force-resets
-the user's target.
+the user's target. Pre/post attestations bind tracked content and modes, symlink targets,
+gitlink live HEADs, index metadata, HEAD/unborn and symbolic-ref state, all local refs, and
+repository-local Git configuration. A change outside the bounded contract fails closed.
 
 ## Release safety
 

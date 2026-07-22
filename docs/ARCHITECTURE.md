@@ -22,6 +22,14 @@ The GUI never edits state. Workers and reviewers return identity-bound structure
 only the parent controller ingests them. Integration has its own target-HEAD compare-and-
 swap after integrated-state gates.
 
+Task intake is executable and causal: bounded scope, a pre-change command, its exact
+post-change rerun, and a project regression command are validated before run creation.
+Integration persists its bound ref/commit and tested tree before target mutation, gates a
+temporary integrated tree through focused, regression, and quality tiers, applies with
+compare-and-swap, and can resume the exact transaction after a crash. Safe checkout
+refresh preserves unrelated tracked edits and branch switches. Writer worktrees are
+retired only after durable acceptance.
+
 ## Modules
 
 - `identity`: project, checkout, worktree, run, thread, runtime, and cache isolation.

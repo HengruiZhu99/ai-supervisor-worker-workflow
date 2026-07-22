@@ -21,7 +21,30 @@ Install the runtime once from this checkout, then initialize each target explici
 python3 -m pip install -e .
 cd /path/to/existing/git-project
 aiflow project init --profile solo
+```
+
+Before starting a run, set executable argument arrays in `.aiflow/project.toml`.
+The RED/focused command must be the same causal test before and after the change, and a
+separate regression command is mandatory. For example:
+
+```toml
+[commands]
+build = ["python3", "-m", "compileall", "-q", "src"]
+test_red = ["python3", "-m", "unittest", "tests.test_norm"]
+test_focused = ["python3", "-m", "unittest", "tests.test_norm"]
+test_regression = ["python3", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"]
+```
+
+Then verify and create a bounded task. `--allowed-scope` is repository-relative and
+repeatable:
+
+```bash
 aiflow project verify
+aiflow run start --mode solo \
+  --objective "Fix the L2 norm and retain a numerical regression" \
+  --acceptance-id AC-NORM-001 \
+  --allowed-scope src/norm.py \
+  --allowed-scope tests/test_norm.py
 ```
 
 Or use the offline artifact:
@@ -40,7 +63,9 @@ files and small skills are hash-locked; the runtime is not copied into the targe
 aiflow project init --profile science
 aiflow run start --mode solo \
   --objective "Fix the L2 norm and retain a numerical regression" \
-  --acceptance-id AC-NORM-001
+  --acceptance-id AC-NORM-001 \
+  --allowed-scope src/norm.cpp \
+  --allowed-scope tst/unit/test_norm.cpp
 aiflow run list
 aiflow run resume --run-id RUN_ID --max-idle 1
 ```
@@ -63,7 +88,28 @@ aiflow project upgrade --profile orchestrated
 aiflow run start --mode orchestrated \
   --parent-sandbox workspace-write \
   --objective "Deliver the approved milestone DAG" \
-  --acceptance-id AC-M1-001
+  --acceptance-id AC-M1-001 \
+  --task-file .aiflow/tasks/milestone.json
+```
+
+An explicit task file is an executable contract, not planning metadata. Each task needs
+bounded scope, a discriminating pre-change command, and post-change commands that rerun
+that same command; orchestrated projects must also configure `test_regression`:
+
+```json
+{
+  "tasks": [
+    {
+      "id": "T0001",
+      "objective": "Close the bounded norm defect",
+      "kind": "numerical",
+      "acceptance_ids": ["AC-M1-001"],
+      "allowed_scope": ["src/norm.cpp", "tst/unit/test_norm.cpp"],
+      "pre_commands": [["ctest", "--test-dir", "build", "-R", "norm", "--output-on-failure"]],
+      "commands": [["ctest", "--test-dir", "build", "-R", "norm", "--output-on-failure"]]
+    }
+  ]
+}
 ```
 
 The parent is the only controller, state writer, and integrator. Custom agents are

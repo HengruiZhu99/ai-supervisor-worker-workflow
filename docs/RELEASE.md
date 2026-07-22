@@ -29,6 +29,12 @@ scanning.
 
 There is intentionally no publication or deployment job.
 
+The terminal local artifact built from implementation freeze
+`307169a8cb95f6907a3230bf36bc659706f1ba7d` contains 198 archive members and has SHA-256
+`3494ef74098733121c05d4cbbf01ec0686b6693869cec4b508944479c4fffd59`.
+An independent temporary build is byte-identical; the four offline-artifact/tamper tests
+pass. This is local verification evidence, not publication authorization.
+
 ## Publication blocker
 
 This repository does not declare a distributable license. A local testing artifact can be

@@ -63,6 +63,7 @@ for duplicate names.
 
 ```text
 run start --mode solo|orchestrated --objective TEXT [--acceptance-id ID ...]
+          [--allowed-scope PATH ...] [--task-kind KIND] [--task-file FILE.json]
 run list
 run status [--run-id ID]
 run resume [--run-id ID] [finite budget options]
@@ -76,6 +77,42 @@ controller run [--run-id ID] [finite budget options]
 
 Orchestrated start/resume requires `--parent-sandbox read-only|workspace-write` and
 refuses `danger-full-access`.
+
+The default task form requires at least one repeatable, repository-relative
+`--allowed-scope`. Before run state is created, `[commands]` in
+`.aiflow/project.toml` must provide a discriminating `test_red` command (or
+`test_focused` for refactor/performance/portability), must rerun that exact causal
+command after the change, and must provide `test_regression`. Commands are argument
+arrays, never shell strings.
+
+```toml
+[commands]
+build = ["python3", "-m", "compileall", "-q", "src"]
+test_red = ["python3", "-m", "unittest", "tests.test_widget"]
+test_focused = ["python3", "-m", "unittest", "tests.test_widget"]
+test_regression = ["python3", "-m", "unittest", "discover", "-s", "tests"]
+```
+
+`--task-file` accepts one Solo task or at most 100 orchestrated tasks. Every task must
+contain nonempty `allowed_scope`, `pre_commands`, and `commands`; at least one exact
+pre-command must appear in its post commands. Dependencies must form a valid DAG, and an
+orchestrated project still requires configured `test_regression`. A minimal file is:
+
+```json
+{
+  "tasks": [
+    {
+      "id": "T0001",
+      "objective": "Fix one bounded defect",
+      "kind": "bugfix",
+      "acceptance_ids": ["AC-BUG-001"],
+      "allowed_scope": ["src/widget.py", "tests/test_widget.py"],
+      "pre_commands": [["python3", "-m", "unittest", "tests.test_widget"]],
+      "commands": [["python3", "-m", "unittest", "tests.test_widget"]]
+    }
+  ]
+}
+```
 
 ## Quality and integration
 
