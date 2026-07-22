@@ -29,6 +29,12 @@ class EventBufferTests(unittest.TestCase):
         self.assertTrue(events.replay("not-an-id").reset)
         self.assertLessEqual(len(events.replay("").events), 2)
 
+    def test_future_cursor_after_server_restart_requires_snapshot_reset(self) -> None:
+        restarted = EventBuffer(limit=2)
+        self.assertTrue(restarted.replay("10").reset)
+        restarted.publish("run", {"revision": 1})
+        self.assertTrue(restarted.replay("10").reset)
+
     def test_stream_wait_wakes_when_a_new_event_is_published(self) -> None:
         events = EventBuffer(limit=2)
         timer = Timer(0.05, lambda: events.publish("run", {"revision": 1}))

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -49,6 +50,8 @@ class SecurityAuditRegressionTests(unittest.TestCase):
             "--ask-for-approval on-request",
             "-a on-request",
             "-c sandbox_mode=workspace-write",
+            "--config=sandbox_mode=workspace-write",
+            "-c=approval_policy=on-request",
         ):
             with self.subTest(extra=extra), self.assertRaises(SystemExit):
                 agent_wrapper.build_codex_command(wrapper_args(extra))
@@ -149,6 +152,38 @@ class SecurityAuditRegressionTests(unittest.TestCase):
                 with self.assertRaises(StateError):
                     with lifecycle.checkout_mutation(second["run_id"]):
                         pass
+
+    def test_stale_bare_lease_and_checkout_guards_recover(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            git_project(root)
+            ProjectInstaller(root, distribution_root=ROOT).init("solo")
+            context = resolve_project(
+                explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}
+            )
+            environment = {"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")}
+            lifecycle = RunLifecycle(context, runtime_env=environment)
+            started = lifecycle.start(
+                mode="solo", objective="recover guards", acceptance_ids=("AC-1",)
+            )
+            store = lifecycle.store(started["run_id"])
+            store.runtime.mkdir(parents=True, exist_ok=True)
+            store.lease_lock.mkdir()
+            old = time.time() - 10
+            os.utime(store.lease_lock, (old, old))
+            claimed = store.claim_controller(
+                "controller-recovered",
+                ttl_seconds=60,
+                **store.local_process_identity(),
+            )
+            self.assertEqual(claimed["controller_id"], "controller-recovered")
+            store.release_controller("controller-recovered")
+
+            mutation_guard = context.state_root / ".mutation.lock"
+            mutation_guard.mkdir()
+            os.utime(mutation_guard, (old, old))
+            with lifecycle.checkout_mutation(started["run_id"]):
+                self.assertTrue((context.state_root / "MUTATING_RUN.json").is_file())
 
 
 if __name__ == "__main__":

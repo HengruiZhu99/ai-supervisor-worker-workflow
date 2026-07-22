@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -134,6 +135,29 @@ class StateStoreTests(unittest.TestCase):
             events = store.read_events()
             self.assertEqual(len(events), 2)  # run_created + run_started
             self.assertEqual(events[-1]["state_revision"], 1)
+            store.verify()
+
+    def test_partial_event_tail_is_preserved_and_recovered(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            init_project(project)
+            store = self.make_store(project)
+            intent = store.prepare_transition(
+                0,
+                {"status": "RUNNING"},
+                event_type="run_started",
+                controller_id="controller-test",
+            )
+            store.apply_prepared_snapshot(intent, append_event=False)
+            with store.events_file.open("ab") as handle:
+                handle.write(b'{"partial":')
+                handle.flush()
+                os.fsync(handle.fileno())
+            self.assertEqual(store.recover(), "rolled_forward")
+            self.assertEqual(len(store.read_events()), 2)
+            recovered = list((store.path / "evidence").glob("EVENTS.partial.*"))
+            self.assertEqual(len(recovered), 1)
+            self.assertEqual(recovered[0].read_bytes(), b'{"partial":')
             store.verify()
 
     def test_events_are_sequenced_and_checksum_chained(self) -> None:

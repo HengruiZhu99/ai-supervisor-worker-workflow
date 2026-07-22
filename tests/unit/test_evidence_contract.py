@@ -90,6 +90,55 @@ class EvidenceContractTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             validate_cycle("performance", performance)
 
+    def test_exact_numerical_oracle_does_not_require_irrelevant_convergence(
+        self,
+    ) -> None:
+        evidence = {
+            "green": {"exit_code": 0},
+            "regression": {"exit_code": 0},
+            "cold_review": {"status": "pass"},
+            "attempts": 1,
+            "questions": 0,
+            "reference": "exact analytic identity",
+            "oracle_provenance": "derived invariant",
+            "oracle_kind": "analytic",
+            "units": "dimensionless",
+            "dimensions": 1,
+            "shapes": [[4]],
+            "tolerance": {
+                "absolute": 1e-12,
+                "relative": 1e-12,
+                "justification": "roundoff bound",
+            },
+            "deterministic_seed": 0,
+        }
+        self.assertEqual(validate_cycle("numerical", evidence)["status"], "VERIFIED")
+
+    def test_portability_rejects_empty_structured_provenance(self) -> None:
+        evidence = {
+            "green": {"exit_code": 0},
+            "regression": {"exit_code": 0},
+            "cold_review": {"status": "pass"},
+            "attempts": 1,
+            "questions": 0,
+            "backends": {
+                "serial": {
+                    "status": "pass",
+                    "dtype": "",
+                    "layout": "",
+                    "provenance": "",
+                },
+                "openmp": {
+                    "status": "pass",
+                    "dtype": "float64",
+                    "layout": "right",
+                    "provenance": "fixture",
+                },
+            },
+        }
+        with self.assertRaises(EvidenceError):
+            validate_cycle("portability", evidence)
+
     def test_retry_and_question_budgets_are_bounded(self) -> None:
         evidence = {**common(), "observable": "bounded feature", "attempts": 4}
         with self.assertRaises(EvidenceError):

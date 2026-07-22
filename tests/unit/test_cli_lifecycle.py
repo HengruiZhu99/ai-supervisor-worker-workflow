@@ -151,6 +151,68 @@ class LifecycleCliTests(unittest.TestCase):
             allowed = run_cli(project, *base, "--parent-sandbox", "workspace-write")
             self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
+    def test_orchestrated_cli_accepts_a_bounded_task_dag_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            project.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+            self.assertEqual(
+                run_cli(
+                    project, "project", "init", "--profile", "orchestrated"
+                ).returncode,
+                0,
+            )
+            task_file = project / "tasks.json"
+            task_file.write_text(
+                json.dumps(
+                    {
+                        "tasks": [
+                            {
+                                "id": "T0001",
+                                "objective": "first bounded task",
+                                "kind": "feature",
+                                "acceptance_ids": ["AC-1"],
+                                "commands": [[sys.executable, "-c", "pass"]],
+                            },
+                            {
+                                "id": "T0002",
+                                "objective": "dependent bounded task",
+                                "kind": "feature",
+                                "acceptance_ids": ["AC-2"],
+                                "dependencies": ["T0001"],
+                                "commands": [[sys.executable, "-c", "pass"]],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            started = run_cli(
+                project,
+                "run",
+                "start",
+                "--mode",
+                "orchestrated",
+                "--objective",
+                "bounded program",
+                "--parent-sandbox",
+                "workspace-write",
+                "--task-file",
+                str(task_file),
+            )
+            self.assertEqual(started.returncode, 0, started.stderr)
+            status = run_cli(
+                project,
+                "run",
+                "status",
+                "--run-id",
+                json.loads(started.stdout)["run_id"],
+            )
+            self.assertEqual(
+                [task["id"] for task in json.loads(status.stdout)["tasks"]],
+                ["T0001", "T0002"],
+            )
+
     def test_gui_and_read_only_hub_have_nonblocking_validation_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
