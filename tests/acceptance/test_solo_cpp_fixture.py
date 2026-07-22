@@ -4,14 +4,22 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, Mapping
 
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = Path(__file__).with_name("fixtures") / "athenak_like"
 CLI = ROOT / "bin" / "aiflow"
+sys.path.insert(0, str(ROOT / "src"))
+
+from aiflow.controller.lifecycle import RunLifecycle  # noqa: E402
+from aiflow.controller.runner import Budgets  # noqa: E402
+from aiflow.identity.context import resolve_project  # noqa: E402
+from aiflow.state.atomic import read_json  # noqa: E402
 
 
 def run(args: list[str], cwd: Path, env=None) -> subprocess.CompletedProcess[str]:
@@ -26,8 +34,79 @@ def run(args: list[str], cwd: Path, env=None) -> subprocess.CompletedProcess[str
     )
 
 
+class SoloCppBackend:
+    def __init__(self, project: Path, commands: list[list[str]]) -> None:
+        self.project = project
+        self.commands = commands
+        self.calls = 0
+        self.red_exit_code = 0
+
+    def __call__(self, capsule: Mapping[str, Any]) -> Mapping[str, Any]:
+        self.calls += 1
+        if capsule["action"] != "execute_task" or capsule["mode"] != "solo":
+            raise AssertionError("Solo backend received an unexpected capsule")
+        configured = run(self.commands[0], self.project)
+        built = run(self.commands[1], self.project)
+        red = run(self.commands[2], self.project)
+        if configured.returncode or built.returncode or red.returncode == 0:
+            raise AssertionError(
+                "fixture did not demonstrate a clean build and RED test"
+            )
+        self.red_exit_code = red.returncode
+        header = self.project / "include" / "vector_norm.hpp"
+        header.write_text(
+            header.read_text(encoding="utf-8").replace(
+                "return squared;  // Intentional RED fixture defect; the acceptance test corrects it.",
+                "return std::sqrt(squared);",
+            ),
+            encoding="utf-8",
+        )
+        identities = {
+            key: str(capsule[key])
+            for key in ("project_id", "checkout_id", "worktree_id", "run_id")
+        }
+        acceptance_ids = [str(value) for value in capsule["task"]["acceptance_ids"]]
+        return {
+            "schema_version": "1",
+            **identities,
+            "task_id": str(capsule["task_id"]),
+            "agent_role": "implementation-worker",
+            "status": "completed",
+            "summary": "corrected vector L2 norm after a discriminating RED",
+            "findings": [],
+            "changed_files": ["include/vector_norm.hpp"],
+            "commands_run": self.commands,
+            "tests_and_results": [{"command": command} for command in self.commands],
+            "acceptance_ids_supported": acceptance_ids,
+            "evidence_paths": ["include/vector_norm.hpp"],
+            "contract_impact": "the norm now returns sqrt(sum(x_i^2))",
+            "residual_risks": [],
+            "recommended_next_action": "accept",
+            "cycle_kind": "feature",
+            "cycle_evidence": {
+                "red": {"exit_code": red.returncode, "discriminating": True},
+                "green": {"exit_code": 0},
+                "regression": {"exit_code": 0},
+                "cold_review": {
+                    "status": "pass",
+                    "reviewer": "cold-self-review",
+                },
+                "attempts": 1,
+                "questions": 0,
+                "observable": "vector norm returns the analytic 3-4-5 result",
+            },
+            "delivery_evidence": {
+                "changed_files": ["include/vector_norm.hpp"],
+                "expected_artifact": "include/vector_norm.hpp",
+                "commands": self.commands,
+                "fresh_end_to_end": True,
+            },
+            "closed_acceptance_ids": acceptance_ids,
+        }
+
+
 class SoloCppAcceptanceTests(unittest.TestCase):
-    def test_existing_cmake_project_runs_red_green_quality_and_durable_stop(
+    def test_existing_cmake_project_closes_acceptance_through_solo_controller(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -51,80 +130,66 @@ class SoloCppAcceptanceTests(unittest.TestCase):
                 environment,
             )
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
-            started = run(
-                [
-                    str(CLI),
-                    "--project-root",
-                    str(project),
-                    "run",
-                    "start",
-                    "--mode",
-                    "solo",
-                    "--objective",
-                    "Correct the vector L2 norm",
-                    "--acceptance-id",
-                    "AC-NORM-001",
-                ],
-                ROOT,
-                environment,
+            commands = [
+                ["cmake", "-S", ".", "-B", "build"],
+                ["cmake", "--build", "build", "--clean-first"],
+                ["ctest", "--test-dir", "build", "--output-on-failure"],
+            ]
+            config = project / ".aiflow" / "project.toml"
+            content = config.read_text(encoding="utf-8")
+            for name, command in zip(
+                ("build", "test_focused", "test_regression"),
+                commands,
+                strict=True,
+            ):
+                encoded = json.dumps(command)
+                content = content.replace(f"{name} = []", f"{name} = {encoded}")
+            config.write_text(content, encoding="utf-8")
+            context = resolve_project(
+                explicit_root=project,
+                env={"XDG_STATE_HOME": str(base / "state")},
             )
-            self.assertEqual(started.returncode, 0, started.stderr)
-            run_id = json.loads(started.stdout)["run_id"]
-
-            build = project / "build"
-            configured = run(["cmake", "-S", ".", "-B", str(build)], project)
-            self.assertEqual(configured.returncode, 0, configured.stderr)
+            runtime_env = {"XDG_RUNTIME_DIR": str(base / "runtime")}
+            started = RunLifecycle(context, runtime_env=runtime_env).start(
+                mode="solo",
+                objective="Correct the vector L2 norm",
+                acceptance_ids=("AC-NORM-001",),
+                task_kind="feature",
+            )
+            backend = SoloCppBackend(project, commands)
+            lifecycle = RunLifecycle(
+                context,
+                runtime_env=runtime_env,
+                agent_backend=backend,
+                agent_id="cpp-acceptance-worker",
+            )
+            completed = lifecycle.resume(
+                started["run_id"], budgets=Budgets(max_tasks=1, max_idle=1)
+            )
+            self.assertEqual(completed["status"], "SUCCEEDED", completed)
+            self.assertEqual(completed["acceptance_ids_closed"], ["AC-NORM-001"])
+            self.assertNotEqual(backend.red_exit_code, 0)
             self.assertEqual(
-                run(
-                    ["cmake", "--build", str(build), "--clean-first"], project
-                ).returncode,
-                0,
+                backend.calls, 1, "Solo mode must use one direct agent call"
             )
-            red = run(
-                ["ctest", "--test-dir", str(build), "--output-on-failure"], project
+            task = lifecycle.status(started["run_id"])["tasks"][0]
+            self.assertEqual(task["status"], "ACCEPTED")
+            inbox = read_json(
+                lifecycle.store(started["run_id"]).path / task["evidence"][0]
             )
-            self.assertNotEqual(
-                red.returncode, 0, "fixture must prove the intended RED result"
+            self.assertTrue(inbox["controller_attestation"]["commands"])
+            self.assertTrue(
+                all(
+                    result["exit_code"] == 0
+                    for result in inbox["controller_attestation"]["commands"]
+                )
             )
-
-            header = project / "include" / "vector_norm.hpp"
-            header.write_text(
-                header.read_text().replace(
-                    "return squared;  // Intentional RED fixture defect; the acceptance test corrects it.",
-                    "return std::sqrt(squared);",
-                ),
-                encoding="utf-8",
-            )
-            self.assertEqual(
-                run(
-                    ["cmake", "--build", str(build), "--clean-first"], project
-                ).returncode,
-                0,
-            )
-            green = run(
-                ["ctest", "--test-dir", str(build), "--output-on-failure"], project
-            )
-            self.assertEqual(green.returncode, 0, green.stdout + green.stderr)
             quality = run(
                 [str(CLI), "--project-root", str(project), "quality", "check"],
                 ROOT,
                 environment,
             )
             self.assertEqual(quality.returncode, 0, quality.stdout + quality.stderr)
-            stopped = run(
-                [
-                    str(CLI),
-                    "--project-root",
-                    str(project),
-                    "run",
-                    "stop",
-                    "--run-id",
-                    run_id,
-                ],
-                ROOT,
-                environment,
-            )
-            self.assertEqual(json.loads(stopped.stdout)["status"], "STOPPED")
 
 
 if __name__ == "__main__":
