@@ -186,15 +186,67 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(git(root, "rev-parse", "HEAD").stdout.strip(), external[0])
 
+    def test_post_cas_interruption_recovers_from_durable_pending_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root, commit=True)
+            context = context_for(root, tmp)
+            command = artifact_command("T0001.txt")
+            lifecycle = RunLifecycle(context, runtime_env=runtime(tmp))
+            started = lifecycle.start(
+                mode="orchestrated",
+                objective="recover post-CAS interruption",
+                task_specs=(
+                    {
+                        "id": "T0001",
+                        "objective": "recover post-CAS interruption",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-1"],
+                        "allowed_scope": ["T0001.txt"],
+                        "pre_commands": [command],
+                        "commands": [command],
+                    },
+                ),
+            )
+            original = IntegrationTransaction.apply
+            interrupted = False
+
+            def apply_then_interrupt(
+                transaction: IntegrationTransaction, *args: Any, **kwargs: Any
+            ) -> IntegrationResult:
+                nonlocal interrupted
+                result = original(transaction, *args, **kwargs)
+                if result.ok and not interrupted:
+                    interrupted = True
+                    raise RuntimeError("simulated interruption after atomic ref update")
+                return result
+
+            with mock.patch.object(
+                IntegrationTransaction, "apply", new=apply_then_interrupt
+            ):
+                result = RunLifecycle(
+                    context,
+                    runtime_env=runtime(tmp),
+                    agent_backend=OrchestratedBackend(root, command),
+                ).resume(
+                    started["run_id"],
+                    budgets=Budgets(max_tasks=2, max_attempts=2, max_idle=1),
+                )
+            self.assertEqual(result["status"], "SUCCEEDED", result)
+            self.assertTrue((root / "T0001.txt").is_file())
+
     def test_default_task_imports_project_precondition_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
             init_project(root)
             config = root / ".aiflow" / "project.toml"
             command = artifact_command("feature.txt")
+            encoded = json.dumps(command)
             config.write_text(
-                config.read_text(encoding="utf-8")
-                + f"test_red = {json.dumps(command)}\n",
+                config.read_text(encoding="utf-8").replace(
+                    "test_regression = []",
+                    f"test_regression = []\ntest_red = {encoded}",
+                ),
                 encoding="utf-8",
             )
             lifecycle = RunLifecycle(context_for(root, tmp), runtime_env=runtime(tmp))
