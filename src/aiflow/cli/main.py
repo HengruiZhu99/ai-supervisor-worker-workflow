@@ -304,6 +304,7 @@ def _add_run_commands(commands: argparse._SubParsersAction) -> None:
         choices=(
             "feature",
             "bug",
+            "bugfix",
             "refactor",
             "test",
             "numerical",

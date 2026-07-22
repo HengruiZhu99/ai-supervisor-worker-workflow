@@ -63,7 +63,8 @@ def task_records(
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for index, spec in enumerate(specs, start=1):
-        kind = str(spec.get("kind", "feature"))
+        requested_kind = str(spec.get("kind", "feature"))
+        kind = "bug" if requested_kind == "bugfix" else requested_kind
         commands = spec.get("commands", defaults)
         record = {
             "id": str(spec.get("id", f"T{index:04d}")),

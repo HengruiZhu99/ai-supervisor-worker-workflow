@@ -182,8 +182,9 @@ class ProjectRequestHandler(BaseHTTPRequestHandler):
                     last_write = time.monotonic()
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionError, OSError):
-            self.close_connection = True
             return
+        finally:
+            self.close_connection = True
 
     def do_POST(self) -> None:
         payload = self._payload()

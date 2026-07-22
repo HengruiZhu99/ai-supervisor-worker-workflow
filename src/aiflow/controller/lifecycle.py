@@ -311,4 +311,6 @@ class RunLifecycle:
         for path in sorted(root.iterdir()):
             if path.is_dir() and (path / "RUN.json").is_file():
                 result.append(self.store(path.name).read_run())
-        return result
+        return sorted(
+            result, key=lambda item: (str(item["created_at"]), str(item["run_id"]))
+        )

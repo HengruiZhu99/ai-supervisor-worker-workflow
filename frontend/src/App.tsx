@@ -14,6 +14,7 @@ export function App() {
   const refresh = useCallback(async () => {
     try {
       setSnapshot(await readSnapshot());
+      setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Snapshot failed");
     }
@@ -55,6 +56,7 @@ export function App() {
         lastEventId = (event as MessageEvent).lastEventId || "";
         reconnects = 0;
         setSnapshot(JSON.parse((event as MessageEvent).data) as Snapshot);
+        setError("");
       });
       source.onerror = () => {
         source?.close();
@@ -84,7 +86,12 @@ export function App() {
         Skip to task workspace
       </a>
       <Header snapshot={snapshot} theme={theme} setTheme={setTheme} />
-      <main id="workspace" ref={workspace} tabIndex={-1}>
+      <main
+        id="workspace"
+        ref={workspace}
+        tabIndex={-1}
+        data-event-cursor={snapshot?.event_cursor ?? 0}
+      >
         <section className="hero" aria-labelledby="task-title">
           <p className="eyebrow">NEW TASK</p>
           <h1 id="task-title">What should we move forward?</h1>

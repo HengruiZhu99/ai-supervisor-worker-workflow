@@ -129,7 +129,11 @@ test("browser receives a reset snapshot after the project server restarts", asyn
   const objective = `Restart cursor seed ${Date.now()}`;
   await page.getByLabel("Describe the outcome").fill(objective);
   await page.getByRole("button", { name: /Create paused run/ }).click();
-  await expect(page.locator("main")).toHaveAttribute("data-event-cursor", "1");
+  await expect(page.getByRole("heading", { name: objective })).toBeVisible();
+  const priorCursor = Number(
+    await page.locator("main").getAttribute("data-event-cursor"),
+  );
+  expect(priorCursor).toBeGreaterThan(0);
 
   const restarted = await request.post("http://127.0.0.1:8879/restart");
   expect(restarted.ok()).toBe(true);

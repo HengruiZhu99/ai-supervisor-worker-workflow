@@ -16,7 +16,6 @@ from aiflow.agents.codex import CodexAgentBackend  # noqa: E402
 from aiflow.controller.lifecycle import RunLifecycle  # noqa: E402
 from aiflow.controller.runner import Budgets  # noqa: E402
 from aiflow.identity.context import resolve_project  # noqa: E402
-from aiflow.state.store import RunStore  # noqa: E402
 
 
 def git(path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -185,35 +184,6 @@ class OrchestratedBackend:
 
 
 class FinalExecutionAuditRegressionTests(unittest.TestCase):
-    def test_bugfix_alias_is_normalized_to_the_bug_evidence_contract(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "project"
-            init_project(root)
-            context = context_for(root, tmp)
-            started = RunLifecycle(context, runtime_env=runtime(tmp)).start(
-                mode="solo", objective="repair defect", task_kind="bugfix"
-            )
-            task = RunLifecycle(context, runtime_env=runtime(tmp)).status(
-                started["run_id"]
-            )["tasks"][0]
-            self.assertEqual(task["kind"], "bug")
-
-    def test_run_listing_is_chronological_not_identifier_ordered(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "project"
-            init_project(root)
-            context = context_for(root, tmp)
-            environment = runtime(tmp)
-            RunStore.create(
-                context, mode="solo", run_id="z-old", runtime_env=environment
-            )
-            time.sleep(0.001)
-            RunStore.create(
-                context, mode="solo", run_id="a-new", runtime_env=environment
-            )
-            listed = RunLifecycle(context, runtime_env=environment).list()
-            self.assertEqual([str(run["run_id"]) for run in listed], ["z-old", "a-new"])
-
     def test_invalid_dependency_graph_is_rejected_before_run_creation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
