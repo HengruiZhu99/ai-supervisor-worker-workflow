@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import stat
 import tempfile
+import time
 import zipapp
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -50,6 +52,7 @@ with tempfile.TemporaryDirectory(prefix="aiflow-artifact-") as temporary:
     cli.DISTRIBUTION_ROOT_OVERRIDE = root
     raise SystemExit(cli.main())
 """
+ZIP_TIMESTAMP = time.mktime((1980, 1, 2, 0, 0, 0, 0, 0, -1))
 
 
 def _digest(path: Path) -> str:
@@ -110,6 +113,14 @@ def _stage(distribution_root: Path, stage: Path) -> dict[str, str]:
     return manifest
 
 
+def _normalize_stage_metadata(stage: Path) -> None:
+    paths = sorted((stage, *stage.rglob("*")), key=lambda path: path.as_posix())
+    for path in paths:
+        executable = path.is_file() and bool(path.stat().st_mode & 0o111)
+        path.chmod(0o755 if path.is_dir() or executable else 0o644)
+        os.utime(path, (ZIP_TIMESTAMP, ZIP_TIMESTAMP), follow_symlinks=False)
+
+
 def build_artifact(distribution_root: Path, destination: Path) -> dict[str, Any]:
     root = distribution_root.resolve()
     output = destination.resolve()
@@ -119,6 +130,7 @@ def build_artifact(distribution_root: Path, destination: Path) -> dict[str, Any]
         stage = Path(temporary) / "stage"
         stage.mkdir()
         manifest = _stage(root, stage)
+        _normalize_stage_metadata(stage)
         zipapp.create_archive(
             stage,
             target=artifact,
