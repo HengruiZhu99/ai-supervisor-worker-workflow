@@ -15,7 +15,7 @@ from typing import Any
 from aiflow import __version__
 from aiflow.quality.config import DEFAULT_DEPRECATIONS_TOML, DEFAULT_QUALITY_TOML
 from aiflow.skills.manager import file_hash
-from aiflow.skills.profiles import PROFILE_ADDITIONS, ProfileError, profile_skills as _profile_skills
+from aiflow.skills.profiles import ProfileError, profile_skills as _profile_skills
 
 
 class InstallError(RuntimeError):

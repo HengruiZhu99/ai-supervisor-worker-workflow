@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
-from aiflow.state.atomic import payload_checksum, signed, verify_signed
+from aiflow.state.atomic import signed, verify_signed
 
 
 def make_event(
