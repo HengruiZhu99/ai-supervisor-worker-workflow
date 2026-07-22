@@ -14,6 +14,10 @@ const built = await readFile(
   new URL("../../src/aiflow/api/static/app.js", import.meta.url),
   "utf8",
 );
+const playwrightConfig = await readFile(
+  new URL("../playwright.config.ts", import.meta.url),
+  "utf8",
+);
 
 test("frontend exposes the progressive Solo-first contract", () => {
   for (const marker of [
@@ -38,4 +42,8 @@ test("a successful snapshot clears stale transient errors", () => {
     source,
     /setSnapshot\(await readSnapshot\(\)\);\s*setError\(""\)/,
   );
+});
+
+test("CI rejects flaky browser tests instead of masking them with retries", () => {
+  assert.match(playwrightConfig, /failOnFlakyTests:\s*!!process\.env\.CI/);
 });

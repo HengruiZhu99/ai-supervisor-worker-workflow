@@ -5,6 +5,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 1,
+  failOnFlakyTests: !!process.env.CI,
   reporter: [
     ["line"],
     ["html", { outputFolder: "playwright-report", open: "never" }],

@@ -19,6 +19,11 @@ test.afterEach(() => {
 test("Solo is default and advanced orchestration is progressive", async ({
   page,
 }) => {
+  await page.keyboard.press("Tab");
+  const skipLink = page.getByRole("link", { name: "Skip to task workspace" });
+  await expect(skipLink).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("main")).toBeFocused();
   await expect(
     page.getByRole("banner", { name: "Project identity" }),
   ).toBeVisible();
