@@ -36,7 +36,8 @@ class CodexPermissionRegressionTests(unittest.TestCase):
                 extra_args="",
                 read_only=read_only,
             )
-            with mock.patch.object(module.subprocess, "call", return_value=0) as call:
+            completed = module.subprocess.CompletedProcess([], 0, "", "")
+            with mock.patch.object(module, "run_owned_process", return_value=completed) as call:
                 module.run_codex(args)
             return list(call.call_args.args[0])
 

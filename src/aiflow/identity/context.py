@@ -117,11 +117,11 @@ def resolve_project(
     env: Mapping[str, str] | None = None,
 ) -> ProjectContext:
     """Resolve explicit root or current Git repository; inherited AIFLOW_* is ignored."""
-    del env
+    values = os.environ if env is None else env
     root = _project_root(explicit_root, cwd)
     common = _git_path(root, "--git-common-dir")
     git_dir = _git_path(root, "--git-dir")
-    return ProjectContext(
+    context = ProjectContext(
         root=root,
         git_common_dir=common,
         git_dir=git_dir,
@@ -129,6 +129,17 @@ def resolve_project(
         checkout_id=_read_or_create_id(common / "aiflow" / "checkout-id"),
         worktree_id=_read_or_create_id(git_dir / "aiflow" / "worktree-id"),
     )
+    CheckoutRegistry(_registry_path(values)).register(context.checkout_id, common)
+    return context
+
+
+def _registry_path(values: Mapping[str, str]) -> Path:
+    state_home = values.get("XDG_STATE_HOME")
+    if state_home:
+        base = Path(state_home).expanduser()
+    else:
+        base = Path(values.get("HOME", str(Path.home()))).expanduser() / ".local" / "state"
+    return base / "aiflow" / "checkout-registry.json"
 
 
 def new_run_id() -> str:
@@ -170,12 +181,13 @@ class CheckoutRegistry:
         location = str(git_common_dir.resolve())
         records = self._load()
         previous = records.get(checkout_id)
-        if previous and Path(previous).resolve() != Path(location):
+        if previous and Path(previous).resolve() != Path(location) and Path(previous).exists():
             raise IdentityCollision(
                 f"checkout ID {checkout_id} is registered at both {previous} and {location}"
             )
         records[checkout_id] = location
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(self.path.parent, 0o700)
         descriptor, temporary = tempfile.mkstemp(prefix=".registry.", dir=self.path.parent)
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
@@ -184,6 +196,7 @@ class CheckoutRegistry:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self.path)
+            os.chmod(self.path, 0o600)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)

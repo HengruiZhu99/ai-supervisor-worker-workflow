@@ -110,12 +110,24 @@ def migrate_store(store: "RunStore") -> dict[str, Any]:
         if source != 0:
             raise RuntimeError(f"unsupported state migration {source}->{CURRENT_SCHEMA}")
         backup = _backup(store)
-        for payload, path in ((run, store.run_file), (tasks, store.tasks_file)):
+        migrated_payloads = []
+        for payload in (run, tasks):
             migrated = dict(payload)
             migrated.pop("checksum", None)
             migrated["schema_version"] = CURRENT_SCHEMA
-            atomic_write_json(path, signed(migrated))
-        store.verify()
+            migrated_payloads.append(signed(migrated))
+        intent = signed(
+            {
+                "schema_version": 1,
+                "kind": "schema_migration",
+                "from_version": source,
+                "to_version": CURRENT_SCHEMA,
+                "run": migrated_payloads[0],
+                "tasks": migrated_payloads[1],
+            }
+        )
+        atomic_write_json(store.intent_file, intent)
+        store._apply_migration_intent(intent)
         result = {
             "status": "migrated", "run_id": store.run_id,
             "from_version": source, "to_version": CURRENT_SCHEMA,

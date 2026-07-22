@@ -18,6 +18,7 @@ class ProjectContaminationRegressionTests(unittest.TestCase):
     def test_inherited_project_a_environment_cannot_redirect_project_b(self) -> None:
         sys.path.insert(0, str(SCRIPTS))
         try:
+            sys.modules.pop("aiflow", None)
             module = importlib.import_module("aiflow")
             with tempfile.TemporaryDirectory() as tmp:
                 base = Path(tmp)

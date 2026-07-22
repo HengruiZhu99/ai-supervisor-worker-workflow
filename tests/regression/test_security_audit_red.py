@@ -14,13 +14,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(1, str(ROOT / "scripts"))
 
 import agent_wrapper  # noqa: E402
 from aiflow.api.service import ApiService  # noqa: E402
 from aiflow.identity.context import IdentityCollision, resolve_project  # noqa: E402
 from aiflow.skills.installer import InstallError, ProjectInstaller  # noqa: E402
 from aiflow.state.store import RevisionConflict  # noqa: E402
+from aiflow.controller.runner import Budgets  # noqa: E402
+from aiflow.state.lifecycle import RunLifecycle  # noqa: E402
+from aiflow.state.store import StateError  # noqa: E402
 
 
 def git_project(path: Path) -> None:
@@ -115,6 +118,24 @@ class SecurityAuditRegressionTests(unittest.TestCase):
             service = ApiService(resolve_project(explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}))
             with self.assertRaises(RevisionConflict):
                 service.start({"mode": "solo", "objective": "missing identity"})
+
+    def test_checkout_mutation_lease_prevents_two_active_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            git_project(root)
+            ProjectInstaller(root, distribution_root=ROOT).init("solo")
+            context = resolve_project(
+                explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}
+            )
+            lifecycle = RunLifecycle(
+                context, runtime_env={"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")}
+            )
+            first = lifecycle.start(mode="solo", objective="first", acceptance_ids=("AC-1",))
+            second = lifecycle.start(mode="solo", objective="second", acceptance_ids=("AC-2",))
+            with lifecycle.checkout_mutation(first["run_id"]):
+                with self.assertRaises(StateError):
+                    with lifecycle.checkout_mutation(second["run_id"]):
+                        pass
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from aiflow.api.sse import EventBuffer
 from aiflow.identity.context import ProjectContext
 from aiflow.state.lifecycle import RunLifecycle
 from aiflow.state.store import RevisionConflict, StateError
+from aiflow.security.permissions import validate_orchestrated_parent
 
 
 def _branch(context: ProjectContext) -> str:
@@ -55,9 +56,11 @@ class ApiService:
             raise RevisionConflict("mutation checkout identity does not match this server")
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
-        self._identity(payload, required=False)
+        self._identity(payload, required=True)
+        mode = str(payload.get("mode", "solo"))
+        validate_orchestrated_parent(mode, str(payload.get("parent_sandbox", "")))
         result = self.lifecycle.start(
-            mode=str(payload.get("mode", "solo")),
+            mode=mode,
             objective=str(payload.get("objective", "")),
             acceptance_ids=tuple(str(value) for value in payload.get("acceptance_ids", [])),
         )
@@ -73,6 +76,8 @@ class ApiService:
         if action == "stop":
             result = self.lifecycle.stop(run_id, expected_revision=expected)
         elif action == "resume":
+            mode = str(self.lifecycle.status(run_id)["mode"])
+            validate_orchestrated_parent(mode, str(payload.get("parent_sandbox", "")))
             result = self.lifecycle.resume(run_id, expected_revision=expected)
         elif action == "pause":
             result = self.lifecycle.pause(run_id, expected_revision=expected)

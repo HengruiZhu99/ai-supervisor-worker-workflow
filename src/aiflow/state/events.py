@@ -56,7 +56,9 @@ def append_event(path: Path, event: Mapping[str, Any]) -> None:
         raise ValueError("refusing event with wrong previous checksum")
     verify_signed(event, "appended event")
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
+    descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    os.chmod(path, 0o600)
+    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(dict(event), sort_keys=True) + "\n")
         handle.flush()
         os.fsync(handle.fileno())

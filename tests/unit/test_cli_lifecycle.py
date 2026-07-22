@@ -16,6 +16,8 @@ def run_cli(project: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(ROOT / "src")
     environment["XDG_RUNTIME_DIR"] = str(project.parent / ".runtime")
+    environment["XDG_STATE_HOME"] = str(project.parent / ".state")
+    environment["CODEX_PERMISSION_PROFILE"] = ":workspace-write"
     return subprocess.run(
         [sys.executable, "-m", "aiflow", "--project-root", str(project), *arguments],
         cwd=ROOT,

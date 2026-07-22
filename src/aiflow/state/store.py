@@ -12,6 +12,7 @@ from typing import Any, Iterator, Mapping
 from aiflow.identity.context import ProjectContext, new_run_id, runtime_path
 from aiflow.state.atomic import atomic_write_json, read_json, signed, verify_signed
 from aiflow.state.events import append_event, make_event, read_events
+from aiflow.state import ownership
 
 
 class StateError(RuntimeError):
@@ -59,6 +60,7 @@ class RunStore:
         self.intent_file = self.path / "TRANSACTION.json"
         self.committed_file = self.path / "TRANSACTION.committed.json"
         self.lock_dir = self.path / ".transaction.lock"
+        self.lock_owner_file = self.lock_dir / "OWNER.json"
         self.lease_file = self.runtime / "CONTROLLER_LEASE.json"
         self.lease_lock = self.runtime / ".lease.lock"
 
@@ -110,8 +112,14 @@ class RunStore:
         while True:
             try:
                 self.lock_dir.mkdir()
+                atomic_write_json(
+                    self.lock_owner_file,
+                    signed({"schema_version": 1, **self.local_process_identity(), "created_at": utc_now()}),
+                )
                 break
             except FileExistsError:
+                if self._recover_stale_transaction_lock():
+                    continue
                 if time.monotonic() >= deadline:
                     raise StateError(f"run transaction lock is busy: {self.lock_dir}")
                 time.sleep(0.01)
@@ -119,9 +127,47 @@ class RunStore:
             yield
         finally:
             try:
+                self.lock_owner_file.unlink(missing_ok=True)
                 self.lock_dir.rmdir()
             except OSError as exc:
                 raise StateError(f"cannot release transaction lock {self.lock_dir}: {exc}") from exc
+
+    @staticmethod
+    def local_host_id() -> str:
+        return ownership.local_host_id()
+
+    @staticmethod
+    def local_boot_id() -> str:
+        return ownership.local_boot_id()
+
+    @staticmethod
+    def _process_start(pid: int) -> str:
+        return ownership.process_start(pid)
+
+    @classmethod
+    def local_process_identity(cls) -> dict[str, Any]:
+        return ownership.local_process_identity()
+
+    @classmethod
+    def _owner_is_live(cls, owner: Mapping[str, Any]) -> bool:
+        return ownership.owner_is_live(owner)
+
+    def _recover_stale_transaction_lock(self) -> bool:
+        try:
+            owner = read_json(self.lock_owner_file)
+            verify_signed(owner, "transaction lock owner")
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            return False
+        if owner.get("host_id") != self.local_host_id() or owner.get("boot_id") != self.local_boot_id():
+            return False
+        if self._owner_is_live(owner):
+            return False
+        try:
+            self.lock_owner_file.unlink()
+            self.lock_dir.rmdir()
+        except OSError:
+            return False
+        return True
 
     def read_run(self) -> dict[str, Any]:
         payload = read_json(self.run_file)
@@ -273,6 +319,9 @@ class RunStore:
             verify_signed(intent, "transaction intent")
         except ValueError as exc:
             raise StateCorruption(str(exc)) from exc
+        if intent.get("kind") == "schema_migration":
+            self._apply_migration_intent(intent)
+            return "rolled_forward_migration"
         current = int(self.read_run()["state_revision"])
         expected = {int(intent["base_revision"]), int(intent["next_revision"])}
         if current not in expected:
@@ -281,6 +330,23 @@ class RunStore:
         self._finalize_intent(intent)
         self.verify()
         return "rolled_forward"
+
+    def _apply_migration_intent(self, intent: Mapping[str, Any]) -> None:
+        atomic_write_json(self.run_file, intent["run"])
+        atomic_write_json(self.tasks_file, intent["tasks"])
+        atomic_write_json(
+            self.committed_file,
+            signed(
+                {
+                    "schema_version": 1,
+                    "kind": "schema_migration",
+                    "intent_checksum": intent["checksum"],
+                    "committed_at": utc_now(),
+                }
+            ),
+        )
+        self.intent_file.unlink(missing_ok=True)
+        self.verify()
 
     def recover(self) -> str:
         with self._lock():
@@ -316,7 +382,10 @@ class RunStore:
 
     @contextmanager
     def _lease_guard(self) -> Iterator[None]:
-        self.runtime.mkdir(parents=True, exist_ok=True)
+        if self.runtime.is_symlink():
+            raise LeaseConflict("runtime directory cannot be a symlink")
+        self.runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(self.runtime, 0o700)
         try:
             self.lease_lock.mkdir()
         except FileExistsError as exc:
@@ -340,6 +409,8 @@ class RunStore:
                     raise LeaseConflict(f"run is owned by controller {current.get('controller_id')}")
                 if current.get("host_id") != host_id or current.get("boot_id") != boot_id:
                     raise AmbiguousLease("expired lease belongs to another host/boot; reconcile explicitly")
+                if self._owner_is_live(current):
+                    raise LeaseConflict("expired lease still belongs to the live controller process")
                 self.lease_file.unlink()
             now = datetime.now(timezone.utc)
             lease = signed({
@@ -362,6 +433,26 @@ class RunStore:
                 handle.flush()
                 os.fsync(handle.fileno())
             return lease
+
+    def heartbeat_controller(self, controller_id: str, *, ttl_seconds: int) -> dict[str, Any]:
+        if ttl_seconds <= 0:
+            raise StateError("controller heartbeat TTL must be positive")
+        with self._lease_guard():
+            lease = read_json(self.lease_file)
+            verify_signed(lease, "controller lease")
+            if lease.get("controller_id") != controller_id:
+                raise LeaseConflict("only the live owning controller may heartbeat")
+            if not self._owner_is_live(lease):
+                raise LeaseConflict("controller process identity is no longer live")
+            now = datetime.now(timezone.utc)
+            updated = dict(lease)
+            updated.pop("checksum", None)
+            updated["heartbeat_at"] = now.isoformat().replace("+00:00", "Z")
+            updated["expires_at"] = (now + timedelta(seconds=ttl_seconds)).isoformat().replace(
+                "+00:00", "Z"
+            )
+            atomic_write_json(self.lease_file, signed(updated))
+            return read_json(self.lease_file)
 
     def release_controller(self, controller_id: str) -> None:
         with self._lease_guard():

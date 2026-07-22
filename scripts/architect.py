@@ -141,6 +141,8 @@ def make_default_runner(
             "--prompt-file",
             str(prompt_file),
             "--read-only",
+            "--timeout",
+            str(max(1, timeout)),
         ]
         if output_format:
             cmd.extend(["--output-format", output_format])
@@ -153,7 +155,7 @@ def make_default_runner(
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=timeout if timeout and timeout > 0 else None,
+                timeout=(timeout + 10) if timeout and timeout > 0 else None,
                 check=False,
             )
         except subprocess.TimeoutExpired:

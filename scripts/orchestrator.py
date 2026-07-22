@@ -304,8 +304,8 @@ def make_default_runner(config: OrchestratorConfig):
             wrapper_cmd.append("--read-only")
         if config.output_format:
             wrapper_cmd.extend(["--output-format", config.output_format])
-        if config.extra_args:
-            wrapper_cmd.append(f"--extra-args={config.extra_args}")
+        if config.extra_args: wrapper_cmd.append(f"--extra-args={config.extra_args}")
+        wrapper_cmd.extend(["--timeout", str(max(1, config.timeout))])
 
         exit_code = 0
         raw_stdout = ""
@@ -316,7 +316,7 @@ def make_default_runner(config: OrchestratorConfig):
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=config.timeout if config.timeout and config.timeout > 0 else None,
+                timeout=(config.timeout + 10) if config.timeout and config.timeout > 0 else None,
                 check=False,
             )
             exit_code = completed.returncode

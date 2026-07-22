@@ -1,24 +1,20 @@
 from __future__ import annotations
 
-import os
-import re
-import socket
+import json
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Mapping
+from contextlib import contextmanager
 
 from aiflow.controller.execution import AgentBackend, TaskExecutionEngine
 from aiflow.controller.runner import Budgets, ControllerRunner
 from aiflow.controller.watchdog import DeterministicWatchdog
 from aiflow.identity.context import ProjectContext
-from aiflow.state.store import RunStore
+from aiflow.identity.context import validate_thread_identity
+from aiflow.state.atomic import atomic_write_json, read_json, signed, verify_signed
+from aiflow.state.store import RunStore, StateError
 from aiflow.state.handoff import create_handoff
-
-
-def _safe(value: str) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9._-]", "-", value)
-    return cleaned[:128] or "unknown"
 
 
 class RunLifecycle:
@@ -42,15 +38,61 @@ class RunLifecycle:
 
     def _claim(self, store: RunStore) -> str:
         controller_id = f"controller-{uuid.uuid4()}"
-        store.claim_controller(
-            controller_id,
-            host_id=_safe(socket.gethostname()),
-            boot_id=f"boot-{uuid.getnode():x}",
-            pid=os.getpid(),
-            process_start_time=str(time.time_ns()),
-            ttl_seconds=120,
-        )
+        store.claim_controller(controller_id, ttl_seconds=120, **store.local_process_identity())
         return controller_id
+
+    @contextmanager
+    def checkout_mutation(self, run_id: str):
+        root = self.context.state_root
+        root.mkdir(parents=True, exist_ok=True)
+        guard = root / ".mutation.lock"
+        lease = root / "MUTATING_RUN.json"
+        try:
+            guard.mkdir()
+        except FileExistsError as exc:
+            raise StateError("another checkout mutation claim is in progress") from exc
+        try:
+            if lease.exists():
+                current = read_json(lease)
+                verify_signed(current, "checkout mutation lease")
+                if current.get("run_id") != run_id:
+                    raise StateError(
+                        f"checkout mutation is already owned by run {current.get('run_id')}"
+                    )
+            identity = self.store(run_id).local_process_identity()
+            atomic_write_json(
+                lease,
+                signed(
+                    {
+                        "schema_version": 1,
+                        **self.context.identity_fields(run_id),
+                        **identity,
+                        "claimed_at": time.time_ns(),
+                    }
+                ),
+            )
+            yield
+        finally:
+            if lease.exists():
+                try:
+                    current = read_json(lease)
+                except (OSError, ValueError, json.JSONDecodeError):
+                    current = {}
+                if current.get("run_id") == run_id:
+                    lease.unlink(missing_ok=True)
+            guard.rmdir()
+
+    def _validate_saved_thread(self, store: RunStore) -> None:
+        record = store.path / "context" / "CODEX_THREAD.json"
+        if not record.exists():
+            return
+        validate_thread_identity(
+            read_json(record),
+            checkout_id=self.context.checkout_id,
+            run_id=store.run_id,
+            cwd=self.context.root,
+            worktree_id=self.context.worktree_id,
+        )
 
     def start(
         self,
@@ -125,50 +167,52 @@ class RunLifecycle:
     ) -> dict[str, Any]:
         store = self.store(run_id)
         store.recover()
-        controller = self._claim(store)
-        try:
-            current = store.read_run()
-            revision = int(current["state_revision"])
-            if expected_revision is not None and revision != expected_revision:
-                from aiflow.state.store import RevisionConflict
+        self._validate_saved_thread(store)
+        with self.checkout_mutation(run_id):
+            controller = self._claim(store)
+            try:
+                current = store.read_run()
+                revision = int(current["state_revision"])
+                if expected_revision is not None and revision != expected_revision:
+                    from aiflow.state.store import RevisionConflict
 
-                raise RevisionConflict(
-                    f"stale revision {expected_revision}; current revision is {revision}"
+                    raise RevisionConflict(
+                        f"stale revision {expected_revision}; current revision is {revision}"
+                    )
+                store.transition(
+                    revision, {"status": "RUNNING"},
+                    event_type="run_resumed", controller_id=controller,
                 )
-            running = store.transition(
-                revision, {"status": "RUNNING"},
-                event_type="run_resumed", controller_id=controller,
-            )
-            selected = budgets or Budgets()
-            if self.agent_backend is None:
-                outcome = ControllerRunner(budgets=selected).run(lambda: "idle")
-                closed: tuple[str, ...] = ()
-            else:
-                execution = TaskExecutionEngine(
-                    store,
+                selected = budgets or Budgets()
+                if self.agent_backend is None:
+                    outcome = ControllerRunner(budgets=selected).run(lambda: "idle")
+                    closed: tuple[str, ...] = ()
+                else:
+                    execution = TaskExecutionEngine(
+                        store,
+                        controller_id=controller,
+                        backend=self.agent_backend,
+                        agent_id=self.agent_id,
+                        budgets=selected,
+                        watchdog=self.watchdog,
+                    ).run()
+                    outcome = execution.outcome
+                    closed = execution.acceptance_ids_closed
+                status = "SUCCEEDED" if outcome.value == "SUCCEEDED" else "PAUSED"
+                if outcome.value in {"BLOCKED", "FAILED", "BUDGET_EXHAUSTED"}:
+                    status = outcome.value
+                final = store.transition(
+                    int(store.read_run()["state_revision"]),
+                    {
+                        "status": status,
+                        "terminal_reason": outcome.value,
+                        "acceptance_ids_closed": list(closed),
+                    },
+                    event_type="controller_exit",
                     controller_id=controller,
-                    backend=self.agent_backend,
-                    agent_id=self.agent_id,
-                    budgets=selected,
-                    watchdog=self.watchdog,
-                ).run()
-                outcome = execution.outcome
-                closed = execution.acceptance_ids_closed
-            status = "SUCCEEDED" if outcome.value == "SUCCEEDED" else "PAUSED"
-            if outcome.value in {"BLOCKED", "FAILED", "BUDGET_EXHAUSTED"}:
-                status = outcome.value
-            final = store.transition(
-                int(store.read_run()["state_revision"]),
-                {
-                    "status": status,
-                    "terminal_reason": outcome.value,
-                    "acceptance_ids_closed": list(closed),
-                },
-                event_type="controller_exit",
-                controller_id=controller,
-            )
-        finally:
-            store.release_controller(controller)
+                )
+            finally:
+                store.release_controller(controller)
         return {**final, "outcome": outcome.value}
 
     def stop(self, run_id: str, *, expected_revision: int | None = None) -> dict[str, Any]:

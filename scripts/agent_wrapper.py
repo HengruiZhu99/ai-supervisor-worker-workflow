@@ -28,6 +28,13 @@ import sys
 from pathlib import Path
 
 
+SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+
+from aiflow.security.process import run_owned_process as _run_owned_process
+
+
 def package_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -97,6 +104,37 @@ UNRESTRICTED_FLAGS = {
     "--dangerously-bypass-approvals-and-sandbox",
     "--yolo",
 }
+PERMISSION_FLAGS = {
+    "--sandbox",
+    "-s",
+    "--ask-for-approval",
+    "-a",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--add-dir",
+    "--profile",
+    "-p",
+}
+
+
+def run_owned_process(command, *, cwd, env=None, timeout=14_400, input_text=None):
+    return _run_owned_process(
+        command,
+        cwd=Path(cwd),
+        env=env,
+        timeout=float(timeout),
+        input_text=input_text,
+    )
+
+
+def _reject_permission_overrides(extra: list[str]) -> None:
+    for index, token in enumerate(extra):
+        option = token.split("=", 1)[0]
+        if option in PERMISSION_FLAGS or option in UNRESTRICTED_FLAGS:
+            raise SystemExit("refusing permission/sandbox override in wrapper extra arguments")
+        if option in {"-c", "--config"} and index + 1 < len(extra):
+            key = extra[index + 1].split("=", 1)[0].strip().lower()
+            if any(word in key for word in ("sandbox", "approval", "permission", "shell_environment")):
+                raise SystemExit("refusing security configuration override in wrapper extra arguments")
 
 
 def validate_parent_permissions(sandbox_mode: str, bypass: bool = False) -> None:
@@ -116,8 +154,7 @@ def codex_permissions(args: argparse.Namespace) -> tuple[str, str]:
 def build_codex_command(args: argparse.Namespace) -> list[str]:
     approval, sandbox = codex_permissions(args)
     extra = split_extra_args(args.extra_args)
-    if UNRESTRICTED_FLAGS.intersection(extra) or "danger-full-access" in extra:
-        raise SystemExit("refusing unrestricted Codex permissions in wrapper extra arguments")
+    _reject_permission_overrides(extra)
     command = [
         "codex",
         "--ask-for-approval",
@@ -157,13 +194,24 @@ def run_cursor_agent(args: argparse.Namespace) -> int:
         command.extend(["--model", model])
     command.extend(split_extra_args(args.extra_args))
     command.append(Path(args.prompt_file).read_text(encoding="utf-8"))
-    return subprocess.call(command)
+    completed = run_owned_process(command, cwd=args.workspace, timeout=args.timeout)
+    sys.stdout.write(completed.stdout)
+    sys.stderr.write(completed.stderr)
+    return int(completed.returncode)
 
 
 def run_codex(args: argparse.Namespace) -> int:
     command = build_codex_command(args)
-    with Path(args.prompt_file).open("rb") as prompt:
-        return subprocess.call(command, stdin=prompt)
+    prompt = Path(args.prompt_file).read_text(encoding="utf-8")
+    completed = run_owned_process(
+        command,
+        cwd=args.workspace,
+        timeout=getattr(args, "timeout", 14_400),
+        input_text=prompt,
+    )
+    sys.stdout.write(completed.stdout)
+    sys.stderr.write(completed.stderr)
+    return int(completed.returncode)
 
 
 def expand_custom_command(wrapper: dict, args: argparse.Namespace) -> list[str]:
@@ -185,7 +233,10 @@ def expand_custom_command(wrapper: dict, args: argparse.Namespace) -> list[str]:
 
 def run_custom(wrapper: dict, args: argparse.Namespace) -> int:
     command = expand_custom_command(wrapper, args)
-    return subprocess.call(command)
+    completed = run_owned_process(command, cwd=args.workspace, timeout=args.timeout)
+    sys.stdout.write(completed.stdout)
+    sys.stderr.write(completed.stderr)
+    return int(completed.returncode)
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -241,6 +292,7 @@ def main() -> int:
     run_parser.add_argument("--stream-partial-output", action="store_true")
     run_parser.add_argument("--reasoning-effort", default="")
     run_parser.add_argument("--extra-args", default="")
+    run_parser.add_argument("--timeout", type=int, default=14_400)
     run_parser.add_argument(
         "--read-only",
         action="store_true",

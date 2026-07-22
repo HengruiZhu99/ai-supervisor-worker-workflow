@@ -13,6 +13,7 @@ from aiflow.controller.runner import Budgets, ControllerOutcome
 from aiflow.identity.context import resolve_project
 from aiflow.integration.transaction import GateCommands, IntegrationTransaction
 from aiflow.quality.checker import QualityChecker
+from aiflow.security.permissions import validate_orchestrated_parent
 from aiflow.skills.installer import InstallError, ProjectInstaller
 from aiflow.skills.manager import SkillCollision, SkillManager, SkillValidationError
 from aiflow.state.lifecycle import RunLifecycle
@@ -138,12 +139,10 @@ def _run_id(lifecycle: RunLifecycle, requested: str) -> str:
 
 
 def _permission_preflight(mode: str, parent_sandbox: str) -> None:
-    if mode != "orchestrated":
-        return
-    if not parent_sandbox:
-        raise StateError("orchestrated mode requires an explicit parent permission preflight")
-    if parent_sandbox == "danger-full-access":
-        raise StateError("orchestrated mode refuses an unrestricted parent permission profile")
+    try:
+        validate_orchestrated_parent(mode, parent_sandbox)
+    except ValueError as exc:
+        raise StateError(str(exc)) from exc
 
 
 def run_command(args: argparse.Namespace) -> int:
