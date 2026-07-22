@@ -13,15 +13,20 @@ from aiflow.controller.runner import Budgets, ControllerOutcome
 from aiflow.identity.context import resolve_project
 from aiflow.integration.transaction import GateCommands, IntegrationTransaction
 from aiflow.quality.checker import QualityChecker
-from aiflow.security.permissions import validate_orchestrated_parent
 from aiflow.skills.installer import InstallError, ProjectInstaller
 from aiflow.skills.manager import SkillCollision, SkillManager, SkillValidationError
 from aiflow.controller.lifecycle import RunLifecycle
 from aiflow.state.store import StateError
 from aiflow.state.handoff import verify_handoff
 from aiflow.cli.web import gui_command, hub_command
+from aiflow.cli.permissions import permission_preflight
 from aiflow.cli.release import package_command
-from aiflow.cli.options import add_budgets, add_handoff_actions
+from aiflow.cli.options import (
+    add_budgets,
+    add_handoff_actions,
+    add_quality_commands,
+    load_task_specs,
+)
 
 
 DISTRIBUTION_ROOT_OVERRIDE: Path | None = None
@@ -100,7 +105,9 @@ def skill_command(args: argparse.Namespace) -> int:
 
 
 def quality_command(args: argparse.Namespace) -> int:
-    checker = QualityChecker(_root(args.project_root))
+    checker = QualityChecker(
+        _root(args.project_root), diff_base=getattr(args, "diff_base", "HEAD")
+    )
     if args.quality_action == "baseline":
         _print(checker.baseline())
         return 0
@@ -115,7 +122,7 @@ def _lifecycle(args: argparse.Namespace, *, with_backend: bool = False) -> RunLi
     if with_backend and getattr(args, "backend", "codex") == "codex":
         backend = CodexAgentBackend(
             context.root,
-            model=getattr(args, "model", "gpt-5.6-sol"),
+            model=getattr(args, "model", ""),
             reasoning_effort=getattr(args, "reasoning_effort", "high"),
             timeout=getattr(args, "max_wall_time", 14_400),
         ).run
@@ -141,23 +148,17 @@ def _run_id(lifecycle: RunLifecycle, requested: str) -> str:
     return str(sorted(runs, key=lambda item: item["created_at"])[-1]["run_id"])
 
 
-def _permission_preflight(mode: str, parent_sandbox: str) -> None:
-    try:
-        validate_orchestrated_parent(mode, parent_sandbox)
-    except ValueError as exc:
-        raise StateError(str(exc)) from exc
-
-
 def run_command(args: argparse.Namespace) -> int:
     lifecycle = _lifecycle(args, with_backend=args.run_action == "resume")
     result: Any
     if args.run_action == "start":
-        _permission_preflight(args.mode, args.parent_sandbox)
+        permission_preflight(args.mode, args.parent_sandbox)
         result = lifecycle.start(
             mode=args.mode,
             objective=args.objective,
             acceptance_ids=tuple(args.acceptance_id),
             task_kind=args.task_kind,
+            task_specs=load_task_specs(args.task_file),
         )
     elif args.run_action == "list":
         result = lifecycle.list()
@@ -171,7 +172,7 @@ def run_command(args: argparse.Namespace) -> int:
             result = lifecycle.status(run_id)
         elif args.run_action == "resume":
             mode = str(lifecycle.status(run_id)["mode"])
-            _permission_preflight(mode, args.parent_sandbox)
+            permission_preflight(mode, args.parent_sandbox)
             result = lifecycle.resume(run_id, budgets=_budgets(args))
         elif args.run_action == "stop":
             result = lifecycle.stop(run_id)
@@ -188,7 +189,7 @@ def run_command(args: argparse.Namespace) -> int:
 
 
 def controller_command(args: argparse.Namespace) -> int:
-    _permission_preflight(args.mode, args.parent_sandbox)
+    permission_preflight(args.mode, args.parent_sandbox)
     lifecycle = _lifecycle(args, with_backend=True)
     if args.compat_role:
         print(
@@ -294,6 +295,11 @@ def _add_run_commands(commands: argparse._SubParsersAction) -> None:
     start.add_argument("--objective", required=True)
     start.add_argument("--acceptance-id", action="append", default=[])
     start.add_argument(
+        "--task-file",
+        default="",
+        help="JSON task DAG for orchestrated programs (tasks array, maximum 100)",
+    )
+    start.add_argument(
         "--task-kind",
         choices=(
             "feature",
@@ -323,7 +329,9 @@ def _add_run_commands(commands: argparse._SubParsersAction) -> None:
     )
     add_budgets(resume)
     resume.add_argument("--backend", choices=("codex", "none"), default="codex")
-    resume.add_argument("--model", default="gpt-5.6-sol")
+    resume.add_argument(
+        "--model", default="", help="override role-appropriate GPT-5.6 defaults"
+    )
     resume.add_argument("--reasoning-effort", default="high")
     stop = actions.add_parser("stop")
     stop.add_argument("--run-id", default="")
@@ -347,7 +355,9 @@ def _add_controller_command(commands: argparse._SubParsersAction) -> None:
     )
     add_budgets(run)
     run.add_argument("--backend", choices=("codex", "none"), default="codex")
-    run.add_argument("--model", default="gpt-5.6-sol")
+    run.add_argument(
+        "--model", default="", help="override role-appropriate GPT-5.6 defaults"
+    )
     run.add_argument("--reasoning-effort", default="high")
     controller.set_defaults(func=controller_command)
 
@@ -397,13 +407,7 @@ def parser() -> argparse.ArgumentParser:
         skill_actions.add_parser(action)
     skills.set_defaults(func=skill_command)
 
-    quality = commands.add_parser(
-        "quality", help="run deterministic architecture gates"
-    )
-    quality_actions = quality.add_subparsers(dest="quality_action", required=True)
-    quality_actions.add_parser("baseline")
-    quality_actions.add_parser("check")
-    quality.set_defaults(func=quality_command)
+    add_quality_commands(commands, quality_command)
 
     _add_run_commands(commands)
     _add_controller_command(commands)

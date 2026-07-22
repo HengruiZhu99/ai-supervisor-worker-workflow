@@ -38,3 +38,11 @@ require_architecture_impact_note = true
 [housekeeping]
 max_tasks_per_milestone = 1
 max_fraction = 0.10
+
+[[exception]]
+owner = "repository maintainers"
+reason = "one authorized AIFLOW v2 multi-phase modernization"
+scope = "diff-from:e9311a932dc2d5bab57c2cfd7ed734b8e1ca5466"
+created = "2026-07-22"
+expires = "2026-08-31"
+removal_target = "remove after the modernization base advances"

@@ -1,6 +1,27 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
+from typing import Any
+
+
+def load_task_specs(value: str) -> tuple[dict[str, Any], ...]:
+    if not value:
+        return ()
+    path = Path(value).expanduser().resolve()
+    try:
+        if path.stat().st_size > 1024 * 1024:
+            raise ValueError("task DAG file exceeds 1 MiB")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read task DAG {path}: {exc}") from exc
+    tasks = payload.get("tasks") if isinstance(payload, dict) else None
+    if not isinstance(tasks, list) or not tasks or len(tasks) > 100:
+        raise ValueError("task DAG requires between 1 and 100 task objects")
+    if any(not isinstance(task, dict) for task in tasks):
+        raise ValueError("every task DAG entry must be an object")
+    return tuple(dict(task) for task in tasks)
 
 
 def add_budgets(parser: argparse.ArgumentParser) -> None:
@@ -17,3 +38,18 @@ def add_handoff_actions(actions: argparse._SubParsersAction) -> None:
         action.add_argument("--run-id", default="")
     verify = actions.add_parser("verify-handoff")
     verify.add_argument("path")
+
+
+def add_quality_commands(commands: argparse._SubParsersAction, command: object) -> None:
+    quality = commands.add_parser(
+        "quality", help="run deterministic architecture gates"
+    )
+    actions = quality.add_subparsers(dest="quality_action", required=True)
+    actions.add_parser("baseline")
+    check = actions.add_parser("check")
+    check.add_argument(
+        "--diff-base",
+        default="HEAD",
+        help="explicit Git base for source-diff budgets (CI must pass the PR/push base)",
+    )
+    quality.set_defaults(func=command)

@@ -116,8 +116,9 @@ def tiny_forwarder(relative: str, metric: dict[str, Any], tree: ast.Module) -> b
 
 
 class QualityChecker:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, diff_base: str = "HEAD") -> None:
         self.root = root.resolve()
+        self.diff_base = diff_base
         self.config_dir = self.root / ".aiflow"
         self.baseline_file = self.config_dir / "quality-baseline.json"
         self.policy = self._policy()
@@ -339,17 +340,25 @@ class QualityChecker:
     def check(self) -> dict[str, Any]:
         files = self._measure()
         previous = self._baseline().get("files", {})
+        diff_failures, applied = diff_errors(
+            self.root, self.policy["raw"], base=self.diff_base
+        )
         errors = (
             self._exceptions()
             + self._deprecations()
             + self._architecture(files)
-            + diff_errors(self.root, self.policy["raw"])
+            + diff_failures
         )
         for relative, metric in files.items():
             old = previous.get(relative, {}) if isinstance(previous, dict) else {}
             errors.extend(self._file_errors(relative, metric, old))
             errors.extend(self._function_errors(relative, metric, old))
-        return {"ok": not errors, "errors": sorted(errors), "files_checked": len(files)}
+        return {
+            "ok": not errors,
+            "errors": sorted(errors),
+            "files_checked": len(files),
+            "exceptions_applied": sorted(applied),
+        }
 
     @staticmethod
     def _file_errors(
