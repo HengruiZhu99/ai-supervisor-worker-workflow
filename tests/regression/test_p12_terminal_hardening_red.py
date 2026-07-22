@@ -330,6 +330,61 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             self.assertEqual(git(root, "rev-parse", "HEAD").stdout.strip(), base)
             self.assertFalse((root / "candidate.txt").exists())
 
+    def test_edit_in_final_refresh_window_is_preserved_and_rolls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            base, candidate = repository(root)
+            transaction = IntegrationTransaction(root)
+            original_git = transaction._git
+            raced = False
+
+            def edit_before_refresh(cwd: Path, *args: str):
+                nonlocal raced
+                if cwd == root and args and args[0] == "read-tree" and "-u" in args:
+                    if not raced:
+                        (root / "value.txt").write_text(
+                            "LATE USER WORK\n", encoding="utf-8"
+                        )
+                        raced = True
+                return original_git(cwd, *args)
+
+            with mock.patch.object(
+                transaction, "_git", side_effect=edit_before_refresh
+            ):
+                result = transaction.apply(candidate, method="merge", base_sha=base)
+            self.assertFalse(result.ok)
+            self.assertEqual(
+                (root / "value.txt").read_text(encoding="utf-8"),
+                "LATE USER WORK\n",
+            )
+            self.assertEqual(git(root, "rev-parse", "HEAD").stdout.strip(), base)
+
+    def test_branch_switch_in_final_refresh_window_rolls_back_bound_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            base, candidate = repository(root)
+            git(root, "branch", "other", base)
+            transaction = IntegrationTransaction(root)
+            original_git = transaction._git
+            raced = False
+
+            def switch_before_refresh(cwd: Path, *args: str):
+                nonlocal raced
+                if cwd == root and args and args[0] == "read-tree" and "-u" in args:
+                    if not raced:
+                        git(root, "switch", "-q", "other")
+                        raced = True
+                return original_git(cwd, *args)
+
+            with mock.patch.object(
+                transaction, "_git", side_effect=switch_before_refresh
+            ):
+                result = transaction.apply(candidate, method="merge", base_sha=base)
+            self.assertFalse(result.ok)
+            self.assertEqual(git(root, "rev-parse", "main").stdout.strip(), base)
+            self.assertEqual(git(root, "rev-parse", "other").stdout.strip(), base)
+            self.assertFalse((root / "candidate.txt").exists())
+
     def test_target_symbolic_ref_is_bound_before_candidate_gates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"
@@ -399,6 +454,69 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             accepted = lifecycle.status(started["run_id"])["tasks"][0]
             writer_path = Path(accepted["integration"]["writer_worktree_path"])
             self.assertFalse(writer_path.exists())
+
+    def test_true_post_cas_pre_refresh_crash_resumes_exact_transaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root, commit=True)
+            context = context_for(root, tmp)
+            command = artifact_command("T0001.txt")
+            lifecycle = RunLifecycle(context, runtime_env=runtime(tmp))
+            started = lifecycle.start(
+                mode="orchestrated",
+                objective="recover an exact stale checkout",
+                task_specs=(
+                    {
+                        "id": "T0001",
+                        "objective": "recover an exact stale checkout",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-1"],
+                        "allowed_scope": ["T0001.txt"],
+                        "pre_commands": [command],
+                        "commands": [command],
+                    },
+                ),
+            )
+            original_git = IntegrationTransaction._git
+            crashed = False
+
+            def crash_after_cas(
+                transaction: IntegrationTransaction, cwd: Path, *args: str
+            ):
+                nonlocal crashed
+                result = original_git(transaction, cwd, *args)
+                if args and args[0] == "update-ref" and not crashed:
+                    crashed = True
+                    raise SystemExit("hard crash after CAS")
+                return result
+
+            with (
+                mock.patch.object(IntegrationTransaction, "_git", new=crash_after_cas),
+                self.assertRaises(SystemExit),
+            ):
+                RunLifecycle(
+                    context,
+                    runtime_env=runtime(tmp),
+                    agent_backend=OrchestratedBackend(root, command),
+                ).resume(started["run_id"])
+            pending = lifecycle.status(started["run_id"])["tasks"][0]
+            self.assertEqual(pending["status"], "INTEGRATION_PENDING")
+            self.assertFalse((root / "T0001.txt").exists())
+            self.assertNotEqual(
+                git(root, "rev-parse", "HEAD").stdout.strip(),
+                pending["integration"]["target_before"],
+            )
+
+            result = RunLifecycle(
+                context,
+                runtime_env=runtime(tmp),
+                agent_backend=OrchestratedBackend(root, command),
+            ).resume(
+                started["run_id"],
+                budgets=Budgets(max_tasks=2, max_attempts=1, max_idle=1),
+            )
+            self.assertEqual(result["status"], "SUCCEEDED", result)
+            self.assertTrue((root / "T0001.txt").is_file())
 
     def test_default_task_imports_project_precondition_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
