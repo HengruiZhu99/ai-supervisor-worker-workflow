@@ -89,6 +89,44 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
                     injected={},
                 )
 
+    def test_precondition_cannot_move_head_with_a_clean_empty_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root, commit=True)
+            before = git(root, "rev-parse", "HEAD").stdout.strip()
+            command = [
+                "sh",
+                "-c",
+                "git commit --allow-empty -qm smuggled-history; exit 1",
+            ]
+            with self.assertRaises(AttestationError):
+                attest_preconditions(
+                    root,
+                    {"kind": "feature", "pre_commands": [command]},
+                    timeout=5,
+                    injected={},
+                )
+            self.assertNotEqual(git(root, "rev-parse", "HEAD").stdout.strip(), before)
+
+    def test_precondition_cannot_mutate_shared_refs_or_local_git_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root, commit=True)
+            for script in (
+                "git update-ref refs/heads/smuggled HEAD; exit 1",
+                "git config --local aiflow.smuggled true; exit 1",
+            ):
+                with self.subTest(script=script), self.assertRaises(AttestationError):
+                    attest_preconditions(
+                        root,
+                        {
+                            "kind": "feature",
+                            "pre_commands": [["sh", "-c", script]],
+                        },
+                        timeout=5,
+                        injected={},
+                    )
+
     def test_precondition_cannot_advance_a_tracked_gitlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
