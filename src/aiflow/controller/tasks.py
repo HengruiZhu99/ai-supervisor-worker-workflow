@@ -17,6 +17,10 @@ def record_to_task(record: Mapping[str, Any]) -> Task:
         unblocks_task_id=str(record.get("unblocks_task_id", "")),
         allowed_scope=tuple(str(value) for value in record.get("allowed_scope", [])),
         worktree=str(record.get("worktree", "")),
+        pre_commands=tuple(
+            tuple(str(part) for part in command)
+            for command in record.get("pre_commands", [])
+        ),
         commands=tuple(
             tuple(str(part) for part in command)
             for command in record.get("commands", [])
@@ -84,7 +88,12 @@ def task_records(
             "unblocks_task_id": str(spec.get("unblocks_task_id", "")),
             "allowed_scope": [str(value) for value in spec.get("allowed_scope", [])],
             "worktree": worktree_id,
+            "pre_commands": [
+                [str(part) for part in command]
+                for command in spec.get("pre_commands", [])
+            ],
             "commands": [[str(part) for part in command] for command in commands],
+            "evidence_contract": dict(spec.get("evidence_contract", {})),
             "evidence": [],
             "expected_diff_budget": int(spec.get("expected_diff_budget", 0)),
             "status": "READY",

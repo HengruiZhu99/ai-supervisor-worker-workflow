@@ -7,16 +7,20 @@ from aiflow.agents.results import validate_role_result
 from aiflow.agents.review import reviewers_for_risk
 from aiflow.controller.attestation import (
     AttestationError,
+    attest_preconditions,
     attest_result,
     changed_paths,
     workspace_snapshot,
 )
 from aiflow.controller.worktrees import TaskWorktree
+from aiflow.domain.evidence import validate_cycle
 from aiflow.integration.transaction import GateCommands, IntegrationTransaction
+from aiflow.security.process import run_owned_process
 from aiflow.state.store import RunStore
 
 
 InvokeAgent = Callable[[dict[str, Any]], Mapping[str, Any]]
+ValidateAcceptance = Callable[[Mapping[str, Any]], None]
 
 
 class OrchestratedTaskRunner:
@@ -28,10 +32,12 @@ class OrchestratedTaskRunner:
         *,
         invoke: InvokeAgent,
         timeout: float,
+        validate_acceptance: ValidateAcceptance,
     ) -> None:
         self.store = store
         self.invoke = invoke
         self.timeout = timeout
+        self.validate_acceptance = validate_acceptance
 
     @staticmethod
     def _capsule(
@@ -81,6 +87,7 @@ class OrchestratedTaskRunner:
         fields: Mapping[str, str],
         workspace: Path,
         risk: str,
+        observed: set[str],
     ) -> list[dict[str, Any]]:
         before = workspace_snapshot(workspace)
         reports = []
@@ -101,6 +108,9 @@ class OrchestratedTaskRunner:
             if (
                 result.get("blocks_acceptance")
                 or result.get("recommendation") != "accept"
+                or result.get("unreviewed_files")
+                or not observed
+                <= {str(path) for path in result.get("files_reviewed", [])}
             ):
                 raise AttestationError(
                     f"independent reviewer {role} blocked acceptance"
@@ -110,9 +120,50 @@ class OrchestratedTaskRunner:
             raise AttestationError("read-only review mutated the task worktree")
         return reports
 
+    def _guard_target_branch(self) -> None:
+        current = run_owned_process(
+            ["git", "branch", "--show-current"],
+            cwd=self.store.context.root,
+            timeout=10,
+        )
+        branch = current.stdout.strip()
+        if current.returncode or not branch:
+            raise AttestationError(
+                "automatic orchestration requires a named feature branch"
+            )
+        remote = run_owned_process(
+            ["git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+            cwd=self.store.context.root,
+            timeout=10,
+        )
+        remote_default = remote.stdout.strip().removeprefix("origin/")
+        if branch in {"main", "master", remote_default}:
+            raise AttestationError(
+                f"automatic orchestration refuses protected/default branch {branch!r}"
+            )
+
+    @staticmethod
+    def _validate_before_integration(
+        record: Mapping[str, Any], result: Mapping[str, Any]
+    ) -> None:
+        if result.get("status") != "completed":
+            raise AttestationError("writer result is not completed")
+        kind = str(record.get("kind", "feature"))
+        if result.get("cycle_kind") != kind:
+            raise AttestationError("writer cycle kind does not match the task")
+        validate_cycle(kind, result.get("cycle_evidence", {}))
+        claimed = {str(value) for value in result.get("closed_acceptance_ids", [])}
+        expected = {str(value) for value in record.get("acceptance_ids", [])}
+        value_class = str(record.get("value_class", "delivery"))
+        if value_class in {"delivery", "validation"} and claimed != expected:
+            raise AttestationError("writer acceptance claim does not match the task")
+        if not claimed <= expected:
+            raise AttestationError("writer acceptance claim escapes the task contract")
+
     def execute(
         self, record: Mapping[str, Any], base_capsule: Mapping[str, Any]
     ) -> dict[str, Any]:
+        self._guard_target_branch()
         if not record.get("allowed_scope"):
             raise AttestationError(
                 "orchestrated writer requires an explicit allowed scope"
@@ -126,6 +177,13 @@ class OrchestratedTaskRunner:
         assert worktree.context is not None and worktree.path is not None
         fields = worktree.context.identity_fields(self.store.run_id)
         analyses = self._analyze(base_capsule, fields, worktree.path)
+        injected = {f"AIFLOW_{key.upper()}": value for key, value in fields.items()}
+        pre_results = attest_preconditions(
+            worktree.path,
+            record,
+            timeout=self.timeout,
+            injected=injected,
+        )
         before = workspace_snapshot(worktree.path)
         writer = self._capsule(
             base_capsule,
@@ -148,16 +206,28 @@ class OrchestratedTaskRunner:
             result=result,
             task=record,
             timeout=self.timeout,
-            injected={f"AIFLOW_{key.upper()}": value for key, value in fields.items()},
+            injected=injected,
+            pre_results=pre_results,
         )
-        candidate = worktree.commit(
-            message=f"aiflow: {record['id']} {record['objective']}"
-        )
+        observed = set(result["controller_attestation"]["observed_changed_files"])
         reviews = self._review(
             base_capsule,
             fields,
             worktree.path,
             str(record.get("risk", "normal")),
+            observed,
+        )
+        cycle = dict(result["cycle_evidence"])
+        cycle["cold_review"] = {
+            "status": "pass",
+            "reviewer": ",".join(str(review["agent_role"]) for review in reviews),
+            "attested": True,
+        }
+        result["cycle_evidence"] = cycle
+        self._validate_before_integration(record, result)
+        self.validate_acceptance(result)
+        candidate = worktree.commit(
+            message=f"aiflow: {record['id']} {record['objective']}"
         )
         commands = tuple(tuple(command) for command in record.get("commands", []))
         integrated = IntegrationTransaction(

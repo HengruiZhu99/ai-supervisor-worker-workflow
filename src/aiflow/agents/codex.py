@@ -117,7 +117,12 @@ class CodexAgentBackend:
         mode = str(capsule.get("mode", "solo"))
         role = str(capsule.get("agent_role", "implementation-worker"))
         action = str(capsule.get("action", "execute_task"))
-        if mode == "solo":
+        if mode == "solo" and action == "review_task":
+            instruction = (
+                "Perform one cold, read-only review of the completed Solo task. "
+                "Inspect the full observed diff, do not edit files, and do not launch subagents."
+            )
+        elif mode == "solo":
             instruction = (
                 "Use $tdd-solo to execute exactly this durable task. "
                 "Do not launch subagents."

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
@@ -22,22 +21,17 @@ def _relative(value: object) -> str:
 
 
 def _git_paths(root: Path) -> list[str]:
-    completed = subprocess.run(
+    completed = run_owned_process(
         [
             "git",
-            "-C",
-            str(root),
             "ls-files",
             "-z",
             "--cached",
             "--others",
             "--exclude-standard",
         ],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        cwd=root,
         timeout=30,
-        check=False,
     )
     if completed.returncode:
         raise AttestationError(
@@ -148,6 +142,31 @@ def _run_commands(
     return configured, results
 
 
+def attest_preconditions(
+    root: Path,
+    task: Mapping[str, Any],
+    *,
+    timeout: float,
+    injected: Mapping[str, str],
+) -> list[dict[str, Any]]:
+    configured = _commands(task.get("pre_commands", []))
+    if not configured:
+        raise AttestationError(
+            "acceptance requires controller-owned pre-change commands"
+        )
+    results = [
+        _run_command(root.resolve(), command, timeout=timeout, injected=injected)
+        for command in configured
+    ]
+    kind = str(task.get("kind", "feature"))
+    passing_baseline = kind in {"refactor", "performance", "portability"}
+    if passing_baseline and any(item["exit_code"] != 0 for item in results):
+        raise AttestationError(f"{kind} pre-change baseline must pass")
+    if not passing_baseline and all(item["exit_code"] == 0 for item in results):
+        raise AttestationError(f"{kind} pre-change negative control must fail")
+    return results
+
+
 def _run_command(
     root: Path,
     command: list[str],
@@ -170,6 +189,63 @@ def _run_command(
     }
 
 
+def _controller_cycle(
+    task: Mapping[str, Any],
+    *,
+    expected: str,
+    pre_results: Sequence[Mapping[str, Any]],
+    post_results: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    kind = str(task.get("kind", "feature"))
+    attempt = int(task.get("attempts", 0)) + 1
+    cycle: dict[str, Any] = {
+        "green": {"exit_code": int(post_results[0]["exit_code"]), "attested": True},
+        "regression": {
+            "exit_code": int(post_results[-1]["exit_code"]),
+            "attested": True,
+        },
+        "attempts": attempt,
+        "questions": 0,
+    }
+    first_failure = next(
+        (item for item in pre_results if int(item["exit_code"]) != 0),
+        pre_results[0],
+    )
+    if kind in {"feature", "bug"}:
+        cycle["red"] = {
+            "exit_code": int(first_failure["exit_code"]),
+            "discriminating": True,
+            "attested": True,
+        }
+        cycle["observable" if kind == "feature" else "reproduction"] = expected
+    elif kind == "refactor":
+        cycle["characterization"] = {
+            "exit_code": int(pre_results[0]["exit_code"]),
+            "discriminating": True,
+            "attested": True,
+        }
+        cycle["behavior_equivalent"] = True
+    elif kind == "test":
+        cycle["negative_control"] = {
+            "exit_code": int(first_failure["exit_code"]),
+            "discriminating": True,
+            "attested": True,
+        }
+        contract = task.get("evidence_contract", {})
+        oracle = (
+            contract.get("oracle", expected)
+            if isinstance(contract, Mapping)
+            else expected
+        )
+        cycle["oracle"] = str(oracle)
+    else:
+        contract = task.get("evidence_contract", {})
+        if not isinstance(contract, Mapping):
+            raise AttestationError("scientific evidence contract must be an object")
+        cycle.update(dict(contract))
+    return cycle
+
+
 def attest_result(
     root: Path,
     *,
@@ -178,6 +254,7 @@ def attest_result(
     task: Mapping[str, Any],
     timeout: float,
     injected: Mapping[str, str],
+    pre_results: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     root = root.resolve()
     observed, claimed, expected = _validate_delta(root, before, result, task)
@@ -185,10 +262,12 @@ def attest_result(
         root, task, result, timeout=timeout, injected=injected
     )
     attested = dict(result)
-    cycle = dict(result.get("cycle_evidence", {}))
-    cycle["green"] = {"exit_code": results[0]["exit_code"], "attested": True}
-    cycle["regression"] = {"exit_code": results[-1]["exit_code"], "attested": True}
-    attested["cycle_evidence"] = cycle
+    attested["cycle_evidence"] = _controller_cycle(
+        task,
+        expected=expected,
+        pre_results=pre_results,
+        post_results=results,
+    )
     attested["delivery_evidence"] = {
         "changed_files": sorted(claimed),
         "expected_artifact": expected,
@@ -197,10 +276,13 @@ def attest_result(
         "fresh_end_to_end": True,
         "observed_changed_files": sorted(observed),
     }
+    if str(task.get("value_class", "delivery")) == "enabler":
+        attested["delivery_evidence"]["completion_proof"] = True
     attested["tests_and_results"] = results
     attested["controller_attestation"] = {
         "workspace": str(root),
         "observed_changed_files": sorted(observed),
         "commands": results,
+        "pre_commands": [dict(item) for item in pre_results],
     }
     return attested

@@ -34,25 +34,45 @@ def run(args: list[str], cwd: Path, env=None) -> subprocess.CompletedProcess[str
     )
 
 
+def configure_commands(config: Path, commands: list[list[str]]) -> None:
+    content = config.read_text(encoding="utf-8")
+    for name, command in zip(
+        ("build", "test_focused", "test_regression"), commands, strict=True
+    ):
+        content = content.replace(f"{name} = []", f"{name} = {json.dumps(command)}")
+    config.write_text(content, encoding="utf-8")
+
+
 class SoloCppBackend:
     def __init__(self, project: Path, commands: list[list[str]]) -> None:
         self.project = project
         self.commands = commands
         self.calls = 0
-        self.red_exit_code = 0
 
     def __call__(self, capsule: Mapping[str, Any]) -> Mapping[str, Any]:
         self.calls += 1
-        if capsule["action"] != "execute_task" or capsule["mode"] != "solo":
+        if capsule["mode"] != "solo":
             raise AssertionError("Solo backend received an unexpected capsule")
-        configured = run(self.commands[0], self.project)
-        built = run(self.commands[1], self.project)
-        red = run(self.commands[2], self.project)
-        if configured.returncode or built.returncode or red.returncode == 0:
-            raise AssertionError(
-                "fixture did not demonstrate a clean build and RED test"
-            )
-        self.red_exit_code = red.returncode
+        identities = {
+            key: str(capsule[key])
+            for key in ("project_id", "checkout_id", "worktree_id", "run_id")
+        }
+        if capsule["action"] == "review_task":
+            return {
+                "schema_version": "1",
+                **identities,
+                "task_id": str(capsule["task_id"]),
+                "agent_role": "implementation-worker",
+                "status": "completed",
+                "recommendation": "accept",
+                "blocks_acceptance": False,
+                "findings": [],
+                "full_diff_reviewed": True,
+                "files_reviewed": ["include/vector_norm.hpp"],
+                "unreviewed_files": [],
+            }
+        if capsule["action"] != "execute_task":
+            raise AssertionError("Solo backend received an unexpected action")
         header = self.project / "include" / "vector_norm.hpp"
         header.write_text(
             header.read_text(encoding="utf-8").replace(
@@ -61,10 +81,6 @@ class SoloCppBackend:
             ),
             encoding="utf-8",
         )
-        identities = {
-            key: str(capsule[key])
-            for key in ("project_id", "checkout_id", "worktree_id", "run_id")
-        }
         acceptance_ids = [str(value) for value in capsule["task"]["acceptance_ids"]]
         return {
             "schema_version": "1",
@@ -84,7 +100,7 @@ class SoloCppBackend:
             "recommended_next_action": "accept",
             "cycle_kind": "feature",
             "cycle_evidence": {
-                "red": {"exit_code": red.returncode, "discriminating": True},
+                "red": {"exit_code": 1, "discriminating": True},
                 "green": {"exit_code": 0},
                 "regression": {"exit_code": 0},
                 "cold_review": {
@@ -136,15 +152,7 @@ class SoloCppAcceptanceTests(unittest.TestCase):
                 ["ctest", "--test-dir", "build", "--output-on-failure"],
             ]
             config = project / ".aiflow" / "project.toml"
-            content = config.read_text(encoding="utf-8")
-            for name, command in zip(
-                ("build", "test_focused", "test_regression"),
-                commands,
-                strict=True,
-            ):
-                encoded = json.dumps(command)
-                content = content.replace(f"{name} = []", f"{name} = {encoded}")
-            config.write_text(content, encoding="utf-8")
+            configure_commands(config, commands)
             context = resolve_project(
                 explicit_root=project,
                 env={"XDG_STATE_HOME": str(base / "state")},
@@ -155,6 +163,18 @@ class SoloCppAcceptanceTests(unittest.TestCase):
                 objective="Correct the vector L2 norm",
                 acceptance_ids=("AC-NORM-001",),
                 task_kind="feature",
+                task_specs=(
+                    {
+                        "id": "T0001",
+                        "objective": "Correct the vector L2 norm",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-NORM-001"],
+                        "allowed_scope": ["include/vector_norm.hpp"],
+                        "pre_commands": commands,
+                        "commands": commands,
+                        "expected_diff_budget": 1,
+                    },
+                ),
             )
             backend = SoloCppBackend(project, commands)
             lifecycle = RunLifecycle(
@@ -168,9 +188,10 @@ class SoloCppAcceptanceTests(unittest.TestCase):
             )
             self.assertEqual(completed["status"], "SUCCEEDED", completed)
             self.assertEqual(completed["acceptance_ids_closed"], ["AC-NORM-001"])
-            self.assertNotEqual(backend.red_exit_code, 0)
             self.assertEqual(
-                backend.calls, 1, "Solo mode must use one direct agent call"
+                backend.calls,
+                2,
+                "Solo mode uses one writer call and one cold read-only review call",
             )
             task = lifecycle.status(started["run_id"])["tasks"][0]
             self.assertEqual(task["status"], "ACCEPTED")
@@ -178,6 +199,10 @@ class SoloCppAcceptanceTests(unittest.TestCase):
                 lifecycle.store(started["run_id"]).path / task["evidence"][0]
             )
             self.assertTrue(inbox["controller_attestation"]["commands"])
+            self.assertNotEqual(
+                inbox["controller_attestation"]["pre_commands"][-1]["exit_code"],
+                0,
+            )
             self.assertTrue(
                 all(
                     result["exit_code"] == 0

@@ -5,8 +5,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from aiflow.agents.results import validate_child_result
-from aiflow.controller.attestation import attest_result, workspace_snapshot
+from aiflow.agents.results import validate_child_result, validate_role_result
+from aiflow.controller.attestation import (
+    AttestationError,
+    attest_preconditions,
+    attest_result,
+    changed_paths,
+    workspace_snapshot,
+)
 from aiflow.controller.orchestration import OrchestratedTaskRunner
 from aiflow.controller.runner import Budgets, ControllerOutcome, ControllerRunner
 from aiflow.controller.watchdog import DeterministicWatchdog
@@ -48,7 +54,8 @@ class TaskExecutionEngine:
         self.runner = ControllerRunner(
             budgets=budgets, agent_call=lambda capsule: backend(capsule)
         )
-        records = self.store.read_tasks()["tasks"]
+        task_payload = self.store.read_tasks()
+        records = task_payload["tasks"]
         self.records: list[dict[str, Any]] = [dict(record) for record in records]
         open_ids = {
             str(value)
@@ -59,6 +66,7 @@ class TaskExecutionEngine:
         self.policy = ProgressPolicy(
             open_acceptance_ids=open_ids,
             tasks=[record_to_task(record) for record in self.records],
+            state=task_payload.get("progress_state", {}),
         )
         self.closed = {
             str(value)
@@ -77,7 +85,10 @@ class TaskExecutionEngine:
             revision,
             {},
             event_type=event_type,
-            task_updates={"tasks": self.records},
+            task_updates={
+                "tasks": self.records,
+                "progress_state": self.policy.durable_state(),
+            },
             evidence=evidence,
             controller_id=self.controller_id,
         )
@@ -142,8 +153,25 @@ class TaskExecutionEngine:
                 self.store,
                 invoke=self.runner.invoke_agent,
                 timeout=float(self.budgets.max_wall_time),
+                validate_acceptance=lambda candidate: self.policy.validate_claim(
+                    task.id,
+                    closed_acceptance_ids={
+                        str(value)
+                        for value in candidate.get("closed_acceptance_ids", [])
+                    },
+                    evidence=candidate.get("delivery_evidence", {}),
+                ),
             ).execute(record, capsule)
         else:
+            injected = {
+                f"AIFLOW_{key.upper()}": value for key, value in identities.items()
+            }
+            pre_results = attest_preconditions(
+                self.workspace,
+                record,
+                timeout=float(self.budgets.max_wall_time),
+                injected=injected,
+            )
             before = workspace_snapshot(self.workspace)
             result = dict(self.runner.invoke_agent(capsule))
             result = attest_result(
@@ -152,11 +180,54 @@ class TaskExecutionEngine:
                 result=result,
                 task=record,
                 timeout=float(self.budgets.max_wall_time),
-                injected={
-                    f"AIFLOW_{key.upper()}": value for key, value in identities.items()
-                },
+                injected=injected,
+                pre_results=pre_results,
             )
+            result = self._cold_review(result, capsule, identities)
         validate_child_result(result, identities=identities, task_id=task.id)
+        return result
+
+    def _cold_review(
+        self,
+        result: dict[str, Any],
+        capsule: Mapping[str, Any],
+        identities: Mapping[str, str],
+    ) -> dict[str, Any]:
+        before = workspace_snapshot(self.workspace)
+        review_capsule = {
+            **dict(capsule),
+            "action": "review_task",
+            "agent_role": "implementation-worker",
+        }
+        review = dict(self.runner.invoke_agent(review_capsule))
+        validate_role_result(
+            review,
+            identities=identities,
+            task_id=str(capsule["task_id"]),
+            role="implementation-worker",
+            action="review_task",
+        )
+        if changed_paths(before, workspace_snapshot(self.workspace)):
+            raise AttestationError("Solo cold review mutated the task workspace")
+        observed = set(result["controller_attestation"]["observed_changed_files"])
+        covered = {str(path) for path in review.get("files_reviewed", [])}
+        if (
+            review.get("blocks_acceptance")
+            or review.get("recommendation") != "accept"
+            or review.get("unreviewed_files")
+            or not observed <= covered
+        ):
+            raise AttestationError(
+                "Solo cold review did not cover and accept the delta"
+            )
+        cycle = dict(result["cycle_evidence"])
+        cycle["cold_review"] = {
+            "status": "pass",
+            "reviewer": "implementation-worker-cold-review",
+            "attested": True,
+        }
+        result["cycle_evidence"] = cycle
+        result["controller_attestation"]["cold_review"] = review
         return result
 
     def _validate_acceptance(

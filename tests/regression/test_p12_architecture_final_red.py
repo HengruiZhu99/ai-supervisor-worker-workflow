@@ -16,9 +16,11 @@ from aiflow.agents.codex import CodexAgentBackend  # noqa: E402
 from aiflow.controller.lifecycle import RunLifecycle  # noqa: E402
 from aiflow.controller.runner import Budgets  # noqa: E402
 from aiflow.domain.progress import ProgressPolicy, Task, ValueClass  # noqa: E402
-from tests.regression.test_final_audit_red import (  # noqa: E402
+from tests.helpers.execution_backends import (  # noqa: E402
     OrchestratedBackend,
     completed_result,
+)
+from tests.regression.test_final_audit_red import (  # noqa: E402
     context_for,
     git,
     init_project,
@@ -32,6 +34,14 @@ class WrongAcceptanceBackend(OrchestratedBackend):
         if capsule["action"] == "execute_task":
             result["closed_acceptance_ids"] = ["AC-WRONG"]
             result["acceptance_ids_supported"] = ["AC-WRONG"]
+        return result
+
+
+class UncoveredReviewBackend(OrchestratedBackend):
+    def __call__(self, capsule: Mapping[str, Any]) -> Mapping[str, Any]:
+        result = dict(super().__call__(capsule))
+        if capsule["action"] == "review_task":
+            result["files_reviewed"] = []
         return result
 
 
@@ -105,6 +115,36 @@ class P12ArchitectureFinalRegressionTests(unittest.TestCase):
             self.assertEqual(git(root, "rev-parse", "HEAD").stdout.strip(), before)
             self.assertFalse((root / "src" / "orchestrated.txt").exists())
 
+    def test_incomplete_review_coverage_never_integrates_the_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root, commit=True)
+            context = context_for(root, tmp)
+            command = [sys.executable, "-c", "pass"]
+            started = RunLifecycle(context, runtime_env=runtime(tmp)).start(
+                mode="orchestrated",
+                objective="review every changed file",
+                task_specs=(
+                    {
+                        "id": "T0001",
+                        "objective": "review every changed file",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-1"],
+                        "allowed_scope": ["T0001.txt"],
+                        "pre_commands": [[sys.executable, "-c", "raise SystemExit(1)"]],
+                        "commands": [command],
+                    },
+                ),
+            )
+            before = git(root, "rev-parse", "HEAD").stdout.strip()
+            result = RunLifecycle(
+                context,
+                runtime_env=runtime(tmp),
+                agent_backend=UncoveredReviewBackend(root, command),
+            ).resume(started["run_id"], budgets=Budgets(max_attempts=1, max_idle=1))
+            self.assertNotEqual(result["status"], "SUCCEEDED")
+            self.assertEqual(git(root, "rev-parse", "HEAD").stdout.strip(), before)
+
     def test_automatic_orchestration_refuses_a_default_branch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
@@ -162,6 +202,38 @@ class P12ArchitectureFinalRegressionTests(unittest.TestCase):
         resumed = ProgressPolicy(open_acceptance_ids={"AC-A", "AC-Z"}, tasks=tasks)
         self.assertEqual(resumed.report()["progress_debt"], "Z")
         self.assertEqual(resumed.next_task().id, "Z")
+
+    def test_no_delta_breaker_survives_controller_restart(self) -> None:
+        tasks = [
+            Task(
+                id=f"H{index}",
+                objective=f"housekeeping {index}",
+                value_class=ValueClass.HOUSEKEEPING,
+            )
+            for index in (1, 2)
+        ]
+        policy = ProgressPolicy(
+            open_acceptance_ids={"AC-OPEN"},
+            tasks=tasks,
+            housekeeping_budget=2,
+        )
+        self.assertEqual(
+            policy.accept("H1", closed_acceptance_ids=set(), evidence={}),
+            "ACCEPTED",
+        )
+        self.assertEqual(
+            policy.accept("H2", closed_acceptance_ids=set(), evidence={}),
+            "REPLAN_REQUIRED",
+        )
+
+        resumed = ProgressPolicy(
+            open_acceptance_ids={"AC-OPEN"},
+            tasks=tasks,
+            housekeeping_budget=2,
+            state=policy.durable_state(),
+        )
+        with self.assertRaisesRegex(Exception, "replan"):
+            resumed.next_task()
 
     def test_codex_child_process_disables_recursive_agents(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

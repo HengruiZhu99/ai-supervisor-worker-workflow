@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from aiflow.identity.context import ProjectContext, resolve_project
+from aiflow.security.process import run_owned_process
 
 
 class WorktreeError(RuntimeError):
@@ -13,14 +14,10 @@ class WorktreeError(RuntimeError):
 
 
 def _git(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_owned_process(
         ["git", *arguments],
         cwd=root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
         timeout=60,
-        check=False,
     )
 
 

@@ -44,6 +44,15 @@ def init_project(path: Path, *, commit: bool = False) -> None:
         git(path, "config", "user.email", "aiflow@example.invalid")
         git(path, "add", ".aiflow/project.toml")
         assert git(path, "commit", "-qm", "fixture baseline").returncode == 0
+        assert git(path, "checkout", "-qb", "codex/test").returncode == 0
+
+
+def missing_artifact(path: str) -> list[str]:
+    return [
+        sys.executable,
+        "-c",
+        f"from pathlib import Path; assert Path({path!r}).is_file()",
+    ]
 
 
 def common_evidence() -> dict:
@@ -214,6 +223,7 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "bounded feature",
                         "kind": "feature",
                         "acceptance_ids": ["AC-FEATURE-1"],
+                        "pre_commands": [missing_artifact("src/feature.cpp")],
                         "commands": [command],
                         "allowed_scope": ["src/feature.cpp"],
                     },
@@ -231,7 +241,9 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                     command=command,
                 )
 
-            backend = FakeAgentBackend({"execute_task": [execute]})
+            backend = FakeAgentBackend(
+                {"execute_task": [execute], "review_task": [review_result]}
+            )
             lifecycle = RunLifecycle(
                 context,
                 runtime_env=environment,
@@ -247,7 +259,7 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
             self.assertEqual(
                 lifecycle.status(started["run_id"])["tasks"][0]["status"], "ACCEPTED"
             )
-            self.assertEqual(backend.calls, 1)
+            self.assertEqual(backend.calls, 2)
 
     def test_fake_backend_runs_two_dependent_orchestrated_tasks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -268,6 +280,7 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "first",
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
+                        "pre_commands": [missing_artifact("T0001.txt")],
                         "commands": [command],
                         "allowed_scope": ["T0001.txt"],
                     },
@@ -277,6 +290,7 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                         "kind": "feature",
                         "acceptance_ids": ["AC-2"],
                         "dependencies": ["T0001"],
+                        "pre_commands": [missing_artifact("T0002.txt")],
                         "commands": [command],
                         "allowed_scope": ["T0002.txt"],
                     },

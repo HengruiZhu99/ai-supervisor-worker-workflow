@@ -16,6 +16,10 @@ from aiflow.agents.codex import CodexAgentBackend  # noqa: E402
 from aiflow.controller.lifecycle import RunLifecycle  # noqa: E402
 from aiflow.controller.runner import Budgets  # noqa: E402
 from aiflow.identity.context import resolve_project  # noqa: E402
+from tests.helpers.execution_backends import (  # noqa: E402
+    OrchestratedBackend,
+    completed_result,
+)
 
 
 def git(path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -45,58 +49,15 @@ def init_project(path: Path, *, commit: bool = False) -> None:
         git(path, "config", "user.email", "aiflow@example.invalid")
         git(path, "add", ".aiflow/project.toml")
         assert git(path, "commit", "-qm", "fixture baseline").returncode == 0
+        assert git(path, "checkout", "-qb", "codex/test").returncode == 0
 
 
-def common_cycle() -> dict[str, Any]:
-    return {
-        "red": {"exit_code": 1, "discriminating": True},
-        "green": {"exit_code": 0},
-        "regression": {"exit_code": 0},
-        "cold_review": {"status": "pass", "reviewer": "cold-self-review"},
-        "attempts": 1,
-        "questions": 0,
-        "observable": "new behavior",
-    }
-
-
-def completed_result(
-    capsule: Mapping[str, Any],
-    acceptance_ids: list[str],
-    *,
-    artifact: str,
-    command: list[str],
-) -> dict[str, Any]:
-    identities = {
-        key: str(capsule[key])
-        for key in ("project_id", "checkout_id", "worktree_id", "run_id")
-    }
-    return {
-        "schema_version": "1",
-        **identities,
-        "task_id": str(capsule["task_id"]),
-        "agent_role": "implementation-worker",
-        "status": "completed",
-        "summary": "completed bounded task",
-        "findings": [],
-        "changed_files": [artifact],
-        "commands_run": [command],
-        "tests_and_results": [{"command": command, "exit_code": 0}],
-        "acceptance_ids_supported": acceptance_ids,
-        "evidence_paths": ["evidence/cycle.json"],
-        "contract_impact": "bounded",
-        "residual_risks": [],
-        "recommended_next_action": "accept",
-        "cycle_kind": "feature",
-        "cycle_evidence": common_cycle(),
-        "delivery_evidence": {
-            "changed_files": [artifact],
-            "expected_artifact": artifact,
-            "commands": [command],
-            "test_results": [{"command": command, "exit_code": 0}],
-            "fresh_end_to_end": True,
-        },
-        "closed_acceptance_ids": acceptance_ids,
-    }
+def missing_artifact(path: str) -> list[str]:
+    return [
+        sys.executable,
+        "-c",
+        f"from pathlib import Path; assert Path({path!r}).is_file()",
+    ]
 
 
 def runtime(tmp: str) -> dict[str, str]:
@@ -110,77 +71,23 @@ def context_for(root: Path, tmp: str):
     )
 
 
-class OrchestratedBackend:
-    def __init__(self, root: Path, command: list[str]) -> None:
-        self.root = root
-        self.command = command
-        self.actions: list[tuple[str, str]] = []
-        self.writer_directory = ""
-
-    def __call__(self, capsule: Mapping[str, Any]) -> Mapping[str, Any]:
-        action = str(capsule["action"])
-        role = str(capsule["agent_role"])
-        self.actions.append((action, role))
-        identities = {
-            key: capsule[key]
-            for key in (
-                "project_id",
-                "checkout_id",
-                "worktree_id",
-                "run_id",
-                "task_id",
-            )
-        }
-        if action == "analyze_task":
-            return {
-                "schema_version": "1",
-                **identities,
-                "agent_role": role,
-                "status": "completed",
-                "summary": f"{role} bounded analysis",
-                "findings": [],
-                "recommended_next_action": "dispatch writer",
-            }
-        if action == "execute_task":
-            self.writer_directory = str(capsule["working_directory"])
-            worktree = Path(self.writer_directory)
-            if worktree.resolve() == self.root.resolve():
-                raise AssertionError("orchestrated writer used the target checkout")
-            task_id = str(capsule["task_id"])
-            artifact = (
-                "src/orchestrated.txt"
-                if task_id == "T0001"
-                and capsule["task"]["objective"] == "reviewed isolated change"
-                else f"{task_id}.txt"
-            )
-            target = worktree / artifact
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text("done\n", encoding="utf-8")
-            return completed_result(
-                capsule,
-                [str(value) for value in capsule["task"]["acceptance_ids"]],
-                artifact=artifact,
-                command=self.command,
-            )
-        if action == "review_task":
-            if (
-                Path(str(capsule["working_directory"])).resolve()
-                != Path(self.writer_directory).resolve()
-            ):
-                raise AssertionError("reviewer did not inspect the writer worktree")
-            return {
-                "schema_version": "1",
-                **identities,
-                "agent_role": role,
-                "status": "completed",
-                "recommendation": "accept",
-                "blocks_acceptance": False,
-                "findings": [],
-                "full_diff_reviewed": True,
-                "files_reviewed": list(capsule["task"]["allowed_scope"]),
-                "unreviewed_files": [],
-            }
-        raise AssertionError(action)
+def solo_review(capsule: Mapping[str, Any]) -> dict[str, Any]:
+    identities = {
+        key: str(capsule[key])
+        for key in ("project_id", "checkout_id", "worktree_id", "run_id", "task_id")
+    }
+    return {
+        "schema_version": "1",
+        **identities,
+        "agent_role": "implementation-worker",
+        "status": "completed",
+        "recommendation": "accept",
+        "blocks_acceptance": False,
+        "findings": [],
+        "full_diff_reviewed": True,
+        "files_reviewed": list(capsule["task"].get("allowed_scope", [])),
+        "unreviewed_files": [],
+    }
 
 
 class FinalExecutionAuditRegressionTests(unittest.TestCase):
@@ -228,6 +135,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "bounded feature",
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
+                        "pre_commands": [command],
                         "commands": [command],
                         "allowed_scope": ["src/feature.cpp"],
                         "expected_diff_budget": 1,
@@ -269,12 +177,16 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "must close acceptance",
                         "kind": "feature",
                         "acceptance_ids": ["AC-OPEN"],
+                        "pre_commands": [missing_artifact("feature.txt")],
                         "commands": [command],
+                        "allowed_scope": ["feature.txt"],
                     },
                 ),
             )
 
             def backend(capsule: Mapping[str, Any]) -> Mapping[str, Any]:
+                if capsule["action"] == "review_task":
+                    return solo_review(capsule)
                 artifact = root / "feature.txt"
                 artifact.write_text("implemented\n", encoding="utf-8")
                 return completed_result(
@@ -306,6 +218,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "first",
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
+                        "pre_commands": [missing_artifact("T0001.txt")],
                         "commands": [command],
                         "allowed_scope": ["T0001.txt"],
                     },
@@ -315,6 +228,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "kind": "feature",
                         "acceptance_ids": ["AC-2"],
                         "dependencies": ["T0001"],
+                        "pre_commands": [missing_artifact("T0002.txt")],
                         "commands": [command],
                         "allowed_scope": ["T0002.txt"],
                     },
@@ -341,7 +255,20 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
             init_project(root)
             context = context_for(root, tmp)
             started = RunLifecycle(context, runtime_env=runtime(tmp)).start(
-                mode="solo", objective="finite failure", acceptance_ids=("AC-1",)
+                mode="solo",
+                objective="finite failure",
+                acceptance_ids=("AC-1",),
+                task_specs=(
+                    {
+                        "id": "T0001",
+                        "objective": "finite failure",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-1"],
+                        "pre_commands": [missing_artifact("failure.txt")],
+                        "commands": [[sys.executable, "-c", "pass"]],
+                        "allowed_scope": ["failure.txt"],
+                    },
+                ),
             )
             calls = 0
 
@@ -379,12 +306,16 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "long task",
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
+                        "pre_commands": [missing_artifact("long.txt")],
                         "commands": [command],
+                        "allowed_scope": ["long.txt"],
                     },
                 ),
             )
 
             def backend(capsule: Mapping[str, Any]) -> Mapping[str, Any]:
+                if capsule["action"] == "review_task":
+                    return solo_review(capsule)
                 time.sleep(0.2)
                 (root / "long.txt").write_text("done", encoding="utf-8")
                 return completed_result(
@@ -421,6 +352,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "risk": "normal",
                         "acceptance_ids": ["AC-ORCH"],
                         "allowed_scope": ["src/orchestrated.txt"],
+                        "pre_commands": [missing_artifact("src/orchestrated.txt")],
                         "commands": [command],
                         "expected_diff_budget": 1,
                     },

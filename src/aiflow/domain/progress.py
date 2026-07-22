@@ -31,6 +31,7 @@ class Task:
     unblocks_task_id: str = ""
     allowed_scope: tuple[str, ...] = ()
     worktree: str = ""
+    pre_commands: tuple[tuple[str, ...], ...] = ()
     commands: tuple[tuple[str, ...], ...] = ()
     evidence: tuple[str, ...] = ()
     expected_diff_budget: int = 0
@@ -58,7 +59,7 @@ class Task:
         if self.value_class is not ValueClass.ENABLER and self.unblocks_task_id:
             raise TaskContractError("only an enabler may set unblocks_task_id")
         if self.value_class is ValueClass.RESEARCH and (
-            self.commands or self.allowed_scope
+            self.pre_commands or self.commands or self.allowed_scope
         ):
             raise TaskContractError(
                 "research is read-only controller evidence, not a mutating task"
@@ -70,6 +71,7 @@ class ProgressPolicy:
     open_acceptance_ids: set[str]
     tasks: Iterable[Task]
     housekeeping_budget: int = 1
+    state: Mapping[str, Any] | None = None
     _tasks: dict[str, Task] = field(init=False, default_factory=dict)
     _accepted: set[str] = field(init=False, default_factory=set)
     _closed: set[str] = field(init=False, default_factory=set)
@@ -82,6 +84,12 @@ class ProgressPolicy:
 
     def __post_init__(self) -> None:
         self.open_acceptance_ids = set(self.open_acceptance_ids)
+        self._load_tasks()
+        self._validate_graph()
+        self._derive_accepted_state()
+        self._restore_state()
+
+    def _load_tasks(self) -> None:
         for item in self.tasks:
             if item.id in self._tasks:
                 raise TaskContractError(f"duplicate task ID: {item.id}")
@@ -90,6 +98,8 @@ class ProgressPolicy:
                 self._accepted.add(item.id)
                 self._closed.update(item.acceptance_ids)
                 self.open_acceptance_ids.difference_update(item.acceptance_ids)
+
+    def _validate_graph(self) -> None:
         known_acceptance = self.open_acceptance_ids | self._closed
         for item in self._tasks.values():
             missing = set(item.dependencies) - self._tasks.keys()
@@ -106,6 +116,8 @@ class ProgressPolicy:
                 raise TaskContractError(
                     f"task {item.id} targets unknown acceptance IDs: {sorted(unknown)}"
                 )
+
+    def _derive_accepted_state(self) -> None:
         unresolved_enablers = [
             item.unblocks_task_id
             for item in self._tasks.values()
@@ -120,6 +132,46 @@ class ProgressPolicy:
             item.status == "ACCEPTED" and item.value_class is ValueClass.HOUSEKEEPING
             for item in self._tasks.values()
         )
+
+    def _restore_state(self) -> None:
+        state = self.state or {}
+        if not isinstance(state, Mapping):
+            raise TaskContractError("durable progress state must be an object")
+        self._restore_debt(state)
+        self._restore_breaker(state)
+        self._restore_usage(state)
+
+    def _restore_debt(self, state: Mapping[str, Any]) -> None:
+        progress_debt = str(state.get("progress_debt") or self._progress_debt)
+        if progress_debt:
+            if progress_debt not in self._tasks or progress_debt in self._accepted:
+                raise TaskContractError("durable progress debt target is invalid")
+            if self._progress_debt and progress_debt != self._progress_debt:
+                raise TaskContractError(
+                    "durable progress debt contradicts accepted tasks"
+                )
+        self._progress_debt = progress_debt
+
+    def _restore_breaker(self, state: Mapping[str, Any]) -> None:
+        last_delta = tuple(str(value) for value in state.get("last_delta", ()))
+        if not set(last_delta) <= self._closed:
+            raise TaskContractError("durable acceptance delta is not closed")
+        self._last_delta = last_delta
+        self._no_delta = int(state.get("no_delta", 0))
+        if self._no_delta < 0:
+            raise TaskContractError("durable no-delta count cannot be negative")
+        self._replan_pending = bool(state.get("replan_pending", False))
+        if self._replan_pending and self._no_delta < 2:
+            raise TaskContractError("durable replan lacks a no-delta trigger")
+        self._fresh_end_to_end = bool(state.get("fresh_end_to_end", False))
+
+    def _restore_usage(self, state: Mapping[str, Any]) -> None:
+        persisted_housekeeping = int(
+            state.get("housekeeping_used", self._housekeeping_used)
+        )
+        if persisted_housekeeping < self._housekeeping_used:
+            raise TaskContractError("durable housekeeping usage lost accepted work")
+        self._housekeeping_used = persisted_housekeeping
 
     def _ready(self, item: Task) -> bool:
         return item.status == "READY" and set(item.dependencies) <= self._accepted
@@ -186,6 +238,19 @@ class ProgressPolicy:
             self._replan_pending = True
             return "REPLAN_REQUIRED"
         return "ACCEPTED"
+
+    def validate_claim(
+        self,
+        task_id: str,
+        *,
+        closed_acceptance_ids: set[str],
+        evidence: Mapping[str, Any],
+    ) -> None:
+        try:
+            item = self._tasks[task_id]
+        except KeyError as exc:
+            raise TaskContractError(f"unknown task: {task_id}") from exc
+        self._validate_acceptance(item, set(closed_acceptance_ids), evidence)
 
     def _validate_acceptance(
         self, item: Task, claimed: set[str], evidence: Mapping[str, Any]
@@ -258,6 +323,16 @@ class ProgressPolicy:
             "housekeeping_budget_remaining": max(
                 0, self.housekeeping_budget - self._housekeeping_used
             ),
+        }
+
+    def durable_state(self) -> dict[str, Any]:
+        return {
+            "progress_debt": self._progress_debt or None,
+            "last_delta": list(self._last_delta),
+            "no_delta": self._no_delta,
+            "replan_pending": self._replan_pending,
+            "fresh_end_to_end": self._fresh_end_to_end,
+            "housekeeping_used": self._housekeeping_used,
         }
 
     def milestone_can_close(self) -> bool:
