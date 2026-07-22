@@ -188,6 +188,11 @@ class LifecycleCliTests(unittest.TestCase):
                 0,
             )
             task_file = project / "tasks.json"
+            command = [
+                sys.executable,
+                "-c",
+                "from pathlib import Path; assert Path('result.txt').is_file()",
+            ]
             task_file.write_text(
                 json.dumps(
                     {
@@ -197,7 +202,9 @@ class LifecycleCliTests(unittest.TestCase):
                                 "objective": "first bounded task",
                                 "kind": "feature",
                                 "acceptance_ids": ["AC-1"],
-                                "commands": [[sys.executable, "-c", "pass"]],
+                                "allowed_scope": ["result.txt"],
+                                "pre_commands": [command],
+                                "commands": [command],
                             },
                             {
                                 "id": "T0002",
@@ -205,7 +212,9 @@ class LifecycleCliTests(unittest.TestCase):
                                 "kind": "feature",
                                 "acceptance_ids": ["AC-2"],
                                 "dependencies": ["T0001"],
-                                "commands": [[sys.executable, "-c", "pass"]],
+                                "allowed_scope": ["result.txt"],
+                                "pre_commands": [command],
+                                "commands": [command],
                             },
                         ]
                     }
@@ -237,6 +246,80 @@ class LifecycleCliTests(unittest.TestCase):
                 [task["id"] for task in json.loads(status.stdout)["tasks"]],
                 ["T0001", "T0002"],
             )
+
+    def test_task_dag_rejects_non_executable_entries_before_run_creation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            project.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+            self.assertEqual(
+                run_cli(
+                    project, "project", "init", "--profile", "orchestrated"
+                ).returncode,
+                0,
+            )
+            command = [
+                sys.executable,
+                "-c",
+                "from pathlib import Path; assert Path('result.txt').is_file()",
+            ]
+            complete = {
+                "id": "T0001",
+                "objective": "bounded task",
+                "kind": "feature",
+                "acceptance_ids": ["AC-1"],
+                "allowed_scope": ["result.txt"],
+                "pre_commands": [command],
+                "commands": [command],
+            }
+            task_file = project / "tasks.json"
+            for missing in ("allowed_scope", "pre_commands", "commands"):
+                task_file.write_text(
+                    json.dumps(
+                        {
+                            "tasks": [
+                                {
+                                    key: value
+                                    for key, value in complete.items()
+                                    if key != missing
+                                }
+                            ]
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                rejected = run_cli(
+                    project,
+                    "run",
+                    "start",
+                    "--mode",
+                    "orchestrated",
+                    "--objective",
+                    "bounded program",
+                    "--parent-sandbox",
+                    "workspace-write",
+                    "--task-file",
+                    str(task_file),
+                )
+                self.assertNotEqual(rejected.returncode, 0, missing)
+            mismatch = {**complete, "pre_commands": [[sys.executable, "-c", "pass"]]}
+            task_file.write_text(json.dumps({"tasks": [mismatch]}), encoding="utf-8")
+            rejected = run_cli(
+                project,
+                "run",
+                "start",
+                "--mode",
+                "orchestrated",
+                "--objective",
+                "bounded program",
+                "--parent-sandbox",
+                "workspace-write",
+                "--task-file",
+                str(task_file),
+            )
+            self.assertNotEqual(rejected.returncode, 0)
 
     def test_gui_and_read_only_hub_have_nonblocking_validation_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
