@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Mapping
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,7 +18,18 @@ from aiflow.identity.context import resolve_project  # noqa: E402
 from aiflow.controller.lifecycle import RunLifecycle  # noqa: E402
 
 
-def init_project(path: Path) -> None:
+def git(path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *arguments],
+        cwd=path,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
+def init_project(path: Path, *, commit: bool = False) -> None:
     path.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=path, check=True)
     config = path / ".aiflow" / "project.toml"
@@ -27,6 +39,11 @@ def init_project(path: Path) -> None:
         'profile = "solo"\n[execution]\nallow_parallel_mutating_runs = false\n',
         encoding="utf-8",
     )
+    if commit:
+        git(path, "config", "user.name", "AIFLOW Test")
+        git(path, "config", "user.email", "aiflow@example.invalid")
+        git(path, "add", ".aiflow/project.toml")
+        assert git(path, "commit", "-qm", "fixture baseline").returncode == 0
 
 
 def common_evidence() -> dict:
@@ -47,18 +64,28 @@ def feature_evidence() -> dict:
     }
 
 
-def child_result(identities: dict[str, str], task_id: str, acceptance_id: str) -> dict:
+def child_result(
+    capsule: dict | Mapping[str, object],
+    acceptance_id: str,
+    *,
+    artifact: str,
+    command: list[str],
+) -> dict:
+    identities = {
+        key: str(capsule[key])
+        for key in ("project_id", "checkout_id", "worktree_id", "run_id")
+    }
     return {
         "schema_version": "1",
         **identities,
-        "task_id": task_id,
+        "task_id": str(capsule["task_id"]),
         "agent_role": "implementation-worker",
         "status": "completed",
         "summary": "implemented the bounded feature",
         "findings": [],
-        "changed_files": ["src/feature.cpp"],
-        "commands_run": [["ctest"]],
-        "tests_and_results": [{"command": ["ctest"], "exit_code": 0}],
+        "changed_files": [artifact],
+        "commands_run": [command],
+        "tests_and_results": [{"command": command, "exit_code": 0}],
         "acceptance_ids_supported": [acceptance_id],
         "evidence_paths": ["evidence/cycle.json"],
         "contract_impact": "closes accepted behavior",
@@ -67,13 +94,41 @@ def child_result(identities: dict[str, str], task_id: str, acceptance_id: str) -
         "cycle_kind": "feature",
         "cycle_evidence": feature_evidence(),
         "delivery_evidence": {
-            "changed_files": ["src/feature.cpp"],
-            "expected_artifact": "src/feature.cpp",
-            "commands": [["ctest"]],
+            "changed_files": [artifact],
+            "expected_artifact": artifact,
+            "commands": [command],
             "test_results": [{"exit_code": 0}],
             "fresh_end_to_end": True,
         },
         "closed_acceptance_ids": [acceptance_id],
+    }
+
+
+def analysis_result(capsule: Mapping[str, object]) -> dict:
+    identities = {
+        key: str(capsule[key])
+        for key in ("project_id", "checkout_id", "worktree_id", "run_id", "task_id")
+    }
+    role = str(capsule["agent_role"])
+    return {
+        "schema_version": "1",
+        **identities,
+        "agent_role": role,
+        "status": "completed",
+        "summary": f"{role} bounded analysis",
+        "findings": [],
+        "recommended_next_action": "dispatch writer",
+    }
+
+
+def review_result(capsule: Mapping[str, object]) -> dict:
+    return {
+        **analysis_result(capsule),
+        "recommendation": "accept",
+        "blocks_acceptance": False,
+        "full_diff_reviewed": True,
+        "files_reviewed": list(capsule["task"]["allowed_scope"]),
+        "unreviewed_files": [],
     }
 
 
@@ -148,16 +203,35 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                 explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}
             )
             environment = {"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")}
+            command = [sys.executable, "-c", "pass"]
             started = RunLifecycle(context, runtime_env=environment).start(
                 mode="solo",
                 objective="bounded feature",
                 acceptance_ids=("AC-FEATURE-1",),
-                task_kind="feature",
+                task_specs=(
+                    {
+                        "id": "T0001",
+                        "objective": "bounded feature",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-FEATURE-1"],
+                        "commands": [command],
+                        "allowed_scope": ["src/feature.cpp"],
+                    },
+                ),
             )
-            identities = context.identity_fields(started["run_id"])
-            backend = FakeAgentBackend(
-                {"execute_task": [child_result(identities, "T0001", "AC-FEATURE-1")]}
-            )
+
+            def execute(capsule):
+                artifact = root / "src" / "feature.cpp"
+                artifact.parent.mkdir(parents=True, exist_ok=True)
+                artifact.write_text("int feature() { return 1; }\n", encoding="utf-8")
+                return child_result(
+                    capsule,
+                    "AC-FEATURE-1",
+                    artifact="src/feature.cpp",
+                    command=command,
+                )
+
+            backend = FakeAgentBackend({"execute_task": [execute]})
             lifecycle = RunLifecycle(
                 context,
                 runtime_env=environment,
@@ -178,11 +252,12 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
     def test_fake_backend_runs_two_dependent_orchestrated_tasks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
-            init_project(root)
+            init_project(root, commit=True)
             context = resolve_project(
                 explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}
             )
             environment = {"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")}
+            command = [sys.executable, "-c", "pass"]
             lifecycle = RunLifecycle(context, runtime_env=environment)
             started = lifecycle.start(
                 mode="orchestrated",
@@ -193,6 +268,8 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "first",
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
+                        "commands": [command],
+                        "allowed_scope": ["T0001.txt"],
                     },
                     {
                         "id": "T0002",
@@ -200,16 +277,28 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                         "kind": "feature",
                         "acceptance_ids": ["AC-2"],
                         "dependencies": ["T0001"],
+                        "commands": [command],
+                        "allowed_scope": ["T0002.txt"],
                     },
                 ),
             )
-            identities = context.identity_fields(started["run_id"])
+
+            def execute(capsule):
+                task_id = str(capsule["task_id"])
+                worktree = Path(str(capsule["working_directory"]))
+                (worktree / f"{task_id}.txt").write_text("done\n", encoding="utf-8")
+                return child_result(
+                    capsule,
+                    f"AC-{task_id[-1]}",
+                    artifact=f"{task_id}.txt",
+                    command=command,
+                )
+
             backend = FakeAgentBackend(
                 {
-                    "execute_task": [
-                        child_result(identities, "T0001", "AC-1"),
-                        child_result(identities, "T0002", "AC-2"),
-                    ]
+                    "analyze_task": [analysis_result] * 4,
+                    "execute_task": [execute, execute],
+                    "review_task": [review_result, review_result],
                 }
             )
             resumed = RunLifecycle(
@@ -220,7 +309,7 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
             ).resume(started["run_id"], budgets=Budgets(max_tasks=3, max_idle=1))
             self.assertEqual(resumed["status"], "SUCCEEDED")
             self.assertEqual(resumed["acceptance_ids_closed"], ["AC-1", "AC-2"])
-            self.assertEqual(backend.calls, 2)
+            self.assertEqual(backend.calls, 8)
 
 
 if __name__ == "__main__":

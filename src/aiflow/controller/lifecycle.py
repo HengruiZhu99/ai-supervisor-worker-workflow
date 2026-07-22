@@ -3,17 +3,21 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from typing import Any, Mapping
 from contextlib import contextmanager
+from typing import Any, Mapping
 
 from aiflow.controller.execution import AgentBackend, TaskExecutionEngine
 from aiflow.controller.runner import Budgets, ControllerRunner
 from aiflow.controller.watchdog import DeterministicWatchdog
+from aiflow.controller.tasks import project_commands, task_records
 from aiflow.identity.context import ProjectContext
 from aiflow.identity.context import validate_thread_identity
 from aiflow.state.atomic import atomic_write_json, read_json, signed, verify_signed
 from aiflow.state.store import RunStore, StateError
 from aiflow.state.handoff import create_handoff
+from aiflow.state.leases import maintain_controller
+from aiflow.state.locks import owned_directory_lock
+from aiflow.state.ownership import owner_is_live
 
 
 class RunLifecycle:
@@ -25,12 +29,16 @@ class RunLifecycle:
         agent_backend: AgentBackend | None = None,
         agent_id: str = "codex-worker",
         watchdog: DeterministicWatchdog | None = None,
+        controller_ttl_seconds: float = 120.0,
+        heartbeat_interval_seconds: float = 30.0,
     ) -> None:
         self.context = context
         self.runtime_env = runtime_env
         self.agent_backend = agent_backend
         self.agent_id = agent_id
         self.watchdog = watchdog
+        self.controller_ttl_seconds = controller_ttl_seconds
+        self.heartbeat_interval_seconds = heartbeat_interval_seconds
 
     def store(self, run_id: str) -> RunStore:
         return RunStore(self.context, run_id, runtime_env=self.runtime_env)
@@ -38,7 +46,9 @@ class RunLifecycle:
     def _claim(self, store: RunStore) -> str:
         controller_id = f"controller-{uuid.uuid4()}"
         store.claim_controller(
-            controller_id, ttl_seconds=120, **store.local_process_identity()
+            controller_id,
+            ttl_seconds=self.controller_ttl_seconds,
+            **store.local_process_identity(),
         )
         return controller_id
 
@@ -48,18 +58,16 @@ class RunLifecycle:
         root.mkdir(parents=True, exist_ok=True)
         guard = root / ".mutation.lock"
         lease = root / "MUTATING_RUN.json"
-        try:
-            guard.mkdir()
-        except FileExistsError as exc:
-            raise StateError("another checkout mutation claim is in progress") from exc
-        try:
+        with owned_directory_lock(guard, timeout=0.25):
             if lease.exists():
                 current = read_json(lease)
                 verify_signed(current, "checkout mutation lease")
                 if current.get("run_id") != run_id:
-                    raise StateError(
-                        f"checkout mutation is already owned by run {current.get('run_id')}"
-                    )
+                    if owner_is_live(current):
+                        raise StateError(
+                            f"checkout mutation is already owned by run {current.get('run_id')}"
+                        )
+                    lease.unlink()
             identity = self.store(run_id).local_process_identity()
             atomic_write_json(
                 lease,
@@ -72,16 +80,16 @@ class RunLifecycle:
                     }
                 ),
             )
-            yield
-        finally:
-            if lease.exists():
-                try:
-                    current = read_json(lease)
-                except (OSError, ValueError, json.JSONDecodeError):
-                    current = {}
-                if current.get("run_id") == run_id:
-                    lease.unlink(missing_ok=True)
-            guard.rmdir()
+            try:
+                yield
+            finally:
+                if lease.exists():
+                    try:
+                        current = read_json(lease)
+                    except (OSError, ValueError, json.JSONDecodeError):
+                        current = {}
+                    if current.get("run_id") == run_id:
+                        lease.unlink(missing_ok=True)
 
     def _validate_saved_thread(self, store: RunStore) -> None:
         record = store.path / "context" / "CODEX_THREAD.json"
@@ -108,44 +116,27 @@ class RunLifecycle:
             raise ValueError(f"unknown run mode: {mode}")
         if not objective.strip():
             raise ValueError("run objective is required")
+        if task_specs:
+            tasks = task_records(task_specs, worktree_id=self.context.worktree_id)
+        else:
+            tasks = []
         store = RunStore.create(self.context, mode=mode, runtime_env=self.runtime_env)
         controller = self._claim(store)
-        specs = task_specs or (
-            {
-                "id": "T0001",
-                "objective": objective.strip(),
-                "kind": task_kind,
-                "acceptance_ids": list(
-                    acceptance_ids or (f"AC-RUN-{store.run_id[:8].upper()}",)
+        if not tasks:
+            tasks = task_records(
+                (
+                    {
+                        "id": "T0001",
+                        "objective": objective.strip(),
+                        "kind": task_kind,
+                        "acceptance_ids": list(
+                            acceptance_ids or (f"AC-RUN-{store.run_id[:8].upper()}",)
+                        ),
+                    },
                 ),
-            },
-        )
-        tasks = []
-        for index, spec in enumerate(specs, start=1):
-            task = {
-                "id": str(spec.get("id", f"T{index:04d}")),
-                "objective": str(spec.get("objective", "")).strip(),
-                "kind": str(spec.get("kind", "feature")),
-                "value_class": str(spec.get("value_class", "delivery")),
-                "acceptance_ids": [
-                    str(value) for value in spec.get("acceptance_ids", [])
-                ],
-                "dependencies": [str(value) for value in spec.get("dependencies", [])],
-                "unblocks_task_id": str(spec.get("unblocks_task_id", "")),
-                "allowed_scope": [
-                    str(value) for value in spec.get("allowed_scope", [])
-                ],
-                "worktree": self.context.worktree_id,
-                "commands": [list(command) for command in spec.get("commands", [])],
-                "evidence": [],
-                "expected_diff_budget": int(spec.get("expected_diff_budget", 0)),
-                "status": "READY",
-                "attempts": 0,
-                "failure_signature": "",
-            }
-            if not task["objective"]:
-                raise ValueError("every executable task needs an objective")
-            tasks.append(task)
+                worktree_id=self.context.worktree_id,
+                defaults=project_commands(self.context.root),
+            )
         try:
             run = store.transition(
                 0,
@@ -191,20 +182,40 @@ class RunLifecycle:
                     controller_id=controller,
                 )
                 selected = budgets or Budgets()
-                if self.agent_backend is None:
-                    outcome = ControllerRunner(budgets=selected).run(lambda: "idle")
-                    closed: tuple[str, ...] = ()
-                else:
-                    execution = TaskExecutionEngine(
+                try:
+                    with maintain_controller(
                         store,
-                        controller_id=controller,
-                        backend=self.agent_backend,
-                        agent_id=self.agent_id,
-                        budgets=selected,
-                        watchdog=self.watchdog,
-                    ).run()
-                    outcome = execution.outcome
-                    closed = execution.acceptance_ids_closed
+                        controller,
+                        ttl_seconds=self.controller_ttl_seconds,
+                        interval_seconds=self.heartbeat_interval_seconds,
+                    ):
+                        if self.agent_backend is None:
+                            outcome = ControllerRunner(budgets=selected).run(
+                                lambda: "idle"
+                            )
+                            closed = tuple(current.get("acceptance_ids_closed", []))
+                        else:
+                            execution = TaskExecutionEngine(
+                                store,
+                                controller_id=controller,
+                                backend=self.agent_backend,
+                                agent_id=self.agent_id,
+                                budgets=selected,
+                                watchdog=self.watchdog,
+                            ).run()
+                            outcome = execution.outcome
+                            closed = execution.acceptance_ids_closed
+                except Exception as exc:
+                    from aiflow.controller.runner import ControllerOutcome
+
+                    store.heartbeat_controller(
+                        controller, ttl_seconds=self.controller_ttl_seconds
+                    )
+                    outcome = ControllerOutcome.FAILED
+                    closed = tuple(current.get("acceptance_ids_closed", []))
+                    failure_detail = f"{type(exc).__name__}: {exc}"[:1000]
+                else:
+                    failure_detail = ""
                 status = "SUCCEEDED" if outcome.value == "SUCCEEDED" else "PAUSED"
                 if outcome.value in {"BLOCKED", "FAILED", "BUDGET_EXHAUSTED"}:
                     status = outcome.value
@@ -214,6 +225,7 @@ class RunLifecycle:
                         "status": status,
                         "terminal_reason": outcome.value,
                         "acceptance_ids_closed": list(closed),
+                        "failure_detail": failure_detail,
                     },
                     event_type="controller_exit",
                     controller_id=controller,

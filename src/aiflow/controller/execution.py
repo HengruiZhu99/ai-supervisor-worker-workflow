@@ -2,36 +2,21 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from aiflow.agents.results import validate_child_result
+from aiflow.controller.attestation import attest_result, workspace_snapshot
+from aiflow.controller.orchestration import OrchestratedTaskRunner
 from aiflow.controller.runner import Budgets, ControllerOutcome, ControllerRunner
 from aiflow.controller.watchdog import DeterministicWatchdog
 from aiflow.domain.evidence import validate_cycle
-from aiflow.domain.progress import ProgressPolicy, Task, ValueClass
+from aiflow.controller.tasks import record_to_task
+from aiflow.domain.progress import ProgressPolicy, Task
 from aiflow.state.store import RunStore
 
 
 AgentBackend = Callable[[Mapping[str, Any]], Mapping[str, Any]]
-
-
-def _task(record: Mapping[str, Any]) -> Task:
-    return Task(
-        id=str(record["id"]),
-        objective=str(record["objective"]),
-        value_class=ValueClass(str(record.get("value_class", "delivery"))),
-        acceptance_ids=tuple(str(value) for value in record.get("acceptance_ids", [])),
-        dependencies=tuple(str(value) for value in record.get("dependencies", [])),
-        unblocks_task_id=str(record.get("unblocks_task_id", "")),
-        allowed_scope=tuple(str(value) for value in record.get("allowed_scope", [])),
-        worktree=str(record.get("worktree", "")),
-        commands=tuple(
-            tuple(str(part) for part in command)
-            for command in record.get("commands", [])
-        ),
-        evidence=tuple(str(value) for value in record.get("evidence", [])),
-        expected_diff_budget=int(record.get("expected_diff_budget", 0)),
-    )
 
 
 @dataclass
@@ -52,11 +37,14 @@ class TaskExecutionEngine:
         agent_id: str,
         budgets: Budgets,
         watchdog: DeterministicWatchdog | None = None,
+        workspace: Path | None = None,
     ) -> None:
         self.store = store
         self.controller_id = controller_id
         self.agent_id = agent_id
         self.watchdog = watchdog or DeterministicWatchdog()
+        self.workspace = (workspace or store.context.root).resolve()
+        self.budgets = budgets
         self.runner = ControllerRunner(
             budgets=budgets, agent_call=lambda capsule: backend(capsule)
         )
@@ -68,18 +56,17 @@ class TaskExecutionEngine:
             for value in record.get("acceptance_ids", [])
             if record.get("status") != "ACCEPTED"
         }
-        ready = [
-            _task(record)
-            for record in self.records
-            if record.get("status") != "ACCEPTED"
-        ]
-        self.policy = ProgressPolicy(open_acceptance_ids=open_ids, tasks=ready)
+        self.policy = ProgressPolicy(
+            open_acceptance_ids=open_ids,
+            tasks=[record_to_task(record) for record in self.records],
+        )
         self.closed = {
             str(value)
             for record in self.records
             if record.get("status") == "ACCEPTED"
             for value in record.get("acceptance_ids", [])
         }
+        self.mode = str(self.store.read_run()["mode"])
 
     def _record(self, task_id: str) -> dict[str, Any]:
         return next(record for record in self.records if record["id"] == task_id)
@@ -101,7 +88,8 @@ class TaskExecutionEngine:
         ]
         record["attempts"] = int(record.get("attempts", 0)) + 1
         record["failure_signature"] = signature
-        record["status"] = "READY"
+        blocked = record["attempts"] >= self.budgets.max_attempts
+        record["status"] = "BLOCKED" if blocked else "READY"
         self._persist(event_type="task_attempt_failed")
         self.watchdog.observe(
             {
@@ -111,54 +99,91 @@ class TaskExecutionEngine:
                 "attempt": record["attempts"],
             }
         )
-        return f"retry:{signature}"
+        return "blocked" if blocked else f"retry:{signature}"
 
-    def _step(self) -> str:
+    def _terminal_state(self) -> str:
+        return (
+            "succeeded"
+            if self.records
+            and all(record.get("status") == "ACCEPTED" for record in self.records)
+            else "blocked"
+        )
+
+    def _next_task(self) -> Task | None:
         try:
-            task = self.policy.next_task()
+            return self.policy.next_task()
         except Exception:
-            return (
-                "succeeded"
-                if self.records
-                and all(record.get("status") == "ACCEPTED" for record in self.records)
-                else "blocked"
-            )
-        record = self._record(task.id)
-        attempt = int(record.get("attempts", 0)) + 1
-        capsule = {
+            return None
+
+    def _capsule(
+        self, task: Task, record: Mapping[str, Any], attempt: int
+    ) -> dict[str, Any]:
+        return {
             "action": "execute_task",
             **self.store.context.identity_fields(self.store.run_id),
             "task_id": task.id,
-            "mode": self.store.read_run()["mode"],
+            "mode": self.mode,
             "task": dict(record),
             "attempt": attempt,
             "agent_id": self.agent_id,
+            "agent_role": "implementation-worker",
+            "working_directory": str(self.workspace),
         }
-        try:
+
+    def _invoke_result(
+        self,
+        task: Task,
+        record: Mapping[str, Any],
+        capsule: Mapping[str, Any],
+        identities: Mapping[str, str],
+    ) -> dict[str, Any]:
+        if self.mode == "orchestrated":
+            result = OrchestratedTaskRunner(
+                self.store,
+                invoke=self.runner.invoke_agent,
+                timeout=float(self.budgets.max_wall_time),
+            ).execute(record, capsule)
+        else:
+            before = workspace_snapshot(self.workspace)
             result = dict(self.runner.invoke_agent(capsule))
-            identities = self.store.context.identity_fields(self.store.run_id)
-            validate_child_result(result, identities=identities, task_id=task.id)
-            if result.get("status") != "completed":
-                raise ValueError(
-                    f"agent result is not completed: {result.get('status')}"
-                )
-            kind = str(result.get("cycle_kind", ""))
-            if kind != str(record.get("kind", "feature")):
-                raise ValueError("cycle kind does not match the durable task contract")
-            validate_cycle(kind, result.get("cycle_evidence", {}))
-            claimed = {str(value) for value in result.get("closed_acceptance_ids", [])}
-            self.policy.accept(
-                task.id,
-                closed_acceptance_ids=claimed,
-                evidence=result.get("delivery_evidence", {}),
-            )
-            inbox = self.store.write_inbox_result(
-                task_id=task.id,
-                agent_id=f"{self.agent_id}-{attempt}",
+            result = attest_result(
+                self.workspace,
+                before=before,
                 result=result,
+                task=record,
+                timeout=float(self.budgets.max_wall_time),
+                injected={
+                    f"AIFLOW_{key.upper()}": value for key, value in identities.items()
+                },
             )
-        except Exception as exc:
-            return self._failure(record, exc)
+        validate_child_result(result, identities=identities, task_id=task.id)
+        return result
+
+    def _validate_acceptance(
+        self, task: Task, record: Mapping[str, Any], result: Mapping[str, Any]
+    ) -> set[str]:
+        if result.get("status") != "completed":
+            raise ValueError(f"agent result is not completed: {result.get('status')}")
+        kind = str(result.get("cycle_kind", ""))
+        if kind != str(record.get("kind", "feature")):
+            raise ValueError("cycle kind does not match the durable task contract")
+        validate_cycle(kind, result.get("cycle_evidence", {}))
+        claimed = {str(value) for value in result.get("closed_acceptance_ids", [])}
+        self.policy.accept(
+            task.id,
+            closed_acceptance_ids=claimed,
+            evidence=result.get("delivery_evidence", {}),
+        )
+        return claimed
+
+    def _finalize_acceptance(
+        self,
+        record: dict[str, Any],
+        *,
+        attempt: int,
+        inbox: Path,
+        claimed: set[str],
+    ) -> str:
         record["attempts"] = attempt
         record["failure_signature"] = ""
         record["status"] = "ACCEPTED"
@@ -168,10 +193,36 @@ class TaskExecutionEngine:
         )
         self.closed.update(claimed)
         self._persist(event_type="task_accepted", evidence=list(record["evidence"]))
+        complete = all(item.get("status") == "ACCEPTED" for item in self.records)
         return (
             "succeeded"
-            if all(item.get("status") == "ACCEPTED" for item in self.records)
+            if complete and not self.policy.open_acceptance_ids
             else "progress"
+        )
+
+    def _step(self) -> str:
+        task = self._next_task()
+        if task is None:
+            return self._terminal_state()
+        record = self._record(task.id)
+        if int(record.get("attempts", 0)) >= self.budgets.max_attempts:
+            record["status"] = "BLOCKED"
+            return "blocked"
+        attempt = int(record.get("attempts", 0)) + 1
+        capsule = self._capsule(task, record, attempt)
+        try:
+            identities = self.store.context.identity_fields(self.store.run_id)
+            result = self._invoke_result(task, record, capsule, identities)
+            claimed = self._validate_acceptance(task, record, result)
+            inbox = self.store.write_inbox_result(
+                task_id=task.id,
+                agent_id=f"{self.agent_id}-{attempt}",
+                result=result,
+            )
+        except Exception as exc:
+            return self._failure(record, exc)
+        return self._finalize_acceptance(
+            record, attempt=attempt, inbox=inbox, claimed=claimed
         )
 
     def run(self) -> ExecutionResult:

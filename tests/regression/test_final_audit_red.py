@@ -146,14 +146,20 @@ class OrchestratedBackend:
             worktree = Path(self.writer_directory)
             if worktree.resolve() == self.root.resolve():
                 raise AssertionError("orchestrated writer used the target checkout")
-            (worktree / "src").mkdir()
-            (worktree / "src" / "orchestrated.txt").write_text(
-                "done\n", encoding="utf-8"
+            task_id = str(capsule["task_id"])
+            artifact = (
+                "src/orchestrated.txt"
+                if task_id == "T0001"
+                and capsule["task"]["objective"] == "reviewed isolated change"
+                else f"{task_id}.txt"
             )
+            target = worktree / artifact
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("done\n", encoding="utf-8")
             return completed_result(
                 capsule,
-                ["AC-ORCH"],
-                artifact="src/orchestrated.txt",
+                [str(value) for value in capsule["task"]["acceptance_ids"]],
+                artifact=artifact,
                 command=self.command,
             )
         if action == "review_task":
@@ -171,7 +177,7 @@ class OrchestratedBackend:
                 "blocks_acceptance": False,
                 "findings": [],
                 "full_diff_reviewed": True,
-                "files_reviewed": ["src/orchestrated.txt"],
+                "files_reviewed": list(capsule["task"]["allowed_scope"]),
                 "unreviewed_files": [],
             }
         raise AssertionError(action)
@@ -181,7 +187,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
     def test_invalid_dependency_graph_is_rejected_before_run_creation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
-            init_project(root)
+            init_project(root, commit=True)
             context = context_for(root, tmp)
             lifecycle = RunLifecycle(context, runtime_env=runtime(tmp))
             with self.assertRaises(ValueError):
@@ -223,6 +229,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
                         "commands": [command],
+                        "allowed_scope": ["src/feature.cpp"],
                         "expected_diff_budget": 1,
                     },
                 ),
@@ -249,7 +256,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
     def test_delivery_task_cannot_succeed_with_an_empty_acceptance_delta(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
-            init_project(root)
+            init_project(root, commit=True)
             context = context_for(root, tmp)
             command = [sys.executable, "-c", "pass"]
             started = RunLifecycle(context, runtime_env=runtime(tmp)).start(
@@ -286,7 +293,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
     def test_dependent_tasks_resume_after_a_finite_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
-            init_project(root)
+            init_project(root, commit=True)
             context = context_for(root, tmp)
             command = [sys.executable, "-c", "pass"]
             lifecycle = RunLifecycle(context, runtime_env=runtime(tmp))
@@ -300,6 +307,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
                         "commands": [command],
+                        "allowed_scope": ["T0001.txt"],
                     },
                     {
                         "id": "T0002",
@@ -308,26 +316,19 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "acceptance_ids": ["AC-2"],
                         "dependencies": ["T0001"],
                         "commands": [command],
+                        "allowed_scope": ["T0002.txt"],
                     },
                 ),
             )
 
-            def backend(capsule: Mapping[str, Any]) -> Mapping[str, Any]:
-                task_id = str(capsule["task_id"])
-                acceptance = "AC-1" if task_id == "T0001" else "AC-2"
-                artifact = f"{task_id}.txt"
-                (root / artifact).write_text(task_id, encoding="utf-8")
-                return completed_result(
-                    capsule, [acceptance], artifact=artifact, command=command
-                )
-
+            backend = OrchestratedBackend(root, command)
             resumed = RunLifecycle(
                 context, runtime_env=runtime(tmp), agent_backend=backend
             )
             first = resumed.resume(
                 started["run_id"], budgets=Budgets(max_tasks=1, max_idle=1)
             )
-            self.assertEqual(first["outcome"], "BUDGET_EXHAUSTED")
+            self.assertEqual(first["outcome"], "BUDGET_EXHAUSTED", first)
             second = resumed.resume(
                 started["run_id"], budgets=Budgets(max_tasks=1, max_idle=1)
             )

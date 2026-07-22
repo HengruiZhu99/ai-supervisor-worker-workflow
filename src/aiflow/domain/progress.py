@@ -86,6 +86,11 @@ class ProgressPolicy:
             if item.id in self._tasks:
                 raise TaskContractError(f"duplicate task ID: {item.id}")
             self._tasks[item.id] = item
+            if item.status == "ACCEPTED":
+                self._accepted.add(item.id)
+                self._closed.update(item.acceptance_ids)
+                self.open_acceptance_ids.difference_update(item.acceptance_ids)
+        known_acceptance = self.open_acceptance_ids | self._closed
         for item in self._tasks.values():
             missing = set(item.dependencies) - self._tasks.keys()
             if missing:
@@ -96,7 +101,7 @@ class ProgressPolicy:
                 raise TaskContractError(
                     f"enabler {item.id} targets unknown task {item.unblocks_task_id}"
                 )
-            unknown = set(item.acceptance_ids) - self.open_acceptance_ids
+            unknown = set(item.acceptance_ids) - known_acceptance
             if unknown:
                 raise TaskContractError(
                     f"task {item.id} targets unknown acceptance IDs: {sorted(unknown)}"
@@ -181,6 +186,11 @@ class ProgressPolicy:
                 "acceptance delta is outside the task/open contract"
             )
         if item.value_class in {ValueClass.DELIVERY, ValueClass.VALIDATION}:
+            required = set(item.acceptance_ids) & self.open_acceptance_ids
+            if not required or claimed != required:
+                raise TaskContractError(
+                    f"{item.id} must close its complete open acceptance contract"
+                )
             self._assert_delivery_evidence(item, evidence)
         if item.value_class is ValueClass.ENABLER and not evidence.get(
             "completion_proof"
