@@ -46,21 +46,24 @@ export function App() {
       const replay = lastEventId
         ? `?last_event_id=${encodeURIComponent(lastEventId)}`
         : "";
-      source = new EventSource(`/api/v1/events${replay}`);
-      source.addEventListener("run", (event) => {
+      const connection = new EventSource(`/api/v1/events${replay}`);
+      source = connection;
+      connection.addEventListener("run", (event) => {
         lastEventId = (event as MessageEvent).lastEventId || lastEventId;
         reconnects = 0;
         void refresh();
       });
-      source.addEventListener("reset", (event) => {
+      connection.addEventListener("reset", (event) => {
         lastEventId = (event as MessageEvent).lastEventId || "";
         reconnects = 0;
         setSnapshot(JSON.parse((event as MessageEvent).data) as Snapshot);
         setError("");
       });
-      source.onerror = () => {
-        source?.close();
+      connection.onerror = () => {
+        connection.close();
+        if (source === connection) source = null;
         reconnects += 1;
+        window.clearTimeout(timer);
         timer = window.setTimeout(
           connect,
           Math.min(30000, 1000 * 2 ** reconnects),
