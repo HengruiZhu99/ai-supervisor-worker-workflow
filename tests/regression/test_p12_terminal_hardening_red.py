@@ -186,6 +186,24 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(git(root, "rev-parse", "HEAD").stdout.strip(), external[0])
 
+    def test_tracked_edit_racing_target_refresh_is_never_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            base, candidate = repository(root)
+
+            def edit_target() -> None:
+                (root / "value.txt").write_text("USER WORK\n", encoding="utf-8")
+
+            result = IntegrationTransaction(root, before_apply=edit_target).apply(
+                candidate,
+                method="merge",
+                base_sha=base,
+            )
+            self.assertFalse(result.ok)
+            self.assertEqual((root / "value.txt").read_text(encoding="utf-8"), "USER WORK\n")
+            self.assertEqual(git(root, "rev-parse", "HEAD").stdout.strip(), base)
+            self.assertFalse((root / "candidate.txt").exists())
+
     def test_post_cas_interruption_recovers_from_durable_pending_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
