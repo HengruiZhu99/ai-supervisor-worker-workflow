@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -16,6 +17,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class OfflineArtifactTests(unittest.TestCase):
+    def test_two_clean_builds_are_byte_reproducible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(build_artifact(ROOT, Path(tmp) / "first")["artifact"])
+            time.sleep(2.1)
+            second = Path(build_artifact(ROOT, Path(tmp) / "second")["artifact"])
+            self.assertEqual(first.read_bytes(), second.read_bytes())
+
     def test_zipapp_runs_offline_and_initializes_a_solo_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / "dist"
