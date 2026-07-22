@@ -134,7 +134,7 @@ class TaskExecutionEngine:
         self,
         task: Task,
         record: Mapping[str, Any],
-        capsule: Mapping[str, Any],
+        capsule: dict[str, Any],
         identities: Mapping[str, str],
     ) -> dict[str, Any]:
         if self.mode == "orchestrated":
