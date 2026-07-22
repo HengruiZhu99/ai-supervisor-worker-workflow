@@ -182,7 +182,12 @@ class RunStore:
         event = make_event(
             sequence=len(events) + 1, state_revision=next_revision,
             event_type=event_type, identities=self.context.identity_fields(self.run_id),
-            data={"updates": dict(updates), "evidence": list(evidence or [])},
+            data={
+                "updates": dict(updates),
+                "task_updates": dict(task_updates or {}),
+                "evidence": list(evidence or []),
+                "controller_id": controller_id,
+            },
             occurred_at=now, previous_checksum=events[-1]["checksum"] if events else "",
         )
         return signed({
@@ -381,3 +386,13 @@ class RunStore:
             raise StateError(f"inbox result already exists: {target}")
         atomic_write_json(target, signed(dict(result)))
         return target
+
+    def repair(self) -> dict[str, Any]:
+        from aiflow.state.repair import repair_store
+
+        return repair_store(self)
+
+    def migrate(self) -> dict[str, Any]:
+        from aiflow.state.repair import migrate_store
+
+        return migrate_store(self)

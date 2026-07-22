@@ -2,17 +2,20 @@
 
 ## Current checkpoint
 
-- Phase: `P6-P8`
-- State: `P5_ACCEPTED_LOCALLY`
+- Phase: `P9-P10`
+- State: `P6_P8_ACCEPTED_LOCALLY`
 - Branch: `codex/aiflow-v2-lightweight-multiproject`
 - Base: `e9311a932dc2d5bab57c2cfd7ed734b8e1ca5466`
-- Active acceptance target: quality/deprecation migration, finite Solo/orchestrated
-  execution, native custom agents, schema repair, and two-phase Git integration
+- Active acceptance target: modular project-isolated API/SSE and Solo-first static UI,
+  transactional offline artifact, and read-only scheduler fixtures
 - Acceptance IDs closed: `AC-PERM-001`, `AC-BACKEND-001`, `AC-ID-001`, `AC-ID-002`,
   `AC-ID-003`, `AC-ID-004`, `AC-STATE-001`, `AC-INSTALL-001`, `AC-SKILL-001`,
-  `AC-PROGRESS-001`, `AC-PROGRESS-002`, `AC-PROGRESS-003`
-- Next action: write functional quality, controller, custom-agent, migration, and
-  integration tests before replacing the remaining legacy implementations.
+  `AC-PROGRESS-001`, `AC-PROGRESS-002`, `AC-PROGRESS-003`, `AC-PERM-002`,
+  `AC-BACKEND-002`, `AC-ID-005`, `AC-STATE-002`, `AC-SOLO-001`, `AC-SOLO-003`,
+  `AC-AUTO-001`, `AC-EXEC-001`, `AC-EXEC-002`, `AC-QUALITY-001`, `AC-DEPR-001`,
+  `AC-INTEGRATE-001`
+- Next action: write API/UI isolation, security, SSE replay, accessibility, and
+  scheduler fixture tests before replacing the legacy GUI.
 
 ## Immutable inputs
 

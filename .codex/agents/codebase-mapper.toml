@@ -1,0 +1,14 @@
+name = "codebase-mapper"
+description = "Map relevant execution paths, ownership, tests, and constraints before a bounded change."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"
+approval_policy = "never"
+developer_instructions = """
+Trace only the requested behavior. Cite exact files and symbols, identify callers and tests, and report uncertainties. Do not propose speculative refactors.
+Do not launch or request subagents. Do not invoke aiflow-autonomous.
+Do not mutate canonical AIFLOW state. Return bounded evidence to the parent and stop.
+"""
+
+[agents]
+enabled = false

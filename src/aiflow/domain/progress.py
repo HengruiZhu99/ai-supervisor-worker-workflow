@@ -43,6 +43,9 @@ class Task:
             raise TaskContractError("task id and objective are required")
         if self.expected_diff_budget < 0:
             raise TaskContractError("expected diff budget cannot be negative")
+        self._validate_value_contract()
+
+    def _validate_value_contract(self) -> None:
         if self.value_class in {ValueClass.DELIVERY, ValueClass.VALIDATION}:
             if not self.acceptance_ids:
                 raise TaskContractError("delivery/validation must target acceptance IDs")
@@ -144,16 +147,30 @@ class ProgressPolicy:
             item = self._tasks[task_id]
         except KeyError as exc:
             raise TaskContractError(f"unknown task: {task_id}") from exc
-        if item.status != "READY" or not set(item.dependencies) <= self._accepted:
-            raise TaskContractError(f"task is not ready: {task_id}")
         claimed = set(closed_acceptance_ids)
-        if not claimed <= set(item.acceptance_ids) or not claimed <= self.open_acceptance_ids:
+        self._validate_acceptance(item, claimed, evidence)
+        self._record_acceptance(item, claimed, evidence)
+        if self._no_delta >= 2:
+            self._replan_pending = True
+            return "REPLAN_REQUIRED"
+        return "ACCEPTED"
+
+    def _validate_acceptance(
+        self, item: Task, claimed: set[str], evidence: Mapping[str, Any]
+    ) -> None:
+        if item.status != "READY" or not set(item.dependencies) <= self._accepted:
+            raise TaskContractError(f"task is not ready: {item.id}")
+        valid = claimed <= set(item.acceptance_ids) and claimed <= self.open_acceptance_ids
+        if not valid:
             raise TaskContractError("acceptance delta is outside the task/open contract")
         if item.value_class in {ValueClass.DELIVERY, ValueClass.VALIDATION}:
             self._assert_delivery_evidence(item, evidence)
         if item.value_class is ValueClass.ENABLER and not evidence.get("completion_proof"):
             raise TaskContractError("enabler acceptance requires completion proof")
 
+    def _record_acceptance(
+        self, item: Task, claimed: set[str], evidence: Mapping[str, Any]
+    ) -> None:
         item.status = "ACCEPTED"
         self._accepted.add(item.id)
         self._last_delta = tuple(sorted(claimed))
@@ -169,10 +186,6 @@ class ProgressPolicy:
             self._progress_debt = ""
         if item.value_class is ValueClass.HOUSEKEEPING:
             self._housekeeping_used += 1
-        if self._no_delta >= 2:
-            self._replan_pending = True
-            return "REPLAN_REQUIRED"
-        return "ACCEPTED"
 
     def complete_replan(self, *, ready_acceptance_task: bool) -> None:
         if not self._replan_pending:

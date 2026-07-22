@@ -80,9 +80,9 @@ behind command/config builders and validation rather than assumed from model mem
   lower-cost/medium-throughput tier; Luna is the high-volume, routing, extraction, or
   strict-latency tier. A role-aware migration must not replace every model with Sol.
 - Design impact: supervisor, architect, implementation worker, scientific/engineering
-  reviewer, release auditor, and difficult diagnosis default to Sol; codebase mapping,
-  test architecture, UI audit, ordinary style/maintainability review, and workflow chat
-  default to Terra; narrow routing/classification/summarization defaults to Luna.
+  reviewer, test architect, release auditor, and difficult diagnosis default to Sol;
+  codebase mapping, documentation research, UI audit, ordinary read-heavy review, and
+  workflow chat default to Terra; narrow routing/classification defaults to Luna.
   Deterministic style/format/quality gates and the idle watchdog make zero model calls.
   All role mappings and reasoning efforts remain configurable; historical fixtures and
   explicit user pins are not rewritten blindly.

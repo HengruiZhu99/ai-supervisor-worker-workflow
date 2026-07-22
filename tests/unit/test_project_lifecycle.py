@@ -100,6 +100,13 @@ class ProjectLifecycleTests(unittest.TestCase):
                     if path.is_dir()
                 }
                 self.assertEqual(installed, set(profile_skills(profile)))
+                lock = json.loads((project / ".aiflow" / "project.lock").read_text())
+                if profile in {"orchestrated", "full"}:
+                    self.assertEqual(len(lock["custom_agent_hashes"]), 9)
+                    self.assertTrue((project / ".codex" / "config.toml").is_file())
+                else:
+                    self.assertEqual(lock["custom_agent_hashes"], {})
+                    self.assertFalse((project / ".codex").exists())
 
 
 if __name__ == "__main__":

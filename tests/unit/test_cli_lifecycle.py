@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def run_cli(project: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(ROOT / "src")
+    environment["XDG_RUNTIME_DIR"] = str(project.parent / ".runtime")
     return subprocess.run(
         [sys.executable, "-m", "aiflow", "--project-root", str(project), *arguments],
         cwd=ROOT,
@@ -79,6 +80,52 @@ class LifecycleCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((first / ".aiflow").exists())
             self.assertTrue((second / ".aiflow" / "project.lock").is_file())
+
+    def test_solo_run_cli_has_explicit_finite_resume_and_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            project.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+            self.assertEqual(run_cli(project, "project", "init", "--profile", "solo").returncode, 0)
+            started = run_cli(
+                project,
+                "run",
+                "start",
+                "--mode",
+                "solo",
+                "--objective",
+                "bounded change",
+                "--acceptance-id",
+                "AC-1",
+            )
+            self.assertEqual(started.returncode, 0, started.stderr)
+            run_id = json.loads(started.stdout)["run_id"]
+            resumed = run_cli(project, "run", "resume", "--run-id", run_id, "--max-idle", "1")
+            self.assertEqual(json.loads(resumed.stdout)["outcome"], "IDLE_EXIT")
+            stopped = run_cli(project, "run", "stop", "--run-id", run_id)
+            self.assertEqual(json.loads(stopped.stdout)["status"], "STOPPED")
+
+    def test_orchestrated_start_refuses_missing_or_unrestricted_parent_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            project.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+            self.assertEqual(
+                run_cli(project, "project", "init", "--profile", "orchestrated").returncode,
+                0,
+            )
+            base = (
+                "run", "start", "--mode", "orchestrated", "--objective", "goal",
+                "--acceptance-id", "AC-1",
+            )
+            missing = run_cli(project, *base)
+            self.assertNotEqual(missing.returncode, 0)
+            unrestricted = run_cli(
+                project, *base, "--parent-sandbox", "danger-full-access"
+            )
+            self.assertNotEqual(unrestricted.returncode, 0)
+            allowed = run_cli(project, *base, "--parent-sandbox", "workspace-write")
+            self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
 
 if __name__ == "__main__":

@@ -4,18 +4,18 @@ This repository uses a multi-role AI coding workflow for scientific software dev
 
 ## Roles
 
-Agent wrappers are selected independently from model names. The default wrapper for every role (worker, reviewer, supervisor, modulator, chat) is `cursor-agent`. Default models are Fable 1M extra high (`claude-fable-5-thinking-xhigh`) for the supervisor, modulator, and chat roles, and Fable 1M high (`claude-fable-5-thinking-high`) for the worker. The legacy `codex` wrapper remains in the registry for explicit opt-in only. Wrapper metadata lives under `agent_wrappers/<wrapper-id>/wrapper.json`; new wrappers should extend that registry instead of hard-coding commands directly in the workflow loops.
+Agent wrappers are selected independently from model names. The default wrapper for every role is `codex`; `cursor-agent` is compatibility-only. Current role defaults use GPT-5.6 Sol for controller, implementation, test architecture, high-risk review, and release audit; Terra for read-heavy mapping, documentation, UI, and chat; and Luna for narrow routing/classification. Deterministic style, quality, state, and watchdog gates make no model call. Wrapper metadata lives under `agent_wrappers/<wrapper-id>/wrapper.json`; new wrappers extend that registry instead of hard-coding commands in workflow loops.
 
-### Cursor supervisor
+### Codex supervisor
 
-The supervisor agent (Cursor agent running Fable) acts as the supervisor and final reviewer.
+The supervisor agent (Codex running GPT-5.6 Sol) is the sole controller and final acceptor.
 
 Responsibilities:
 - Read the detailed design prompt in `.ai/supervisor/design_prompt.md`.
 - Maintain high-level project state in `.ai/supervisor/`.
 - Create small, reviewable jobs under `.ai/jobs/JNNNN/`.
-- Review Cursor worker reports, tests, diffs, and commit documentation.
-- Review read-only Cursor reviewer reports when the reviewer stage is enabled.
+- Review Codex worker reports, tests, diffs, and commit documentation.
+- Review read-only Codex reviewer reports when the reviewer stage is enabled.
 - Diagnose repeated worker failure modes and revise, split, or replace the
   worker assignment before escalating to human review when the supervisor can
   resolve the blocker.
@@ -66,7 +66,7 @@ Responsibilities:
 
 ### Modulator
 
-The modulator is an always-on watchdog/steering agent (Cursor agent running Fable 1M extra high) launched by `scripts/modulator_loop.sh`. Its protocol lives in `.ai/supervisor/modulator_protocol.md` and its state under `.ai/modulator/`.
+The modulator is a finite deterministic watchdog. It invokes one bounded GPT-5.6 Sol diagnosis only for a changed actionable event signature. `scripts/modulator_loop.sh` is a deprecated finite shim; watchdog state is project/checkout/run scoped.
 
 Responsibilities:
 - Own all failure handling between preset human boundary gates: an open human review gate, a `SUPERVISOR_ACTION_REQUIRED` request, `review_failed`/`review_timeout` job states, repeated rejected attempts on one job, dead worker/supervisor loops with pending work, alive-but-hung worker runs (stalled log), and periodic mid-tranche progress audits.
@@ -78,9 +78,9 @@ Responsibilities:
 - Never clear preset boundary gates unless `MODULATOR_CLEARS_PRESET_BOUNDARIES=1` is explicitly configured.
 - Never implement scientific project code, accept/reject jobs, or edit supervisor-owned planning files other than its own findings/audit records.
 
-### Cursor worker
+### Codex worker
 
-Cursor acts as the implementation worker.
+Codex running GPT-5.6 Sol acts as the bounded implementation worker.
 
 Responsibilities:
 - Implement exactly one assigned job.
@@ -94,9 +94,9 @@ Responsibilities:
 - Never broaden scope without supervisor approval.
 - Never directly edit supervisor-owned planning files such as `.ai/supervisor/roadmap.md`, `.ai/supervisor/project_brief.md`, or `.ai/supervisor/ledger.md`; if roadmap or milestone changes appear necessary, propose them in the worker report for the supervisor to handle.
 
-### Cursor reviewers
+### Codex reviewers
 
-When enabled, two read-only Cursor reviewer passes run after a worker attempt:
+When enabled by risk policy, read-only Codex reviewer passes run after a worker attempt:
 - Reviewer A checks scientific/numerical correctness, assumptions, tolerances, edge cases, and validation evidence.
 - Reviewer B checks build/code quality, Kokkos/MPI/OpenMP/SYCL portability, memory layout, tests, and maintainability.
 

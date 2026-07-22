@@ -18,6 +18,7 @@ from aiflow.state.store import (  # noqa: E402
     RevisionConflict,
     RunStore,
 )
+from aiflow.state.atomic import atomic_write_json, signed  # noqa: E402
 
 
 def init_project(path: Path) -> None:
@@ -176,6 +177,56 @@ class StateStoreTests(unittest.TestCase):
             self.assertFalse(first.lease_file.exists())
             self.assertTrue(second.lease_file.exists())
             self.assertEqual(second.read_run()["run_id"], "same-run-name")
+
+    def test_corrupt_snapshot_repairs_from_checksum_chained_events_with_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            init_project(project)
+            store = self.make_store(project)
+            store.transition(
+                0,
+                {"status": "PAUSED", "objective": "repair me"},
+                event_type="run_initialized",
+                task_updates={"tasks": [{"id": "T0001", "status": "READY"}]},
+                controller_id="controller-test",
+            )
+            payload = json.loads(store.run_file.read_text())
+            payload["status"] = "CORRUPT"
+            store.run_file.write_text(json.dumps(payload), encoding="utf-8")
+            result = store.repair()
+            self.assertEqual(result["status"], "repaired")
+            self.assertTrue(Path(result["backup"]).is_dir())
+            self.assertEqual(store.read_run()["status"], "PAUSED")
+            self.assertEqual(store.read_tasks()["tasks"][0]["id"], "T0001")
+            store.verify()
+
+    def test_current_schema_migration_is_an_idempotent_noop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            init_project(project)
+            store = self.make_store(project)
+            first = store.migrate()
+            second = store.migrate()
+            self.assertEqual(first["from_version"], 1)
+            self.assertEqual(first["to_version"], 1)
+            self.assertEqual(second["status"], "current")
+
+    def test_version_zero_snapshots_migrate_transactionally_to_current_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            init_project(project)
+            store = self.make_store(project, claim=False)
+            for path in (store.run_file, store.tasks_file):
+                payload = json.loads(path.read_text())
+                payload.pop("checksum")
+                payload["schema_version"] = 0
+                atomic_write_json(path, signed(payload))
+            result = store.migrate()
+            self.assertEqual(result["from_version"], 0)
+            self.assertEqual(result["to_version"], 1)
+            self.assertTrue(Path(result["backup"]).is_dir())
+            self.assertEqual(store.read_run()["schema_version"], 1)
+            store.verify()
 
 
 if __name__ == "__main__":

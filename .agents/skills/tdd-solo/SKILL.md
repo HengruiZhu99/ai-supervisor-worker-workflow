@@ -38,6 +38,27 @@ A full `DESIGN.md` or `GOAL.md` is not required for a bounded task.
 - Do not weaken acceptance criteria to pass.
 - Once a terminal state is recorded, stop.
 
+## Durable CLI protocol
+
+Use the installed tool against the explicit repository root:
+
+```text
+aiflow --project-root <repo> project verify
+aiflow --project-root <repo> run start --mode solo --objective "<bounded objective>" --acceptance-id <AC-ID>
+aiflow --project-root <repo> run status --run-id <run-id>
+aiflow --project-root <repo> state verify --run-id <run-id>
+aiflow --project-root <repo> quality check
+```
+
+Resume only through a finite invocation, for example:
+
+```text
+aiflow --project-root <repo> run resume --run-id <run-id> --max-wall-time 14400 --max-tasks 1 --max-attempts 3 --max-idle 900
+```
+
+Use `run stop --run-id <run-id>` only for the current checkout/run. Never edit snapshot
+JSON directly or invent another state format.
+
 ## Question budget
 
 Normal: zero.

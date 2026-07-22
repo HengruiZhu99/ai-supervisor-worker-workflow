@@ -40,6 +40,18 @@ Require:
 If the task is actually one bounded objective, stop as
 `AUTONOMOUS_RUN_SOLO_RECOMMENDED`.
 
+Verify and start through the deterministic CLI:
+
+```text
+aiflow --project-root <repo> project verify
+aiflow --project-root <repo> skills doctor
+aiflow --project-root <repo> run start --mode orchestrated --parent-sandbox workspace-write --objective "<accepted goal>" --acceptance-id <AC-ID>
+```
+
+Resume with explicit finite budgets and the verified parent sandbox. Use `state verify`,
+`quality check`, and the two-phase `integrate` command; never edit canonical snapshots or
+apply a candidate directly to the target branch.
+
 ## Agent topology
 
 The parent is sole controller, state writer, and integrator.

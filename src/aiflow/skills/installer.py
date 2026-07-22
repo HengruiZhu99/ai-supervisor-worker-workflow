@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from aiflow import __version__
+from aiflow.quality.config import DEFAULT_DEPRECATIONS_TOML, DEFAULT_QUALITY_TOML
 from aiflow.skills.manager import file_hash
 
 
@@ -92,12 +93,6 @@ class ProjectInstaller:
         self.config_dir = self.root / ".aiflow"
         self.lock_file = self.config_dir / "project.lock"
         self.skill_source = self.distribution_root / ".agents" / "skills"
-        self.reference = (
-            self.distribution_root
-            / "aiflow-v2-lightweight-multiproject-kit"
-            / "reference-config"
-            / ".aiflow"
-        )
 
     def _read_lock(self) -> dict[str, Any]:
         try:
@@ -139,17 +134,24 @@ class ProjectInstaller:
                 'bind = "127.0.0.1"\n'
             ).encode(),
         }
-        for name in ("quality.toml", "deprecations.toml"):
-            try:
-                desired[f".aiflow/{name}"] = (self.reference / name).read_bytes()
-            except OSError as exc:
-                raise InstallError(f"missing distribution config {name}: {exc}") from exc
+        desired[".aiflow/quality.toml"] = DEFAULT_QUALITY_TOML.encode()
+        deprecations = (
+            DEFAULT_DEPRECATIONS_TOML
+            if self.root == self.distribution_root
+            else "schema_version = 1\n"
+        )
+        desired[".aiflow/deprecations.toml"] = deprecations.encode()
         for skill_name in profile_skills(profile):
             source = self.skill_source / skill_name
             if not (source / "SKILL.md").is_file():
                 raise InstallError(f"profile {profile} requires unavailable skill: {skill_name}")
             for path in sorted(item for item in source.rglob("*") if item.is_file()):
                 relative = Path(".agents/skills") / skill_name / path.relative_to(source)
+                desired[relative.as_posix()] = path.read_bytes()
+        if profile in {"orchestrated", "full"}:
+            codex_source = self.distribution_root / ".codex"
+            for path in sorted(item for item in codex_source.rglob("*.toml") if item.is_file()):
+                relative = Path(".codex") / path.relative_to(codex_source)
                 desired[relative.as_posix()] = path.read_bytes()
         return desired
 
@@ -176,6 +178,11 @@ class ProjectInstaller:
                     digest.update(checksum.encode())
                     digest.update(b"\0")
             skill_hashes[name] = digest.hexdigest()
+        agent_hashes = {
+            Path(relative).stem: checksum
+            for relative, checksum in managed.items()
+            if relative.startswith(".codex/agents/") and relative.endswith(".toml")
+        }
         return {
             "schema_version": 1,
             "workflow_version": __version__,
@@ -183,7 +190,7 @@ class ProjectInstaller:
             "profile": profile,
             "installation_mode": mode,
             "skill_hashes": skill_hashes,
-            "custom_agent_hashes": {},
+            "custom_agent_hashes": agent_hashes,
             "managed_files": managed,
         }
 
@@ -274,7 +281,8 @@ class ProjectInstaller:
 
     def upgrade(self, profile: str) -> dict[str, Any]:
         verification = self.verify()
-        if not verification["ok"]:
+        self_hosted_distribution = self.root == self.distribution_root
+        if not verification["ok"] and not self_hosted_distribution:
             raise InstallError("managed files have drift; refusing upgrade")
         transaction_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         backup = self._backup(transaction_id)

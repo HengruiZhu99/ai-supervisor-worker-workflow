@@ -1,0 +1,5142 @@
+{
+  "captured_at": "2026-07-22",
+  "files": {
+    ".agents/skills/handoff-nr/scripts/state_probe.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 28,
+          "logical_lines": 15,
+          "name": "run_git"
+        },
+        {
+          "complexity": 2,
+          "line": 45,
+          "logical_lines": 6,
+          "name": "git_root"
+        },
+        {
+          "complexity": 2,
+          "line": 53,
+          "logical_lines": 6,
+          "name": "sha256_file"
+        },
+        {
+          "complexity": 1,
+          "line": 61,
+          "logical_lines": 7,
+          "name": "sanitize_remote"
+        },
+        {
+          "complexity": 3,
+          "line": 70,
+          "logical_lines": 8,
+          "name": "relative_or_input"
+        },
+        {
+          "complexity": 5,
+          "line": 80,
+          "logical_lines": 15,
+          "name": "normalize_ignored"
+        },
+        {
+          "complexity": 2,
+          "line": 97,
+          "logical_lines": 5,
+          "name": "pathspec_args"
+        },
+        {
+          "complexity": 12,
+          "line": 104,
+          "logical_lines": 57,
+          "name": "capture"
+        },
+        {
+          "complexity": 2,
+          "line": 163,
+          "logical_lines": 6,
+          "name": "load_json"
+        },
+        {
+          "complexity": 2,
+          "line": 171,
+          "logical_lines": 3,
+          "name": "contract_map"
+        },
+        {
+          "complexity": 8,
+          "line": 176,
+          "logical_lines": 46,
+          "name": "verify"
+        },
+        {
+          "complexity": 2,
+          "line": 224,
+          "logical_lines": 10,
+          "name": "write_json"
+        },
+        {
+          "complexity": 1,
+          "line": 236,
+          "logical_lines": 31,
+          "name": "parser"
+        },
+        {
+          "complexity": 8,
+          "line": 269,
+          "logical_lines": 19,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 242,
+      "parse_ok": true
+    },
+    "gui/app.js": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 923,
+      "parse_ok": true
+    },
+    "install.sh": {
+      "functions": [],
+      "hard_limit": 160,
+      "logical_lines": 155,
+      "parse_ok": true
+    },
+    "scripts/_workflow_wrapper.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 16,
+          "logical_lines": 2,
+          "name": "project_root"
+        },
+        {
+          "complexity": 4,
+          "line": 20,
+          "logical_lines": 17,
+          "name": "main_worktree"
+        },
+        {
+          "complexity": 4,
+          "line": 39,
+          "logical_lines": 10,
+          "name": "candidate_roots"
+        },
+        {
+          "complexity": 4,
+          "line": 51,
+          "logical_lines": 12,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 49,
+      "parse_ok": true
+    },
+    "scripts/_workflow_wrapper.sh": {
+      "functions": [],
+      "hard_limit": 160,
+      "logical_lines": 33,
+      "parse_ok": true
+    },
+    "scripts/agent_wrapper.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 31,
+          "logical_lines": 2,
+          "name": "package_root"
+        },
+        {
+          "complexity": 1,
+          "line": 35,
+          "logical_lines": 2,
+          "name": "wrappers_dir"
+        },
+        {
+          "complexity": 1,
+          "line": 39,
+          "logical_lines": 2,
+          "name": "read_json"
+        },
+        {
+          "complexity": 4,
+          "line": 43,
+          "logical_lines": 19,
+          "name": "load_wrappers"
+        },
+        {
+          "complexity": 3,
+          "line": 64,
+          "logical_lines": 5,
+          "name": "find_wrapper"
+        },
+        {
+          "complexity": 6,
+          "line": 71,
+          "logical_lines": 12,
+          "name": "normalize_cursor_model"
+        },
+        {
+          "complexity": 2,
+          "line": 85,
+          "logical_lines": 2,
+          "name": "split_extra_args"
+        },
+        {
+          "complexity": 3,
+          "line": 102,
+          "logical_lines": 7,
+          "name": "validate_parent_permissions"
+        },
+        {
+          "complexity": 2,
+          "line": 111,
+          "logical_lines": 3,
+          "name": "codex_permissions"
+        },
+        {
+          "complexity": 5,
+          "line": 116,
+          "logical_lines": 22,
+          "name": "build_codex_command"
+        },
+        {
+          "complexity": 7,
+          "line": 140,
+          "logical_lines": 21,
+          "name": "run_cursor_agent"
+        },
+        {
+          "complexity": 1,
+          "line": 163,
+          "logical_lines": 4,
+          "name": "run_codex"
+        },
+        {
+          "complexity": 5,
+          "line": 169,
+          "logical_lines": 15,
+          "name": "expand_custom_command"
+        },
+        {
+          "complexity": 1,
+          "line": 186,
+          "logical_lines": 3,
+          "name": "run_custom"
+        },
+        {
+          "complexity": 6,
+          "line": 191,
+          "logical_lines": 13,
+          "name": "cmd_list"
+        },
+        {
+          "complexity": 6,
+          "line": 206,
+          "logical_lines": 13,
+          "name": "cmd_run"
+        },
+        {
+          "complexity": 1,
+          "line": 221,
+          "logical_lines": 32,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 202,
+      "parse_ok": true
+    },
+    "scripts/aiflow.py": {
+      "functions": [
+        {
+          "complexity": 4,
+          "line": 38,
+          "logical_lines": 12,
+          "name": "git_root"
+        },
+        {
+          "complexity": 1,
+          "line": 52,
+          "logical_lines": 5,
+          "name": "_print_state"
+        },
+        {
+          "complexity": 12,
+          "line": 59,
+          "logical_lines": 34,
+          "name": "run_interview"
+        },
+        {
+          "complexity": 1,
+          "line": 95,
+          "logical_lines": 3,
+          "name": "_run"
+        },
+        {
+          "complexity": 7,
+          "line": 100,
+          "logical_lines": 21,
+          "name": "cmd_init"
+        },
+        {
+          "complexity": 1,
+          "line": 123,
+          "logical_lines": 4,
+          "name": "cmd_spec"
+        },
+        {
+          "complexity": 3,
+          "line": 129,
+          "logical_lines": 8,
+          "name": "cmd_gate"
+        },
+        {
+          "complexity": 4,
+          "line": 139,
+          "logical_lines": 10,
+          "name": "cmd_compile"
+        },
+        {
+          "complexity": 3,
+          "line": 151,
+          "logical_lines": 10,
+          "name": "cmd_start"
+        },
+        {
+          "complexity": 1,
+          "line": 163,
+          "logical_lines": 4,
+          "name": "cmd_status"
+        },
+        {
+          "complexity": 1,
+          "line": 169,
+          "logical_lines": 41,
+          "name": "main"
+        },
+        {
+          "complexity": 1,
+          "line": 174,
+          "logical_lines": 4,
+          "name": "add_interview_args"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 166,
+      "parse_ok": true
+    },
+    "scripts/analyze_reviewer_reports.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 29,
+          "logical_lines": 5,
+          "name": "read_text"
+        },
+        {
+          "complexity": 1,
+          "line": 36,
+          "logical_lines": 3,
+          "name": "extract_block"
+        },
+        {
+          "complexity": 3,
+          "line": 41,
+          "logical_lines": 8,
+          "name": "fallback_recommendation"
+        },
+        {
+          "complexity": 8,
+          "line": 51,
+          "logical_lines": 36,
+          "name": "parse_progress_review"
+        },
+        {
+          "complexity": 6,
+          "line": 89,
+          "logical_lines": 46,
+          "name": "analyze_one"
+        },
+        {
+          "complexity": 3,
+          "line": 137,
+          "logical_lines": 11,
+          "name": "write_json_atomic"
+        },
+        {
+          "complexity": 6,
+          "line": 150,
+          "logical_lines": 29,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 155,
+      "parse_ok": true
+    },
+    "scripts/architect.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 37,
+          "logical_lines": 2,
+          "name": "utc_now"
+        },
+        {
+          "complexity": 1,
+          "line": 41,
+          "logical_lines": 2,
+          "name": "architect_dir"
+        },
+        {
+          "complexity": 1,
+          "line": 45,
+          "logical_lines": 2,
+          "name": "session_path"
+        },
+        {
+          "complexity": 1,
+          "line": 49,
+          "logical_lines": 11,
+          "name": "new_session"
+        },
+        {
+          "complexity": 5,
+          "line": 62,
+          "logical_lines": 12,
+          "name": "load_session"
+        },
+        {
+          "complexity": 1,
+          "line": 76,
+          "logical_lines": 6,
+          "name": "save_session"
+        },
+        {
+          "complexity": 1,
+          "line": 84,
+          "logical_lines": 9,
+          "name": "write_spec_artifacts"
+        },
+        {
+          "complexity": 4,
+          "line": 95,
+          "logical_lines": 16,
+          "name": "_stream_to_text"
+        },
+        {
+          "complexity": 8,
+          "line": 113,
+          "logical_lines": 52,
+          "name": "make_default_runner"
+        },
+        {
+          "complexity": 7,
+          "line": 167,
+          "logical_lines": 41,
+          "name": "interview_turn"
+        },
+        {
+          "complexity": 4,
+          "line": 210,
+          "logical_lines": 11,
+          "name": "git_root"
+        },
+        {
+          "complexity": 1,
+          "line": 223,
+          "logical_lines": 13,
+          "name": "cmd_message"
+        },
+        {
+          "complexity": 1,
+          "line": 238,
+          "logical_lines": 12,
+          "name": "cmd_state"
+        },
+        {
+          "complexity": 1,
+          "line": 252,
+          "logical_lines": 5,
+          "name": "cmd_show"
+        },
+        {
+          "complexity": 3,
+          "line": 259,
+          "logical_lines": 2,
+          "name": "split_extra_args"
+        },
+        {
+          "complexity": 1,
+          "line": 263,
+          "logical_lines": 19,
+          "name": "main"
+        },
+        {
+          "complexity": 8,
+          "line": 124,
+          "logical_lines": 39,
+          "name": "run"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 225,
+      "parse_ok": true
+    },
+    "scripts/architect_compile.py": {
+      "functions": [
+        {
+          "complexity": 4,
+          "line": 35,
+          "logical_lines": 11,
+          "name": "git_root"
+        },
+        {
+          "complexity": 3,
+          "line": 48,
+          "logical_lines": 8,
+          "name": "_write"
+        },
+        {
+          "complexity": 11,
+          "line": 58,
+          "logical_lines": 62,
+          "name": "render_first_job_task"
+        },
+        {
+          "complexity": 3,
+          "line": 122,
+          "logical_lines": 15,
+          "name": "create_first_job"
+        },
+        {
+          "complexity": 13,
+          "line": 139,
+          "logical_lines": 79,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 189,
+      "parse_ok": true
+    },
+    "scripts/architect_core.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 54,
+          "logical_lines": 26,
+          "name": "new_spec"
+        },
+        {
+          "complexity": 9,
+          "line": 82,
+          "logical_lines": 20,
+          "name": "_upsert_by_id"
+        },
+        {
+          "complexity": 13,
+          "line": 110,
+          "logical_lines": 28,
+          "name": "apply_update"
+        },
+        {
+          "complexity": 8,
+          "line": 140,
+          "logical_lines": 16,
+          "name": "extract_architect_update"
+        },
+        {
+          "complexity": 3,
+          "line": 162,
+          "logical_lines": 2,
+          "name": "_acceptance_ids"
+        },
+        {
+          "complexity": 3,
+          "line": 166,
+          "logical_lines": 6,
+          "name": "acceptance_for_requirement"
+        },
+        {
+          "complexity": 40,
+          "line": 174,
+          "logical_lines": 79,
+          "name": "spec_completeness"
+        },
+        {
+          "complexity": 8,
+          "line": 259,
+          "logical_lines": 14,
+          "name": "_coerce_scalar"
+        },
+        {
+          "complexity": 9,
+          "line": 275,
+          "logical_lines": 30,
+          "name": "parse_simple_yaml"
+        },
+        {
+          "complexity": 7,
+          "line": 307,
+          "logical_lines": 11,
+          "name": "_dump_value"
+        },
+        {
+          "complexity": 5,
+          "line": 320,
+          "logical_lines": 12,
+          "name": "dump_simple_yaml"
+        },
+        {
+          "complexity": 4,
+          "line": 338,
+          "logical_lines": 38,
+          "name": "default_project_yaml"
+        },
+        {
+          "complexity": 7,
+          "line": 382,
+          "logical_lines": 15,
+          "name": "render_requirements_md"
+        },
+        {
+          "complexity": 3,
+          "line": 399,
+          "logical_lines": 14,
+          "name": "render_acceptance_md"
+        },
+        {
+          "complexity": 9,
+          "line": 415,
+          "logical_lines": 21,
+          "name": "render_milestones_md"
+        },
+        {
+          "complexity": 3,
+          "line": 438,
+          "logical_lines": 9,
+          "name": "render_risks_md"
+        },
+        {
+          "complexity": 3,
+          "line": 449,
+          "logical_lines": 9,
+          "name": "render_glossary_md"
+        },
+        {
+          "complexity": 7,
+          "line": 464,
+          "logical_lines": 42,
+          "name": "render_design_prompt"
+        },
+        {
+          "complexity": 2,
+          "line": 508,
+          "logical_lines": 19,
+          "name": "render_project_brief"
+        },
+        {
+          "complexity": 4,
+          "line": 529,
+          "logical_lines": 10,
+          "name": "milestone_dod_block"
+        },
+        {
+          "complexity": 5,
+          "line": 541,
+          "logical_lines": 20,
+          "name": "render_roadmap"
+        },
+        {
+          "complexity": 1,
+          "line": 563,
+          "logical_lines": 9,
+          "name": "render_ledger_seed"
+        },
+        {
+          "complexity": 10,
+          "line": 585,
+          "logical_lines": 61,
+          "name": "build_autonomy_delegation"
+        },
+        {
+          "complexity": 9,
+          "line": 708,
+          "logical_lines": 22,
+          "name": "render_spec_summary"
+        },
+        {
+          "complexity": 4,
+          "line": 732,
+          "logical_lines": 17,
+          "name": "build_interview_prompt"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 628,
+      "parse_ok": true
+    },
+    "scripts/check_attempt_consistency.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 29,
+          "logical_lines": 2,
+          "name": "run"
+        },
+        {
+          "complexity": 2,
+          "line": 33,
+          "logical_lines": 5,
+          "name": "git_root"
+        },
+        {
+          "complexity": 2,
+          "line": 40,
+          "logical_lines": 5,
+          "name": "read_text"
+        },
+        {
+          "complexity": 2,
+          "line": 47,
+          "logical_lines": 5,
+          "name": "read_json"
+        },
+        {
+          "complexity": 7,
+          "line": 54,
+          "logical_lines": 13,
+          "name": "commit_count"
+        },
+        {
+          "complexity": 5,
+          "line": 69,
+          "logical_lines": 7,
+          "name": "attempt_commits"
+        },
+        {
+          "complexity": 4,
+          "line": 78,
+          "logical_lines": 5,
+          "name": "sha_matches_attempt"
+        },
+        {
+          "complexity": 2,
+          "line": 85,
+          "logical_lines": 2,
+          "name": "test_log_has_command"
+        },
+        {
+          "complexity": 4,
+          "line": 89,
+          "logical_lines": 25,
+          "name": "consistency_claim_text"
+        },
+        {
+          "complexity": 31,
+          "line": 116,
+          "logical_lines": 101,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 173,
+      "parse_ok": true
+    },
+    "scripts/check_autonomy_boundary.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 19,
+          "logical_lines": 5,
+          "name": "normalize_milestone"
+        },
+        {
+          "complexity": 3,
+          "line": 26,
+          "logical_lines": 7,
+          "name": "load_config"
+        },
+        {
+          "complexity": 13,
+          "line": 35,
+          "logical_lines": 48,
+          "name": "check_transition"
+        },
+        {
+          "complexity": 5,
+          "line": 85,
+          "logical_lines": 28,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 92,
+      "parse_ok": true
+    },
+    "scripts/check_job_progress_gate.py": {
+      "functions": [
+        {
+          "complexity": 4,
+          "line": 166,
+          "logical_lines": 5,
+          "name": "unquote"
+        },
+        {
+          "complexity": 3,
+          "line": 173,
+          "logical_lines": 7,
+          "name": "parse_bool"
+        },
+        {
+          "complexity": 8,
+          "line": 182,
+          "logical_lines": 21,
+          "name": "extract_progress_block"
+        },
+        {
+          "complexity": 1,
+          "line": 205,
+          "logical_lines": 2,
+          "name": "normalize_label"
+        },
+        {
+          "complexity": 3,
+          "line": 209,
+          "logical_lines": 12,
+          "name": "extract_markdown_section"
+        },
+        {
+          "complexity": 3,
+          "line": 223,
+          "logical_lines": 8,
+          "name": "extract_labeled_bullets"
+        },
+        {
+          "complexity": 4,
+          "line": 233,
+          "logical_lines": 15,
+          "name": "validate_upstream_trace"
+        },
+        {
+          "complexity": 4,
+          "line": 250,
+          "logical_lines": 7,
+          "name": "vague_unlock"
+        },
+        {
+          "complexity": 43,
+          "line": 259,
+          "logical_lines": 96,
+          "name": "progress_from_block"
+        },
+        {
+          "complexity": 2,
+          "line": 357,
+          "logical_lines": 6,
+          "name": "target_progress"
+        },
+        {
+          "complexity": 3,
+          "line": 365,
+          "logical_lines": 5,
+          "name": "repository_root_from_jobs_dir"
+        },
+        {
+          "complexity": 1,
+          "line": 372,
+          "logical_lines": 2,
+          "name": "priority_lock_file"
+        },
+        {
+          "complexity": 6,
+          "line": 376,
+          "logical_lines": 19,
+          "name": "priority_lock_applies"
+        },
+        {
+          "complexity": 22,
+          "line": 397,
+          "logical_lines": 19,
+          "name": "infer_subsystem"
+        },
+        {
+          "complexity": 11,
+          "line": 418,
+          "logical_lines": 34,
+          "name": "infer_legacy_progress"
+        },
+        {
+          "complexity": 3,
+          "line": 454,
+          "logical_lines": 7,
+          "name": "job_number"
+        },
+        {
+          "complexity": 3,
+          "line": 463,
+          "logical_lines": 5,
+          "name": "current_job_id"
+        },
+        {
+          "complexity": 8,
+          "line": 470,
+          "logical_lines": 19,
+          "name": "history_progress"
+        },
+        {
+          "complexity": 10,
+          "line": 491,
+          "logical_lines": 24,
+          "name": "metadata_streak"
+        },
+        {
+          "complexity": 10,
+          "line": 517,
+          "logical_lines": 23,
+          "name": "no_acceptance_delta_streak"
+        },
+        {
+          "complexity": 1,
+          "line": 542,
+          "logical_lines": 11,
+          "name": "parse_args"
+        },
+        {
+          "complexity": 4,
+          "line": 555,
+          "logical_lines": 8,
+          "name": "result_payload"
+        },
+        {
+          "complexity": 11,
+          "line": 565,
+          "logical_lines": 49,
+          "name": "main"
+        },
+        {
+          "complexity": 2,
+          "line": 134,
+          "logical_lines": 2,
+          "name": "metadata_like"
+        },
+        {
+          "complexity": 1,
+          "line": 137,
+          "logical_lines": 14,
+          "name": "to_dict"
+        },
+        {
+          "complexity": 1,
+          "line": 152,
+          "logical_lines": 12,
+          "name": "status_fields"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 534,
+      "parse_ok": true
+    },
+    "scripts/check_reviewer_coverage.py": {
+      "functions": [
+        {
+          "complexity": 6,
+          "line": 23,
+          "logical_lines": 12,
+          "name": "changed_files"
+        },
+        {
+          "complexity": 3,
+          "line": 37,
+          "logical_lines": 11,
+          "name": "extract_coverage_block"
+        },
+        {
+          "complexity": 5,
+          "line": 50,
+          "logical_lines": 15,
+          "name": "parse_report"
+        },
+        {
+          "complexity": 7,
+          "line": 67,
+          "logical_lines": 29,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 77,
+      "parse_ok": true
+    },
+    "scripts/check_spec_completeness.py": {
+      "functions": [
+        {
+          "complexity": 4,
+          "line": 39,
+          "logical_lines": 11,
+          "name": "git_root"
+        },
+        {
+          "complexity": 2,
+          "line": 52,
+          "logical_lines": 28,
+          "name": "build_spec_review_prompt"
+        },
+        {
+          "complexity": 7,
+          "line": 82,
+          "logical_lines": 56,
+          "name": "run_consensus_gate"
+        },
+        {
+          "complexity": 7,
+          "line": 140,
+          "logical_lines": 59,
+          "name": "main"
+        },
+        {
+          "complexity": 9,
+          "line": 201,
+          "logical_lines": 16,
+          "name": "_emit"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 187,
+      "parse_ok": true
+    },
+    "scripts/clean_worker_submodules.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 16,
+          "logical_lines": 9,
+          "name": "run"
+        },
+        {
+          "complexity": 2,
+          "line": 27,
+          "logical_lines": 5,
+          "name": "status_for"
+        },
+        {
+          "complexity": 5,
+          "line": 34,
+          "logical_lines": 13,
+          "name": "submodule_paths"
+        },
+        {
+          "complexity": 6,
+          "line": 49,
+          "logical_lines": 9,
+          "name": "load_paths"
+        },
+        {
+          "complexity": 4,
+          "line": 60,
+          "logical_lines": 10,
+          "name": "append_result"
+        },
+        {
+          "complexity": 9,
+          "line": 72,
+          "logical_lines": 38,
+          "name": "clean_submodule"
+        },
+        {
+          "complexity": 8,
+          "line": 112,
+          "logical_lines": 51,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 131,
+      "parse_ok": true
+    },
+    "scripts/collect_agent_metrics.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 28,
+          "logical_lines": 2,
+          "name": "utc_now"
+        },
+        {
+          "complexity": 4,
+          "line": 32,
+          "logical_lines": 10,
+          "name": "parse_time"
+        },
+        {
+          "complexity": 2,
+          "line": 44,
+          "logical_lines": 5,
+          "name": "iso_or_now"
+        },
+        {
+          "complexity": 2,
+          "line": 51,
+          "logical_lines": 6,
+          "name": "iso_from_timestamp_ms"
+        },
+        {
+          "complexity": 3,
+          "line": 59,
+          "logical_lines": 6,
+          "name": "elapsed_ms"
+        },
+        {
+          "complexity": 2,
+          "line": 67,
+          "logical_lines": 11,
+          "name": "git_root"
+        },
+        {
+          "complexity": 6,
+          "line": 80,
+          "logical_lines": 18,
+          "name": "read_jsonl"
+        },
+        {
+          "complexity": 6,
+          "line": 100,
+          "logical_lines": 11,
+          "name": "sum_usage"
+        },
+        {
+          "complexity": 25,
+          "line": 113,
+          "logical_lines": 50,
+          "name": "cursor_metrics"
+        },
+        {
+          "complexity": 2,
+          "line": 165,
+          "logical_lines": 14,
+          "name": "parse_codex_tokens"
+        },
+        {
+          "complexity": 19,
+          "line": 181,
+          "logical_lines": 53,
+          "name": "plain_log_metrics"
+        },
+        {
+          "complexity": 1,
+          "line": 236,
+          "logical_lines": 2,
+          "name": "codex_metrics"
+        },
+        {
+          "complexity": 6,
+          "line": 240,
+          "logical_lines": 19,
+          "name": "write_metrics"
+        },
+        {
+          "complexity": 3,
+          "line": 261,
+          "logical_lines": 64,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 276,
+      "parse_ok": true
+    },
+    "scripts/commit_workflow_records.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 29,
+          "logical_lines": 2,
+          "name": "run"
+        },
+        {
+          "complexity": 2,
+          "line": 33,
+          "logical_lines": 5,
+          "name": "git_root"
+        },
+        {
+          "complexity": 2,
+          "line": 40,
+          "logical_lines": 5,
+          "name": "job_state"
+        },
+        {
+          "complexity": 3,
+          "line": 47,
+          "logical_lines": 6,
+          "name": "stable_job_ids"
+        },
+        {
+          "complexity": 5,
+          "line": 55,
+          "logical_lines": 17,
+          "name": "active_job_control_paths"
+        },
+        {
+          "complexity": 4,
+          "line": 74,
+          "logical_lines": 7,
+          "name": "commit_doc_paths"
+        },
+        {
+          "complexity": 6,
+          "line": 83,
+          "logical_lines": 15,
+          "name": "supervisor_markdown_paths"
+        },
+        {
+          "complexity": 5,
+          "line": 100,
+          "logical_lines": 18,
+          "name": "existing_pathspecs"
+        },
+        {
+          "complexity": 1,
+          "line": 120,
+          "logical_lines": 3,
+          "name": "has_staged_changes"
+        },
+        {
+          "complexity": 11,
+          "line": 125,
+          "logical_lines": 36,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 126,
+      "parse_ok": true
+    },
+    "scripts/consensus_core.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 69,
+          "logical_lines": 3,
+          "name": "normalize_token"
+        },
+        {
+          "complexity": 11,
+          "line": 74,
+          "logical_lines": 18,
+          "name": "normalize_verdict"
+        },
+        {
+          "complexity": 5,
+          "line": 94,
+          "logical_lines": 9,
+          "name": "normalize_agreement"
+        },
+        {
+          "complexity": 7,
+          "line": 105,
+          "logical_lines": 20,
+          "name": "_reviewer_blocks"
+        },
+        {
+          "complexity": 15,
+          "line": 127,
+          "logical_lines": 61,
+          "name": "parse_vote"
+        },
+        {
+          "complexity": 16,
+          "line": 190,
+          "logical_lines": 43,
+          "name": "evaluate_round"
+        },
+        {
+          "complexity": 5,
+          "line": 235,
+          "logical_lines": 10,
+          "name": "round_converged"
+        },
+        {
+          "complexity": 24,
+          "line": 247,
+          "logical_lines": 118,
+          "name": "synthesize"
+        },
+        {
+          "complexity": 10,
+          "line": 367,
+          "logical_lines": 62,
+          "name": "consensus_to_reviewer_decisions"
+        },
+        {
+          "complexity": 13,
+          "line": 431,
+          "logical_lines": 62,
+          "name": "render_consensus_markdown"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 412,
+      "parse_ok": true
+    },
+    "scripts/create_commit_doc.py": {
+      "functions": [
+        {
+          "complexity": 3,
+          "line": 17,
+          "logical_lines": 12,
+          "name": "run_git"
+        },
+        {
+          "complexity": 3,
+          "line": 31,
+          "logical_lines": 8,
+          "name": "read_text"
+        },
+        {
+          "complexity": 2,
+          "line": 41,
+          "logical_lines": 6,
+          "name": "tail_text"
+        },
+        {
+          "complexity": 7,
+          "line": 49,
+          "logical_lines": 17,
+          "name": "extract_section"
+        },
+        {
+          "complexity": 3,
+          "line": 68,
+          "logical_lines": 7,
+          "name": "read_json"
+        },
+        {
+          "complexity": 18,
+          "line": 77,
+          "logical_lines": 151,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 142,
+      "parse_ok": true
+    },
+    "scripts/create_job.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 20,
+          "logical_lines": 2,
+          "name": "utc_now"
+        },
+        {
+          "complexity": 3,
+          "line": 24,
+          "logical_lines": 14,
+          "name": "git_root"
+        },
+        {
+          "complexity": 6,
+          "line": 40,
+          "logical_lines": 12,
+          "name": "next_job_id"
+        },
+        {
+          "complexity": 2,
+          "line": 54,
+          "logical_lines": 12,
+          "name": "resolve_ref"
+        },
+        {
+          "complexity": 6,
+          "line": 68,
+          "logical_lines": 20,
+          "name": "run_progress_gate"
+        },
+        {
+          "complexity": 5,
+          "line": 93,
+          "logical_lines": 13,
+          "name": "active_jobs"
+        },
+        {
+          "complexity": 10,
+          "line": 108,
+          "logical_lines": 84,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 158,
+      "parse_ok": true
+    },
+    "scripts/cursor_stream_to_text.py": {
+      "functions": [
+        {
+          "complexity": 9,
+          "line": 25,
+          "logical_lines": 12,
+          "name": "iter_text"
+        },
+        {
+          "complexity": 5,
+          "line": 39,
+          "logical_lines": 10,
+          "name": "event_marker"
+        },
+        {
+          "complexity": 14,
+          "line": 51,
+          "logical_lines": 35,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 67,
+      "parse_ok": true
+    },
+    "scripts/extract_worker_handoff.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 37,
+          "logical_lines": 5,
+          "name": "read_text"
+        },
+        {
+          "complexity": 1,
+          "line": 44,
+          "logical_lines": 2,
+          "name": "clean_line"
+        },
+        {
+          "complexity": 6,
+          "line": 48,
+          "logical_lines": 19,
+          "name": "final_structured_region"
+        },
+        {
+          "complexity": 11,
+          "line": 69,
+          "logical_lines": 24,
+          "name": "parse_sections"
+        },
+        {
+          "complexity": 4,
+          "line": 95,
+          "logical_lines": 34,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 101,
+      "parse_ok": true
+    },
+    "scripts/filter_allowed_artifacts.py": {
+      "functions": [
+        {
+          "complexity": 3,
+          "line": 16,
+          "logical_lines": 4,
+          "name": "status_path"
+        },
+        {
+          "complexity": 6,
+          "line": 22,
+          "logical_lines": 10,
+          "name": "load_patterns"
+        },
+        {
+          "complexity": 3,
+          "line": 34,
+          "logical_lines": 2,
+          "name": "allowed"
+        },
+        {
+          "complexity": 6,
+          "line": 38,
+          "logical_lines": 19,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 41,
+      "parse_ok": true
+    },
+    "scripts/human_milestone_review.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 31,
+          "logical_lines": 2,
+          "name": "utc_stamp"
+        },
+        {
+          "complexity": 1,
+          "line": 35,
+          "logical_lines": 2,
+          "name": "run"
+        },
+        {
+          "complexity": 3,
+          "line": 39,
+          "logical_lines": 8,
+          "name": "git_root"
+        },
+        {
+          "complexity": 9,
+          "line": 49,
+          "logical_lines": 15,
+          "name": "extract_checklist"
+        },
+        {
+          "complexity": 4,
+          "line": 66,
+          "logical_lines": 8,
+          "name": "ask_yes_no"
+        },
+        {
+          "complexity": 3,
+          "line": 76,
+          "logical_lines": 9,
+          "name": "ask_multiline"
+        },
+        {
+          "complexity": 1,
+          "line": 87,
+          "logical_lines": 2,
+          "name": "ask_comment"
+        },
+        {
+          "complexity": 4,
+          "line": 91,
+          "logical_lines": 12,
+          "name": "active_jobs"
+        },
+        {
+          "complexity": 11,
+          "line": 105,
+          "logical_lines": 37,
+          "name": "write_review_record"
+        },
+        {
+          "complexity": 4,
+          "line": 144,
+          "logical_lines": 75,
+          "name": "create_revision_task"
+        },
+        {
+          "complexity": 2,
+          "line": 221,
+          "logical_lines": 74,
+          "name": "create_structural_change_request"
+        },
+        {
+          "complexity": 4,
+          "line": 297,
+          "logical_lines": 59,
+          "name": "create_human_review_action_request"
+        },
+        {
+          "complexity": 4,
+          "line": 358,
+          "logical_lines": 18,
+          "name": "create_job"
+        },
+        {
+          "complexity": 2,
+          "line": 378,
+          "logical_lines": 7,
+          "name": "append_ledger"
+        },
+        {
+          "complexity": 6,
+          "line": 387,
+          "logical_lines": 9,
+          "name": "prune_accepted_job_refs"
+        },
+        {
+          "complexity": 6,
+          "line": 398,
+          "logical_lines": 9,
+          "name": "commit_workflow_records"
+        },
+        {
+          "complexity": 2,
+          "line": 409,
+          "logical_lines": 5,
+          "name": "current_branch"
+        },
+        {
+          "complexity": 9,
+          "line": 416,
+          "logical_lines": 18,
+          "name": "push_after_human_review"
+        },
+        {
+          "complexity": 4,
+          "line": 436,
+          "logical_lines": 16,
+          "name": "pid_running"
+        },
+        {
+          "complexity": 3,
+          "line": 454,
+          "logical_lines": 6,
+          "name": "read_pid"
+        },
+        {
+          "complexity": 1,
+          "line": 462,
+          "logical_lines": 2,
+          "name": "loop_lock_dir"
+        },
+        {
+          "complexity": 1,
+          "line": 466,
+          "logical_lines": 2,
+          "name": "loop_lock_pid_path"
+        },
+        {
+          "complexity": 5,
+          "line": 470,
+          "logical_lines": 13,
+          "name": "remove_stale_loop_lock"
+        },
+        {
+          "complexity": 3,
+          "line": 485,
+          "logical_lines": 33,
+          "name": "default_loop_env"
+        },
+        {
+          "complexity": 4,
+          "line": 520,
+          "logical_lines": 58,
+          "name": "start_loop"
+        },
+        {
+          "complexity": 1,
+          "line": 580,
+          "logical_lines": 5,
+          "name": "auto_start_loops"
+        },
+        {
+          "complexity": 14,
+          "line": 587,
+          "logical_lines": 119,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 626,
+      "parse_ok": true
+    },
+    "scripts/integrate_job.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 18,
+          "logical_lines": 2,
+          "name": "run"
+        },
+        {
+          "complexity": 2,
+          "line": 22,
+          "logical_lines": 5,
+          "name": "git_root"
+        },
+        {
+          "complexity": 2,
+          "line": 29,
+          "logical_lines": 6,
+          "name": "load_status"
+        },
+        {
+          "complexity": 4,
+          "line": 37,
+          "logical_lines": 7,
+          "name": "require_clean_main"
+        },
+        {
+          "complexity": 14,
+          "line": 46,
+          "logical_lines": 23,
+          "name": "progress_gate"
+        },
+        {
+          "complexity": 25,
+          "line": 71,
+          "logical_lines": 51,
+          "name": "verify"
+        },
+        {
+          "complexity": 7,
+          "line": 124,
+          "logical_lines": 29,
+          "name": "print_summary"
+        },
+        {
+          "complexity": 6,
+          "line": 155,
+          "logical_lines": 14,
+          "name": "integrate"
+        },
+        {
+          "complexity": 5,
+          "line": 171,
+          "logical_lines": 24,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 169,
+      "parse_ok": true
+    },
+    "scripts/lib/agent_run.sh": {
+      "functions": [],
+      "hard_limit": 160,
+      "logical_lines": 35,
+      "parse_ok": true
+    },
+    "scripts/list_skills.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 15,
+          "logical_lines": 2,
+          "name": "run"
+        },
+        {
+          "complexity": 2,
+          "line": 19,
+          "logical_lines": 5,
+          "name": "git_root"
+        },
+        {
+          "complexity": 5,
+          "line": 26,
+          "logical_lines": 14,
+          "name": "metadata"
+        },
+        {
+          "complexity": 2,
+          "line": 42,
+          "logical_lines": 5,
+          "name": "iter_skill_files"
+        },
+        {
+          "complexity": 12,
+          "line": 49,
+          "logical_lines": 58,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 89,
+      "parse_ok": true
+    },
+    "scripts/modulator_loop.sh": {
+      "functions": [],
+      "hard_limit": 160,
+      "logical_lines": 573,
+      "parse_ok": true
+    },
+    "scripts/orchestrator.py": {
+      "functions": [
+        {
+          "complexity": 4,
+          "line": 100,
+          "logical_lines": 14,
+          "name": "git_root"
+        },
+        {
+          "complexity": 1,
+          "line": 116,
+          "logical_lines": 2,
+          "name": "load_panel_file"
+        },
+        {
+          "complexity": 7,
+          "line": 120,
+          "logical_lines": 17,
+          "name": "resolve_panel_spec"
+        },
+        {
+          "complexity": 18,
+          "line": 139,
+          "logical_lines": 30,
+          "name": "build_panel"
+        },
+        {
+          "complexity": 15,
+          "line": 171,
+          "logical_lines": 82,
+          "name": "consensus_protocol_preamble"
+        },
+        {
+          "complexity": 1,
+          "line": 255,
+          "logical_lines": 11,
+          "name": "build_panelist_prompt"
+        },
+        {
+          "complexity": 3,
+          "line": 268,
+          "logical_lines": 2,
+          "name": "split_extra_args"
+        },
+        {
+          "complexity": 16,
+          "line": 272,
+          "logical_lines": 85,
+          "name": "make_default_runner"
+        },
+        {
+          "complexity": 4,
+          "line": 359,
+          "logical_lines": 16,
+          "name": "stream_to_text"
+        },
+        {
+          "complexity": 6,
+          "line": 377,
+          "logical_lines": 38,
+          "name": "collect_metrics"
+        },
+        {
+          "complexity": 24,
+          "line": 417,
+          "logical_lines": 116,
+          "name": "run_consensus"
+        },
+        {
+          "complexity": 4,
+          "line": 535,
+          "logical_lines": 6,
+          "name": "consensus_exit_code"
+        },
+        {
+          "complexity": 9,
+          "line": 543,
+          "logical_lines": 46,
+          "name": "cmd_run"
+        },
+        {
+          "complexity": 4,
+          "line": 591,
+          "logical_lines": 13,
+          "name": "cmd_list_panels"
+        },
+        {
+          "complexity": 1,
+          "line": 606,
+          "logical_lines": 33,
+          "name": "main"
+        },
+        {
+          "complexity": 16,
+          "line": 275,
+          "logical_lines": 80,
+          "name": "run"
+        },
+        {
+          "complexity": 3,
+          "line": 441,
+          "logical_lines": 16,
+          "name": "run_one"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 545,
+      "parse_ok": true
+    },
+    "scripts/prune_accepted_job_refs.py": {
+      "functions": [
+        {
+          "complexity": 5,
+          "line": 22,
+          "logical_lines": 5,
+          "name": "run"
+        },
+        {
+          "complexity": 2,
+          "line": 29,
+          "logical_lines": 5,
+          "name": "git_root"
+        },
+        {
+          "complexity": 3,
+          "line": 36,
+          "logical_lines": 8,
+          "name": "unique"
+        },
+        {
+          "complexity": 2,
+          "line": 46,
+          "logical_lines": 6,
+          "name": "review_is_approved"
+        },
+        {
+          "complexity": 1,
+          "line": 54,
+          "logical_lines": 3,
+          "name": "jobs_from_review"
+        },
+        {
+          "complexity": 2,
+          "line": 59,
+          "logical_lines": 3,
+          "name": "approved_review_records"
+        },
+        {
+          "complexity": 2,
+          "line": 64,
+          "logical_lines": 6,
+          "name": "read_status"
+        },
+        {
+          "complexity": 1,
+          "line": 72,
+          "logical_lines": 2,
+          "name": "branch_exists"
+        },
+        {
+          "complexity": 8,
+          "line": 76,
+          "logical_lines": 20,
+          "name": "worktree_paths_for_branch"
+        },
+        {
+          "complexity": 18,
+          "line": 98,
+          "logical_lines": 45,
+          "name": "prune_job"
+        },
+        {
+          "complexity": 20,
+          "line": 145,
+          "logical_lines": 58,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 158,
+      "parse_ok": true
+    },
+    "scripts/record_workflow_event.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 21,
+          "logical_lines": 2,
+          "name": "utc_now"
+        },
+        {
+          "complexity": 6,
+          "line": 25,
+          "logical_lines": 16,
+          "name": "parse_value"
+        },
+        {
+          "complexity": 2,
+          "line": 43,
+          "logical_lines": 11,
+          "name": "git_root"
+        },
+        {
+          "complexity": 3,
+          "line": 56,
+          "logical_lines": 3,
+          "name": "safe_token"
+        },
+        {
+          "complexity": 1,
+          "line": 61,
+          "logical_lines": 5,
+          "name": "append_jsonl"
+        },
+        {
+          "complexity": 3,
+          "line": 68,
+          "logical_lines": 11,
+          "name": "write_json_atomic"
+        },
+        {
+          "complexity": 4,
+          "line": 81,
+          "logical_lines": 54,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 112,
+      "parse_ok": true
+    },
+    "scripts/record_workflow_improvement.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 24,
+          "logical_lines": 2,
+          "name": "run"
+        },
+        {
+          "complexity": 2,
+          "line": 28,
+          "logical_lines": 5,
+          "name": "git_root"
+        },
+        {
+          "complexity": 1,
+          "line": 35,
+          "logical_lines": 2,
+          "name": "utc_now"
+        },
+        {
+          "complexity": 5,
+          "line": 39,
+          "logical_lines": 12,
+          "name": "next_id"
+        },
+        {
+          "complexity": 2,
+          "line": 53,
+          "logical_lines": 5,
+          "name": "ensure_header"
+        },
+        {
+          "complexity": 3,
+          "line": 60,
+          "logical_lines": 7,
+          "name": "read_optional"
+        },
+        {
+          "complexity": 5,
+          "line": 69,
+          "logical_lines": 27,
+          "name": "append_entry"
+        },
+        {
+          "complexity": 4,
+          "line": 98,
+          "logical_lines": 41,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 111,
+      "parse_ok": true
+    },
+    "scripts/render_worker_report.py": {
+      "functions": [
+        {
+          "complexity": 3,
+          "line": 16,
+          "logical_lines": 7,
+          "name": "read_text"
+        },
+        {
+          "complexity": 3,
+          "line": 25,
+          "logical_lines": 7,
+          "name": "read_json"
+        },
+        {
+          "complexity": 2,
+          "line": 34,
+          "logical_lines": 2,
+          "name": "bool_text"
+        },
+        {
+          "complexity": 2,
+          "line": 38,
+          "logical_lines": 2,
+          "name": "section"
+        },
+        {
+          "complexity": 5,
+          "line": 42,
+          "logical_lines": 90,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 97,
+      "parse_ok": true
+    },
+    "scripts/reviewer_report_parsing.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 38,
+          "logical_lines": 3,
+          "name": "fenced_blocks"
+        },
+        {
+          "complexity": 2,
+          "line": 43,
+          "logical_lines": 3,
+          "name": "is_template_block"
+        },
+        {
+          "complexity": 3,
+          "line": 48,
+          "logical_lines": 7,
+          "name": "count_machine_blocks"
+        },
+        {
+          "complexity": 7,
+          "line": 57,
+          "logical_lines": 23,
+          "name": "select_machine_block"
+        },
+        {
+          "complexity": 1,
+          "line": 82,
+          "logical_lines": 2,
+          "name": "parse_bool"
+        },
+        {
+          "complexity": 2,
+          "line": 86,
+          "logical_lines": 3,
+          "name": "parse_scalar"
+        },
+        {
+          "complexity": 8,
+          "line": 91,
+          "logical_lines": 22,
+          "name": "parse_list"
+        },
+        {
+          "complexity": 7,
+          "line": 115,
+          "logical_lines": 20,
+          "name": "section_block"
+        },
+        {
+          "complexity": 2,
+          "line": 137,
+          "logical_lines": 3,
+          "name": "parse_scalar_in_section"
+        },
+        {
+          "complexity": 2,
+          "line": 142,
+          "logical_lines": 3,
+          "name": "parse_list_in_section"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 108,
+      "parse_ok": true
+    },
+    "scripts/summarize_agent_metrics.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 15,
+          "logical_lines": 2,
+          "name": "fmt_int"
+        },
+        {
+          "complexity": 2,
+          "line": 19,
+          "logical_lines": 4,
+          "name": "fmt_seconds"
+        },
+        {
+          "complexity": 13,
+          "line": 25,
+          "logical_lines": 36,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 46,
+      "parse_ok": true
+    },
+    "scripts/summarize_jobs.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 31,
+          "logical_lines": 6,
+          "name": "read_status"
+        },
+        {
+          "complexity": 14,
+          "line": 39,
+          "logical_lines": 29,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 52,
+      "parse_ok": true
+    },
+    "scripts/summarize_progress_accounting.py": {
+      "functions": [
+        {
+          "complexity": 3,
+          "line": 52,
+          "logical_lines": 6,
+          "name": "parse_bool"
+        },
+        {
+          "complexity": 2,
+          "line": 60,
+          "logical_lines": 3,
+          "name": "job_number"
+        },
+        {
+          "complexity": 8,
+          "line": 65,
+          "logical_lines": 11,
+          "name": "in_job_range"
+        },
+        {
+          "complexity": 4,
+          "line": 78,
+          "logical_lines": 15,
+          "name": "progress_from_status"
+        },
+        {
+          "complexity": 2,
+          "line": 95,
+          "logical_lines": 5,
+          "name": "load_status"
+        },
+        {
+          "complexity": 11,
+          "line": 102,
+          "logical_lines": 22,
+          "name": "load_job_progress"
+        },
+        {
+          "complexity": 6,
+          "line": 126,
+          "logical_lines": 12,
+          "name": "selected_jobs"
+        },
+        {
+          "complexity": 9,
+          "line": 140,
+          "logical_lines": 45,
+          "name": "summarize"
+        },
+        {
+          "complexity": 13,
+          "line": 187,
+          "logical_lines": 43,
+          "name": "print_table"
+        },
+        {
+          "complexity": 1,
+          "line": 232,
+          "logical_lines": 9,
+          "name": "parse_args"
+        },
+        {
+          "complexity": 4,
+          "line": 243,
+          "logical_lines": 10,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 218,
+      "parse_ok": true
+    },
+    "scripts/supervisor_loop.sh": {
+      "functions": [],
+      "hard_limit": 160,
+      "logical_lines": 450,
+      "parse_ok": true
+    },
+    "scripts/test_analyze_reviewer_reports.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 22,
+          "logical_lines": 24,
+          "name": "report"
+        },
+        {
+          "complexity": 1,
+          "line": 49,
+          "logical_lines": 22,
+          "name": "run_analyzer"
+        },
+        {
+          "complexity": 1,
+          "line": 72,
+          "logical_lines": 8,
+          "name": "test_accepts_when_progress_review_present_and_nonblocking"
+        },
+        {
+          "complexity": 1,
+          "line": 81,
+          "logical_lines": 9,
+          "name": "test_blocks_when_progress_review_blocks"
+        },
+        {
+          "complexity": 1,
+          "line": 91,
+          "logical_lines": 8,
+          "name": "test_missing_progress_review_blocks"
+        },
+        {
+          "complexity": 1,
+          "line": 100,
+          "logical_lines": 30,
+          "name": "test_echoed_template_before_real_block_is_ignored"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 108,
+      "parse_ok": true
+    },
+    "scripts/test_architect.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 52,
+          "logical_lines": 23,
+          "name": "test_partial_then_complete"
+        },
+        {
+          "complexity": 1,
+          "line": 76,
+          "logical_lines": 11,
+          "name": "test_not_ready_when_agent_claims_ready_but_incomplete"
+        },
+        {
+          "complexity": 1,
+          "line": 88,
+          "logical_lines": 13,
+          "name": "test_session_resume"
+        },
+        {
+          "complexity": 1,
+          "line": 55,
+          "logical_lines": 2,
+          "name": "runner"
+        },
+        {
+          "complexity": 1,
+          "line": 89,
+          "logical_lines": 2,
+          "name": "runner"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 75,
+      "parse_ok": true
+    },
+    "scripts/test_architect_core.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 17,
+          "logical_lines": 23,
+          "name": "filled_spec"
+        },
+        {
+          "complexity": 1,
+          "line": 43,
+          "logical_lines": 7,
+          "name": "test_upsert_by_id"
+        },
+        {
+          "complexity": 1,
+          "line": 51,
+          "logical_lines": 5,
+          "name": "test_replace_lists"
+        },
+        {
+          "complexity": 1,
+          "line": 57,
+          "logical_lines": 6,
+          "name": "test_dict_merge"
+        },
+        {
+          "complexity": 1,
+          "line": 64,
+          "logical_lines": 5,
+          "name": "test_open_questions_replaced"
+        },
+        {
+          "complexity": 1,
+          "line": 72,
+          "logical_lines": 13,
+          "name": "test_last_valid_json_block"
+        },
+        {
+          "complexity": 1,
+          "line": 86,
+          "logical_lines": 2,
+          "name": "test_no_block"
+        },
+        {
+          "complexity": 1,
+          "line": 91,
+          "logical_lines": 3,
+          "name": "test_complete"
+        },
+        {
+          "complexity": 4,
+          "line": 95,
+          "logical_lines": 6,
+          "name": "test_missing_acceptance"
+        },
+        {
+          "complexity": 2,
+          "line": 102,
+          "logical_lines": 6,
+          "name": "test_milestone_without_dod"
+        },
+        {
+          "complexity": 3,
+          "line": 109,
+          "logical_lines": 6,
+          "name": "test_uncovered_requirement"
+        },
+        {
+          "complexity": 2,
+          "line": 116,
+          "logical_lines": 6,
+          "name": "test_dod_unknown_acceptance"
+        },
+        {
+          "complexity": 1,
+          "line": 123,
+          "logical_lines": 4,
+          "name": "test_open_questions_block"
+        },
+        {
+          "complexity": 1,
+          "line": 128,
+          "logical_lines": 4,
+          "name": "test_missing_test_command"
+        },
+        {
+          "complexity": 1,
+          "line": 135,
+          "logical_lines": 8,
+          "name": "test_roundtrip"
+        },
+        {
+          "complexity": 1,
+          "line": 144,
+          "logical_lines": 5,
+          "name": "test_comments_and_blanks"
+        },
+        {
+          "complexity": 1,
+          "line": 152,
+          "logical_lines": 5,
+          "name": "test_roadmap_has_machine_dod"
+        },
+        {
+          "complexity": 1,
+          "line": 158,
+          "logical_lines": 5,
+          "name": "test_design_prompt_mentions_requirements"
+        },
+        {
+          "complexity": 1,
+          "line": 164,
+          "logical_lines": 8,
+          "name": "test_autonomy_delegation_seed"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 138,
+      "parse_ok": true
+    },
+    "scripts/test_check_job_progress_gate.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 22,
+          "logical_lines": 25,
+          "name": "progress_block"
+        },
+        {
+          "complexity": 1,
+          "line": 49,
+          "logical_lines": 12,
+          "name": "upstream_trace"
+        },
+        {
+          "complexity": 1,
+          "line": 64,
+          "logical_lines": 8,
+          "name": "run_gate"
+        },
+        {
+          "complexity": 2,
+          "line": 73,
+          "logical_lines": 18,
+          "name": "write_job"
+        },
+        {
+          "complexity": 1,
+          "line": 92,
+          "logical_lines": 8,
+          "name": "test_valid_implementation_passes"
+        },
+        {
+          "complexity": 1,
+          "line": 101,
+          "logical_lines": 19,
+          "name": "test_metadata_with_concrete_unlock_passes"
+        },
+        {
+          "complexity": 1,
+          "line": 121,
+          "logical_lines": 20,
+          "name": "test_metadata_without_unlock_fails"
+        },
+        {
+          "complexity": 1,
+          "line": 142,
+          "logical_lines": 9,
+          "name": "test_implementation_with_no_validation_class_fails"
+        },
+        {
+          "complexity": 1,
+          "line": 152,
+          "logical_lines": 17,
+          "name": "test_numerical_test_requires_identity_or_convergence"
+        },
+        {
+          "complexity": 1,
+          "line": 170,
+          "logical_lines": 18,
+          "name": "test_backend_test_requires_backend_validation_class"
+        },
+        {
+          "complexity": 1,
+          "line": 189,
+          "logical_lines": 21,
+          "name": "test_metadata_validation_exception_requires_record"
+        },
+        {
+          "complexity": 1,
+          "line": 211,
+          "logical_lines": 17,
+          "name": "test_json_output_contains_status_fields"
+        },
+        {
+          "complexity": 1,
+          "line": 229,
+          "logical_lines": 9,
+          "name": "test_missing_progress_block_fails"
+        },
+        {
+          "complexity": 1,
+          "line": 239,
+          "logical_lines": 22,
+          "name": "test_three_consecutive_metadata_jobs_for_same_subsystem_fail"
+        },
+        {
+          "complexity": 1,
+          "line": 262,
+          "logical_lines": 8,
+          "name": "write_priority_lock"
+        },
+        {
+          "complexity": 1,
+          "line": 271,
+          "logical_lines": 12,
+          "name": "test_priority_lock_requires_upstream_trace_for_new_job"
+        },
+        {
+          "complexity": 1,
+          "line": 284,
+          "logical_lines": 11,
+          "name": "test_priority_lock_accepts_concrete_upstream_trace"
+        },
+        {
+          "complexity": 1,
+          "line": 296,
+          "logical_lines": 11,
+          "name": "test_priority_lock_does_not_block_exempt_active_job"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 272,
+      "parse_ok": true
+    },
+    "scripts/test_check_reviewer_coverage.py": {
+      "functions": [
+        {
+          "complexity": 7,
+          "line": 28,
+          "logical_lines": 24,
+          "name": "coverage_block"
+        },
+        {
+          "complexity": 2,
+          "line": 71,
+          "logical_lines": 14,
+          "name": "run_check"
+        },
+        {
+          "complexity": 1,
+          "line": 86,
+          "logical_lines": 4,
+          "name": "test_complete_coverage_passes"
+        },
+        {
+          "complexity": 1,
+          "line": 91,
+          "logical_lines": 5,
+          "name": "test_echoed_template_before_real_block_is_ignored"
+        },
+        {
+          "complexity": 1,
+          "line": 97,
+          "logical_lines": 5,
+          "name": "test_tokenized_fragment_before_valid_block_is_ignored"
+        },
+        {
+          "complexity": 1,
+          "line": 103,
+          "logical_lines": 5,
+          "name": "test_missing_file_fails"
+        },
+        {
+          "complexity": 1,
+          "line": 109,
+          "logical_lines": 5,
+          "name": "test_unreviewed_nonempty_fails"
+        },
+        {
+          "complexity": 1,
+          "line": 115,
+          "logical_lines": 4,
+          "name": "test_only_template_block_fails_as_missing"
+        },
+        {
+          "complexity": 1,
+          "line": 120,
+          "logical_lines": 4,
+          "name": "test_missing_block_fails"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 97,
+      "parse_ok": true
+    },
+    "scripts/test_consensus_core.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 16,
+          "logical_lines": 30,
+          "name": "reviewer_report"
+        },
+        {
+          "complexity": 1,
+          "line": 49,
+          "logical_lines": 6,
+          "name": "test_parses_reviewer_accept"
+        },
+        {
+          "complexity": 1,
+          "line": 56,
+          "logical_lines": 5,
+          "name": "test_revise_blocks"
+        },
+        {
+          "complexity": 1,
+          "line": 62,
+          "logical_lines": 3,
+          "name": "test_reject_maps_to_revise"
+        },
+        {
+          "complexity": 1,
+          "line": 66,
+          "logical_lines": 4,
+          "name": "test_missing_block_blocks_and_errors"
+        },
+        {
+          "complexity": 1,
+          "line": 71,
+          "logical_lines": 12,
+          "name": "test_disagree_without_reason_gets_placeholder"
+        },
+        {
+          "complexity": 2,
+          "line": 86,
+          "logical_lines": 5,
+          "name": "_votes"
+        },
+        {
+          "complexity": 1,
+          "line": 92,
+          "logical_lines": 3,
+          "name": "test_round0_unanimous_verdict_converges"
+        },
+        {
+          "complexity": 1,
+          "line": 96,
+          "logical_lines": 5,
+          "name": "test_round0_split_does_not_converge"
+        },
+        {
+          "complexity": 1,
+          "line": 102,
+          "logical_lines": 4,
+          "name": "test_compare_round_requires_agreement_flag"
+        },
+        {
+          "complexity": 1,
+          "line": 107,
+          "logical_lines": 3,
+          "name": "test_compare_round_converges"
+        },
+        {
+          "complexity": 1,
+          "line": 111,
+          "logical_lines": 4,
+          "name": "test_unknown_verdict_breaks_unanimity"
+        },
+        {
+          "complexity": 2,
+          "line": 124,
+          "logical_lines": 7,
+          "name": "_round"
+        },
+        {
+          "complexity": 1,
+          "line": 132,
+          "logical_lines": 6,
+          "name": "test_unanimous_accept_not_blocked"
+        },
+        {
+          "complexity": 1,
+          "line": 139,
+          "logical_lines": 6,
+          "name": "test_unanimous_revise_blocks"
+        },
+        {
+          "complexity": 1,
+          "line": 146,
+          "logical_lines": 6,
+          "name": "test_no_consensus_escalates"
+        },
+        {
+          "complexity": 1,
+          "line": 153,
+          "logical_lines": 8,
+          "name": "test_majority_quorum_accepts"
+        },
+        {
+          "complexity": 1,
+          "line": 162,
+          "logical_lines": 8,
+          "name": "test_reviewer_decisions_mapping"
+        },
+        {
+          "complexity": 1,
+          "line": 171,
+          "logical_lines": 6,
+          "name": "test_reviewer_decisions_no_consensus_blocked_by"
+        },
+        {
+          "complexity": 2,
+          "line": 180,
+          "logical_lines": 5,
+          "name": "_votes"
+        },
+        {
+          "complexity": 1,
+          "line": 186,
+          "logical_lines": 3,
+          "name": "test_unanimous_quorum"
+        },
+        {
+          "complexity": 1,
+          "line": 190,
+          "logical_lines": 3,
+          "name": "test_majority_quorum"
+        },
+        {
+          "complexity": 1,
+          "line": 196,
+          "logical_lines": 14,
+          "name": "_vote_text"
+        },
+        {
+          "complexity": 1,
+          "line": 211,
+          "logical_lines": 2,
+          "name": "test_spec_schema_registered"
+        },
+        {
+          "complexity": 1,
+          "line": 214,
+          "logical_lines": 4,
+          "name": "test_ready_does_not_block"
+        },
+        {
+          "complexity": 1,
+          "line": 219,
+          "logical_lines": 4,
+          "name": "test_needs_revision_blocks"
+        },
+        {
+          "complexity": 3,
+          "line": 224,
+          "logical_lines": 7,
+          "name": "test_unanimous_ready_synthesizes_not_blocked"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 185,
+      "parse_ok": true
+    },
+    "scripts/test_orchestrator.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 25,
+          "logical_lines": 30,
+          "name": "reviewer_text"
+        },
+        {
+          "complexity": 1,
+          "line": 57,
+          "logical_lines": 6,
+          "name": "make_panel"
+        },
+        {
+          "complexity": 2,
+          "line": 65,
+          "logical_lines": 13,
+          "name": "scripted_runner"
+        },
+        {
+          "complexity": 2,
+          "line": 69,
+          "logical_lines": 6,
+          "name": "run"
+        },
+        {
+          "complexity": 1,
+          "line": 81,
+          "logical_lines": 13,
+          "name": "_config"
+        },
+        {
+          "complexity": 2,
+          "line": 95,
+          "logical_lines": 24,
+          "name": "test_converges_and_stops_early"
+        },
+        {
+          "complexity": 1,
+          "line": 120,
+          "logical_lines": 7,
+          "name": "test_round0_unanimous_stops_immediately_when_single_round"
+        },
+        {
+          "complexity": 1,
+          "line": 128,
+          "logical_lines": 15,
+          "name": "test_no_consensus_runs_all_rounds_and_blocks"
+        },
+        {
+          "complexity": 3,
+          "line": 144,
+          "logical_lines": 15,
+          "name": "test_compare_round_prompt_contains_peer_positions"
+        },
+        {
+          "complexity": 1,
+          "line": 160,
+          "logical_lines": 8,
+          "name": "test_timeout_propagates"
+        },
+        {
+          "complexity": 1,
+          "line": 169,
+          "logical_lines": 12,
+          "name": "test_timeout_aborts_early"
+        },
+        {
+          "complexity": 1,
+          "line": 182,
+          "logical_lines": 9,
+          "name": "test_agent_crash_blocks"
+        },
+        {
+          "complexity": 2,
+          "line": 194,
+          "logical_lines": 15,
+          "name": "test_model_overrides_apply_in_order"
+        },
+        {
+          "complexity": 1,
+          "line": 210,
+          "logical_lines": 9,
+          "name": "test_more_models_grow_panel"
+        },
+        {
+          "complexity": 1,
+          "line": 161,
+          "logical_lines": 2,
+          "name": "runner"
+        },
+        {
+          "complexity": 1,
+          "line": 172,
+          "logical_lines": 3,
+          "name": "runner"
+        },
+        {
+          "complexity": 1,
+          "line": 183,
+          "logical_lines": 2,
+          "name": "runner"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 179,
+      "parse_ok": true
+    },
+    "scripts/test_summarize_progress_accounting.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 22,
+          "logical_lines": 27,
+          "name": "write_job"
+        },
+        {
+          "complexity": 1,
+          "line": 52,
+          "logical_lines": 8,
+          "name": "run_summary"
+        },
+        {
+          "complexity": 1,
+          "line": 61,
+          "logical_lines": 10,
+          "name": "test_mixed_progress_passes_strict"
+        },
+        {
+          "complexity": 1,
+          "line": 72,
+          "logical_lines": 9,
+          "name": "test_metadata_only_without_exception_fails_strict"
+        },
+        {
+          "complexity": 1,
+          "line": 82,
+          "logical_lines": 16,
+          "name": "test_metadata_only_with_exception_passes_strict"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 82,
+      "parse_ok": true
+    },
+    "scripts/test_update_job_status.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 23,
+          "logical_lines": 4,
+          "name": "write_status"
+        },
+        {
+          "complexity": 1,
+          "line": 28,
+          "logical_lines": 8,
+          "name": "run_status"
+        },
+        {
+          "complexity": 1,
+          "line": 37,
+          "logical_lines": 8,
+          "name": "test_non_state_update_still_works"
+        },
+        {
+          "complexity": 1,
+          "line": 46,
+          "logical_lines": 8,
+          "name": "test_state_update_requires_allow_state"
+        },
+        {
+          "complexity": 1,
+          "line": 55,
+          "logical_lines": 9,
+          "name": "test_allow_state_updates_state"
+        },
+        {
+          "complexity": 1,
+          "line": 65,
+          "logical_lines": 14,
+          "name": "test_terminal_state_change_requires_explicit_override"
+        },
+        {
+          "complexity": 1,
+          "line": 80,
+          "logical_lines": 18,
+          "name": "test_terminal_state_override_is_available_for_manual_repair"
+        },
+        {
+          "complexity": 1,
+          "line": 99,
+          "logical_lines": 24,
+          "name": "test_merge_status_fields"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 105,
+      "parse_ok": true
+    },
+    "scripts/transition_job.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 51,
+          "logical_lines": 2,
+          "name": "utc_now"
+        },
+        {
+          "complexity": 6,
+          "line": 55,
+          "logical_lines": 16,
+          "name": "parse_value"
+        },
+        {
+          "complexity": 3,
+          "line": 73,
+          "logical_lines": 10,
+          "name": "write_json_atomic"
+        },
+        {
+          "complexity": 13,
+          "line": 85,
+          "logical_lines": 41,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 104,
+      "parse_ok": true
+    },
+    "scripts/update_job_status.py": {
+      "functions": [
+        {
+          "complexity": 6,
+          "line": 23,
+          "logical_lines": 16,
+          "name": "parse_value"
+        },
+        {
+          "complexity": 3,
+          "line": 41,
+          "logical_lines": 9,
+          "name": "load_status_fields"
+        },
+        {
+          "complexity": 23,
+          "line": 52,
+          "logical_lines": 137,
+          "name": "main"
+        },
+        {
+          "complexity": 5,
+          "line": 123,
+          "logical_lines": 21,
+          "name": "validate_state_update"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 162,
+      "parse_ok": true
+    },
+    "scripts/worker_loop.sh": {
+      "functions": [],
+      "hard_limit": 160,
+      "logical_lines": 1603,
+      "parse_ok": true
+    },
+    "scripts/workflow_gui.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 66,
+          "logical_lines": 6,
+          "name": "env_int"
+        },
+        {
+          "complexity": 2,
+          "line": 74,
+          "logical_lines": 6,
+          "name": "env_nonnegative_int"
+        },
+        {
+          "complexity": 6,
+          "line": 87,
+          "logical_lines": 20,
+          "name": "run"
+        },
+        {
+          "complexity": 4,
+          "line": 109,
+          "logical_lines": 8,
+          "name": "read_text"
+        },
+        {
+          "complexity": 2,
+          "line": 119,
+          "logical_lines": 5,
+          "name": "read_json"
+        },
+        {
+          "complexity": 3,
+          "line": 126,
+          "logical_lines": 8,
+          "name": "tail"
+        },
+        {
+          "complexity": 1,
+          "line": 136,
+          "logical_lines": 4,
+          "name": "runs_dir"
+        },
+        {
+          "complexity": 1,
+          "line": 142,
+          "logical_lines": 2,
+          "name": "pid_file"
+        },
+        {
+          "complexity": 1,
+          "line": 146,
+          "logical_lines": 2,
+          "name": "loop_lock_pid_file"
+        },
+        {
+          "complexity": 1,
+          "line": 150,
+          "logical_lines": 2,
+          "name": "loop_lock_workflow_commit_file"
+        },
+        {
+          "complexity": 1,
+          "line": 154,
+          "logical_lines": 2,
+          "name": "log_file"
+        },
+        {
+          "complexity": 1,
+          "line": 158,
+          "logical_lines": 4,
+          "name": "runtime_dir"
+        },
+        {
+          "complexity": 1,
+          "line": 164,
+          "logical_lines": 2,
+          "name": "gui_port_config_path"
+        },
+        {
+          "complexity": 1,
+          "line": 168,
+          "logical_lines": 2,
+          "name": "loop_autostart_disabled_path"
+        },
+        {
+          "complexity": 1,
+          "line": 172,
+          "logical_lines": 2,
+          "name": "loop_launch_env_path"
+        },
+        {
+          "complexity": 1,
+          "line": 176,
+          "logical_lines": 2,
+          "name": "loop_autorelaunch_state_path"
+        },
+        {
+          "complexity": 2,
+          "line": 180,
+          "logical_lines": 8,
+          "name": "port_available"
+        },
+        {
+          "complexity": 3,
+          "line": 190,
+          "logical_lines": 5,
+          "name": "find_available_port"
+        },
+        {
+          "complexity": 3,
+          "line": 197,
+          "logical_lines": 9,
+          "name": "load_stored_gui_port"
+        },
+        {
+          "complexity": 1,
+          "line": 208,
+          "logical_lines": 8,
+          "name": "store_gui_port"
+        },
+        {
+          "complexity": 7,
+          "line": 218,
+          "logical_lines": 15,
+          "name": "resolve_gui_port"
+        },
+        {
+          "complexity": 3,
+          "line": 235,
+          "logical_lines": 3,
+          "name": "workflow_package_commit"
+        },
+        {
+          "complexity": 2,
+          "line": 240,
+          "logical_lines": 3,
+          "name": "logged_workflow_commit"
+        },
+        {
+          "complexity": 7,
+          "line": 245,
+          "logical_lines": 32,
+          "name": "latest_loop_launch_env"
+        },
+        {
+          "complexity": 4,
+          "line": 279,
+          "logical_lines": 10,
+          "name": "lock_workflow_commit"
+        },
+        {
+          "complexity": 3,
+          "line": 291,
+          "logical_lines": 10,
+          "name": "pid_running"
+        },
+        {
+          "complexity": 3,
+          "line": 303,
+          "logical_lines": 6,
+          "name": "read_pid"
+        },
+        {
+          "complexity": 3,
+          "line": 311,
+          "logical_lines": 8,
+          "name": "loop_pid"
+        },
+        {
+          "complexity": 5,
+          "line": 321,
+          "logical_lines": 14,
+          "name": "remove_stale_loop_lock"
+        },
+        {
+          "complexity": 6,
+          "line": 337,
+          "logical_lines": 23,
+          "name": "control_info"
+        },
+        {
+          "complexity": 9,
+          "line": 362,
+          "logical_lines": 15,
+          "name": "parse_gate_checklist"
+        },
+        {
+          "complexity": 3,
+          "line": 379,
+          "logical_lines": 12,
+          "name": "git_info"
+        },
+        {
+          "complexity": 15,
+          "line": 393,
+          "logical_lines": 31,
+          "name": "jobs"
+        },
+        {
+          "complexity": 14,
+          "line": 426,
+          "logical_lines": 62,
+          "name": "reviewer_state"
+        },
+        {
+          "complexity": 9,
+          "line": 490,
+          "logical_lines": 14,
+          "name": "criterion_is_active"
+        },
+        {
+          "complexity": 2,
+          "line": 506,
+          "logical_lines": 3,
+          "name": "milestone_key"
+        },
+        {
+          "complexity": 2,
+          "line": 511,
+          "logical_lines": 5,
+          "name": "milestone_label_hint"
+        },
+        {
+          "complexity": 4,
+          "line": 518,
+          "logical_lines": 14,
+          "name": "add_milestone_hint"
+        },
+        {
+          "complexity": 4,
+          "line": 534,
+          "logical_lines": 7,
+          "name": "milestone_title_from_hint"
+        },
+        {
+          "complexity": 1,
+          "line": 543,
+          "logical_lines": 6,
+          "name": "milestone_subtitle_from_item"
+        },
+        {
+          "complexity": 6,
+          "line": 551,
+          "logical_lines": 12,
+          "name": "human_gate_milestone"
+        },
+        {
+          "complexity": 6,
+          "line": 565,
+          "logical_lines": 10,
+          "name": "same_milestone"
+        },
+        {
+          "complexity": 24,
+          "line": 577,
+          "logical_lines": 78,
+          "name": "parse_roadmap"
+        },
+        {
+          "complexity": 3,
+          "line": 657,
+          "logical_lines": 15,
+          "name": "active_job_contexts"
+        },
+        {
+          "complexity": 12,
+          "line": 674,
+          "logical_lines": 51,
+          "name": "supervisor_state"
+        },
+        {
+          "complexity": 3,
+          "line": 727,
+          "logical_lines": 28,
+          "name": "active_job_summary"
+        },
+        {
+          "complexity": 9,
+          "line": 757,
+          "logical_lines": 47,
+          "name": "worker_display_log"
+        },
+        {
+          "complexity": 7,
+          "line": 806,
+          "logical_lines": 20,
+          "name": "supervisor_preparing_human_review"
+        },
+        {
+          "complexity": 48,
+          "line": 828,
+          "logical_lines": 111,
+          "name": "activity_state"
+        },
+        {
+          "complexity": 10,
+          "line": 941,
+          "logical_lines": 27,
+          "name": "worktrees"
+        },
+        {
+          "complexity": 12,
+          "line": 970,
+          "logical_lines": 53,
+          "name": "project_tree"
+        },
+        {
+          "complexity": 5,
+          "line": 1025,
+          "logical_lines": 7,
+          "name": "safe_project_path"
+        },
+        {
+          "complexity": 6,
+          "line": 1034,
+          "logical_lines": 17,
+          "name": "open_project_file"
+        },
+        {
+          "complexity": 3,
+          "line": 1053,
+          "logical_lines": 2,
+          "name": "argv_has_script"
+        },
+        {
+          "complexity": 6,
+          "line": 1057,
+          "logical_lines": 9,
+          "name": "is_cursor_agent_process"
+        },
+        {
+          "complexity": 18,
+          "line": 1068,
+          "logical_lines": 54,
+          "name": "process_blocks"
+        },
+        {
+          "complexity": 7,
+          "line": 1124,
+          "logical_lines": 50,
+          "name": "state"
+        },
+        {
+          "complexity": 9,
+          "line": 1176,
+          "logical_lines": 29,
+          "name": "state_payload"
+        },
+        {
+          "complexity": 6,
+          "line": 1207,
+          "logical_lines": 18,
+          "name": "agent_wrapper_catalog"
+        },
+        {
+          "complexity": 2,
+          "line": 1227,
+          "logical_lines": 11,
+          "name": "json_response"
+        },
+        {
+          "complexity": 3,
+          "line": 1240,
+          "logical_lines": 9,
+          "name": "read_request_json"
+        },
+        {
+          "complexity": 7,
+          "line": 1251,
+          "logical_lines": 69,
+          "name": "start_loop"
+        },
+        {
+          "complexity": 1,
+          "line": 1322,
+          "logical_lines": 3,
+          "name": "defaults_fingerprint"
+        },
+        {
+          "complexity": 4,
+          "line": 1327,
+          "logical_lines": 17,
+          "name": "saved_loop_env"
+        },
+        {
+          "complexity": 2,
+          "line": 1346,
+          "logical_lines": 10,
+          "name": "mark_autorelaunch_attempt"
+        },
+        {
+          "complexity": 3,
+          "line": 1358,
+          "logical_lines": 9,
+          "name": "autorelaunch_recently_attempted"
+        },
+        {
+          "complexity": 3,
+          "line": 1369,
+          "logical_lines": 6,
+          "name": "loop_default_env"
+        },
+        {
+          "complexity": 7,
+          "line": 1377,
+          "logical_lines": 32,
+          "name": "worker_loop_env"
+        },
+        {
+          "complexity": 4,
+          "line": 1411,
+          "logical_lines": 19,
+          "name": "supervisor_loop_env"
+        },
+        {
+          "complexity": 4,
+          "line": 1432,
+          "logical_lines": 16,
+          "name": "modulator_loop_env"
+        },
+        {
+          "complexity": 6,
+          "line": 1450,
+          "logical_lines": 12,
+          "name": "running_modulator_agent"
+        },
+        {
+          "complexity": 15,
+          "line": 1464,
+          "logical_lines": 54,
+          "name": "auto_relaunch_worker_if_needed"
+        },
+        {
+          "complexity": 16,
+          "line": 1520,
+          "logical_lines": 62,
+          "name": "auto_relaunch_supervisor_if_needed"
+        },
+        {
+          "complexity": 2,
+          "line": 1584,
+          "logical_lines": 10,
+          "name": "auto_start_loops_after_human_review"
+        },
+        {
+          "complexity": 26,
+          "line": 1596,
+          "logical_lines": 80,
+          "name": "stop_loop"
+        },
+        {
+          "complexity": 3,
+          "line": 1678,
+          "logical_lines": 8,
+          "name": "active_jobs"
+        },
+        {
+          "complexity": 4,
+          "line": 1688,
+          "logical_lines": 14,
+          "name": "prune_accepted_job_refs"
+        },
+        {
+          "complexity": 4,
+          "line": 1704,
+          "logical_lines": 14,
+          "name": "commit_workflow_records"
+        },
+        {
+          "complexity": 10,
+          "line": 1720,
+          "logical_lines": 40,
+          "name": "push_after_human_review"
+        },
+        {
+          "complexity": 6,
+          "line": 1762,
+          "logical_lines": 12,
+          "name": "compact_history"
+        },
+        {
+          "complexity": 13,
+          "line": 1776,
+          "logical_lines": 31,
+          "name": "draft_review_text"
+        },
+        {
+          "complexity": 20,
+          "line": 1809,
+          "logical_lines": 146,
+          "name": "supervisor_chat"
+        },
+        {
+          "complexity": 1,
+          "line": 1957,
+          "logical_lines": 2,
+          "name": "modulator_terminal_history_path"
+        },
+        {
+          "complexity": 2,
+          "line": 1961,
+          "logical_lines": 12,
+          "name": "append_terminal_entry"
+        },
+        {
+          "complexity": 7,
+          "line": 1975,
+          "logical_lines": 20,
+          "name": "load_terminal_history"
+        },
+        {
+          "complexity": 31,
+          "line": 1997,
+          "logical_lines": 204,
+          "name": "modulator_terminal_chat"
+        },
+        {
+          "complexity": 3,
+          "line": 2203,
+          "logical_lines": 6,
+          "name": "prune_workflow_chat_jobs"
+        },
+        {
+          "complexity": 3,
+          "line": 2211,
+          "logical_lines": 38,
+          "name": "start_workflow_chat_job"
+        },
+        {
+          "complexity": 4,
+          "line": 2251,
+          "logical_lines": 14,
+          "name": "workflow_chat_result"
+        },
+        {
+          "complexity": 1,
+          "line": 2267,
+          "logical_lines": 2,
+          "name": "_scripts_dir"
+        },
+        {
+          "complexity": 2,
+          "line": 2271,
+          "logical_lines": 18,
+          "name": "architect_state"
+        },
+        {
+          "complexity": 1,
+          "line": 2291,
+          "logical_lines": 14,
+          "name": "_register_async_job"
+        },
+        {
+          "complexity": 1,
+          "line": 2307,
+          "logical_lines": 11,
+          "name": "_finish_async_job"
+        },
+        {
+          "complexity": 5,
+          "line": 2320,
+          "logical_lines": 27,
+          "name": "start_architect_job"
+        },
+        {
+          "complexity": 6,
+          "line": 2349,
+          "logical_lines": 29,
+          "name": "start_architect_gate_job"
+        },
+        {
+          "complexity": 7,
+          "line": 2380,
+          "logical_lines": 19,
+          "name": "architect_handoff"
+        },
+        {
+          "complexity": 2,
+          "line": 2401,
+          "logical_lines": 75,
+          "name": "create_structural_change_request"
+        },
+        {
+          "complexity": 3,
+          "line": 2478,
+          "logical_lines": 60,
+          "name": "create_human_review_action_request"
+        },
+        {
+          "complexity": 21,
+          "line": 2540,
+          "logical_lines": 124,
+          "name": "write_human_review"
+        },
+        {
+          "complexity": 3,
+          "line": 2815,
+          "logical_lines": 25,
+          "name": "main"
+        },
+        {
+          "complexity": 2,
+          "line": 449,
+          "logical_lines": 3,
+          "name": "job_number"
+        },
+        {
+          "complexity": 12,
+          "line": 975,
+          "logical_lines": 38,
+          "name": "walk"
+        },
+        {
+          "complexity": 2,
+          "line": 2231,
+          "logical_lines": 15,
+          "name": "run_chat"
+        },
+        {
+          "complexity": 5,
+          "line": 2324,
+          "logical_lines": 20,
+          "name": "run"
+        },
+        {
+          "complexity": 6,
+          "line": 2353,
+          "logical_lines": 22,
+          "name": "run"
+        },
+        {
+          "complexity": 1,
+          "line": 2669,
+          "logical_lines": 2,
+          "name": "log_message"
+        },
+        {
+          "complexity": 13,
+          "line": 2672,
+          "logical_lines": 39,
+          "name": "do_GET"
+        },
+        {
+          "complexity": 28,
+          "line": 2712,
+          "logical_lines": 101,
+          "name": "do_POST"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 2507,
+      "parse_ok": true
+    },
+    "src/aiflow/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 2,
+      "parse_ok": true
+    },
+    "src/aiflow/__main__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 2,
+      "parse_ok": true
+    },
+    "src/aiflow/agents/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/api/__init__.py": {
+      "functions": [],
+      "hard_limit": 400,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/cli/__init__.py": {
+      "functions": [],
+      "hard_limit": 400,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/cli/main.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 15,
+          "logical_lines": 2,
+          "name": "distribution_root"
+        },
+        {
+          "complexity": 2,
+          "line": 19,
+          "logical_lines": 4,
+          "name": "_root"
+        },
+        {
+          "complexity": 1,
+          "line": 25,
+          "logical_lines": 2,
+          "name": "_print"
+        },
+        {
+          "complexity": 1,
+          "line": 29,
+          "logical_lines": 2,
+          "name": "_installer"
+        },
+        {
+          "complexity": 8,
+          "line": 33,
+          "logical_lines": 24,
+          "name": "project_command"
+        },
+        {
+          "complexity": 5,
+          "line": 59,
+          "logical_lines": 24,
+          "name": "skill_command"
+        },
+        {
+          "complexity": 3,
+          "line": 85,
+          "logical_lines": 8,
+          "name": "quality_command"
+        },
+        {
+          "complexity": 2,
+          "line": 95,
+          "logical_lines": 43,
+          "name": "parser"
+        },
+        {
+          "complexity": 2,
+          "line": 140,
+          "logical_lines": 7,
+          "name": "main"
+        }
+      ],
+      "hard_limit": 400,
+      "logical_lines": 123,
+      "parse_ok": true
+    },
+    "src/aiflow/compat/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/controller/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/domain/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/domain/progress.py": {
+      "functions": [
+        {
+          "complexity": 14,
+          "line": 41,
+          "logical_lines": 16,
+          "name": "__post_init__"
+        },
+        {
+          "complexity": 8,
+          "line": 74,
+          "logical_lines": 17,
+          "name": "__post_init__"
+        },
+        {
+          "complexity": 2,
+          "line": 92,
+          "logical_lines": 2,
+          "name": "_ready"
+        },
+        {
+          "complexity": 8,
+          "line": 95,
+          "logical_lines": 24,
+          "name": "next_task"
+        },
+        {
+          "complexity": 11,
+          "line": 121,
+          "logical_lines": 14,
+          "name": "_assert_delivery_evidence"
+        },
+        {
+          "complexity": 16,
+          "line": 136,
+          "logical_lines": 40,
+          "name": "accept"
+        },
+        {
+          "complexity": 3,
+          "line": 177,
+          "logical_lines": 7,
+          "name": "complete_replan"
+        },
+        {
+          "complexity": 4,
+          "line": 185,
+          "logical_lines": 16,
+          "name": "report"
+        },
+        {
+          "complexity": 3,
+          "line": 202,
+          "logical_lines": 2,
+          "name": "milestone_can_close"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 182,
+      "parse_ok": true
+    },
+    "src/aiflow/git/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/identity/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 3,
+      "parse_ok": true
+    },
+    "src/aiflow/identity/context.py": {
+      "functions": [
+        {
+          "complexity": 4,
+          "line": 54,
+          "logical_lines": 9,
+          "name": "_run_git"
+        },
+        {
+          "complexity": 2,
+          "line": 65,
+          "logical_lines": 3,
+          "name": "_git_path"
+        },
+        {
+          "complexity": 3,
+          "line": 70,
+          "logical_lines": 3,
+          "name": "_project_root"
+        },
+        {
+          "complexity": 4,
+          "line": 75,
+          "logical_lines": 12,
+          "name": "_project_id"
+        },
+        {
+          "complexity": 5,
+          "line": 89,
+          "logical_lines": 22,
+          "name": "_read_or_create_id"
+        },
+        {
+          "complexity": 1,
+          "line": 113,
+          "logical_lines": 19,
+          "name": "resolve_project"
+        },
+        {
+          "complexity": 1,
+          "line": 134,
+          "logical_lines": 2,
+          "name": "new_run_id"
+        },
+        {
+          "complexity": 3,
+          "line": 138,
+          "logical_lines": 7,
+          "name": "runtime_path"
+        },
+        {
+          "complexity": 3,
+          "line": 147,
+          "logical_lines": 7,
+          "name": "cache_path"
+        },
+        {
+          "complexity": 3,
+          "line": 192,
+          "logical_lines": 16,
+          "name": "validate_thread_identity"
+        },
+        {
+          "complexity": 1,
+          "line": 40,
+          "logical_lines": 2,
+          "name": "state_root"
+        },
+        {
+          "complexity": 2,
+          "line": 43,
+          "logical_lines": 9,
+          "name": "identity_fields"
+        },
+        {
+          "complexity": 1,
+          "line": 157,
+          "logical_lines": 2,
+          "name": "__init__"
+        },
+        {
+          "complexity": 4,
+          "line": 160,
+          "logical_lines": 8,
+          "name": "_load"
+        },
+        {
+          "complexity": 5,
+          "line": 169,
+          "logical_lines": 21,
+          "name": "register"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 170,
+      "parse_ok": true
+    },
+    "src/aiflow/integration/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/quality/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/quality/checker.py": {
+      "functions": [
+        {
+          "complexity": 3,
+          "line": 31,
+          "logical_lines": 13,
+          "name": "_atomic_json"
+        },
+        {
+          "complexity": 4,
+          "line": 46,
+          "logical_lines": 9,
+          "name": "logical_lines"
+        },
+        {
+          "complexity": 6,
+          "line": 57,
+          "logical_lines": 13,
+          "name": "complexity"
+        },
+        {
+          "complexity": 5,
+          "line": 72,
+          "logical_lines": 15,
+          "name": "python_metrics"
+        },
+        {
+          "complexity": 1,
+          "line": 90,
+          "logical_lines": 5,
+          "name": "__init__"
+        },
+        {
+          "complexity": 3,
+          "line": 96,
+          "logical_lines": 8,
+          "name": "_toml"
+        },
+        {
+          "complexity": 7,
+          "line": 105,
+          "logical_lines": 13,
+          "name": "_policy"
+        },
+        {
+          "complexity": 6,
+          "line": 119,
+          "logical_lines": 8,
+          "name": "_sources"
+        },
+        {
+          "complexity": 6,
+          "line": 128,
+          "logical_lines": 12,
+          "name": "_file_limit"
+        },
+        {
+          "complexity": 4,
+          "line": 141,
+          "logical_lines": 12,
+          "name": "_measure"
+        },
+        {
+          "complexity": 1,
+          "line": 154,
+          "logical_lines": 8,
+          "name": "baseline"
+        },
+        {
+          "complexity": 2,
+          "line": 163,
+          "logical_lines": 5,
+          "name": "_baseline"
+        },
+        {
+          "complexity": 7,
+          "line": 169,
+          "logical_lines": 17,
+          "name": "_exceptions"
+        },
+        {
+          "complexity": 8,
+          "line": 187,
+          "logical_lines": 22,
+          "name": "_deprecations"
+        },
+        {
+          "complexity": 13,
+          "line": 210,
+          "logical_lines": 18,
+          "name": "_architecture"
+        },
+        {
+          "complexity": 15,
+          "line": 229,
+          "logical_lines": 34,
+          "name": "check"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 238,
+      "parse_ok": true
+    },
+    "src/aiflow/scheduler/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/security/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/security/environment.py": {
+      "functions": [
+        {
+          "complexity": 9,
+          "line": 21,
+          "logical_lines": 13,
+          "name": "scrub_environment"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 28,
+      "parse_ok": true
+    },
+    "src/aiflow/skills/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "src/aiflow/skills/installer.py": {
+      "functions": [
+        {
+          "complexity": 3,
+          "line": 53,
+          "logical_lines": 15,
+          "name": "profile_skills"
+        },
+        {
+          "complexity": 3,
+          "line": 70,
+          "logical_lines": 12,
+          "name": "_atomic_bytes"
+        },
+        {
+          "complexity": 1,
+          "line": 84,
+          "logical_lines": 2,
+          "name": "_json_bytes"
+        },
+        {
+          "complexity": 1,
+          "line": 89,
+          "logical_lines": 12,
+          "name": "__init__"
+        },
+        {
+          "complexity": 3,
+          "line": 102,
+          "logical_lines": 7,
+          "name": "_read_lock"
+        },
+        {
+          "complexity": 2,
+          "line": 110,
+          "logical_lines": 9,
+          "name": "_project_id"
+        },
+        {
+          "complexity": 7,
+          "line": 120,
+          "logical_lines": 35,
+          "name": "_desired"
+        },
+        {
+          "complexity": 5,
+          "line": 156,
+          "logical_lines": 33,
+          "name": "_make_lock"
+        },
+        {
+          "complexity": 7,
+          "line": 190,
+          "logical_lines": 25,
+          "name": "_install"
+        },
+        {
+          "complexity": 5,
+          "line": 216,
+          "logical_lines": 18,
+          "name": "init"
+        },
+        {
+          "complexity": 1,
+          "line": 235,
+          "logical_lines": 10,
+          "name": "status"
+        },
+        {
+          "complexity": 5,
+          "line": 246,
+          "logical_lines": 11,
+          "name": "verify"
+        },
+        {
+          "complexity": 4,
+          "line": 258,
+          "logical_lines": 16,
+          "name": "_backup"
+        },
+        {
+          "complexity": 3,
+          "line": 275,
+          "logical_lines": 14,
+          "name": "upgrade"
+        },
+        {
+          "complexity": 8,
+          "line": 290,
+          "logical_lines": 19,
+          "name": "rollback"
+        },
+        {
+          "complexity": 10,
+          "line": 310,
+          "logical_lines": 21,
+          "name": "uninstall"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 304,
+      "parse_ok": true
+    },
+    "src/aiflow/skills/manager.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 24,
+          "logical_lines": 6,
+          "name": "file_hash"
+        },
+        {
+          "complexity": 3,
+          "line": 32,
+          "logical_lines": 9,
+          "name": "tree_hash"
+        },
+        {
+          "complexity": 8,
+          "line": 43,
+          "logical_lines": 18,
+          "name": "metadata"
+        },
+        {
+          "complexity": 1,
+          "line": 64,
+          "logical_lines": 14,
+          "name": "__init__"
+        },
+        {
+          "complexity": 7,
+          "line": 80,
+          "logical_lines": 9,
+          "name": "_skill_dirs"
+        },
+        {
+          "complexity": 3,
+          "line": 90,
+          "logical_lines": 13,
+          "name": "list"
+        },
+        {
+          "complexity": 5,
+          "line": 104,
+          "logical_lines": 14,
+          "name": "validate"
+        },
+        {
+          "complexity": 6,
+          "line": 119,
+          "logical_lines": 13,
+          "name": "doctor"
+        },
+        {
+          "complexity": 5,
+          "line": 133,
+          "logical_lines": 20,
+          "name": "sync"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 132,
+      "parse_ok": true
+    },
+    "src/aiflow/skills/seed.py": {
+      "functions": [
+        {
+          "complexity": 7,
+          "line": 19,
+          "logical_lines": 13,
+          "name": "_validate_member"
+        },
+        {
+          "complexity": 12,
+          "line": 34,
+          "logical_lines": 44,
+          "name": "import_seed"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 68,
+      "parse_ok": true
+    },
+    "src/aiflow/state/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 3,
+      "parse_ok": true
+    },
+    "src/aiflow/state/atomic.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 11,
+          "logical_lines": 2,
+          "name": "canonical_bytes"
+        },
+        {
+          "complexity": 2,
+          "line": 15,
+          "logical_lines": 3,
+          "name": "payload_checksum"
+        },
+        {
+          "complexity": 1,
+          "line": 20,
+          "logical_lines": 4,
+          "name": "signed"
+        },
+        {
+          "complexity": 2,
+          "line": 26,
+          "logical_lines": 3,
+          "name": "verify_signed"
+        },
+        {
+          "complexity": 4,
+          "line": 31,
+          "logical_lines": 18,
+          "name": "atomic_write_json"
+        },
+        {
+          "complexity": 2,
+          "line": 51,
+          "logical_lines": 5,
+          "name": "read_json"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 42,
+      "parse_ok": true
+    },
+    "src/aiflow/state/events.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 11,
+          "logical_lines": 15,
+          "name": "make_event"
+        },
+        {
+          "complexity": 8,
+          "line": 28,
+          "logical_lines": 20,
+          "name": "read_events"
+        },
+        {
+          "complexity": 4,
+          "line": 50,
+          "logical_lines": 13,
+          "name": "append_event"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 54,
+      "parse_ok": true
+    },
+    "src/aiflow/state/store.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 40,
+          "logical_lines": 2,
+          "name": "utc_now"
+        },
+        {
+          "complexity": 1,
+          "line": 44,
+          "logical_lines": 2,
+          "name": "parse_time"
+        },
+        {
+          "complexity": 2,
+          "line": 49,
+          "logical_lines": 15,
+          "name": "__init__"
+        },
+        {
+          "complexity": 4,
+          "line": 66,
+          "logical_lines": 40,
+          "name": "create"
+        },
+        {
+          "complexity": 6,
+          "line": 108,
+          "logical_lines": 17,
+          "name": "_lock"
+        },
+        {
+          "complexity": 2,
+          "line": 126,
+          "logical_lines": 7,
+          "name": "read_run"
+        },
+        {
+          "complexity": 2,
+          "line": 134,
+          "logical_lines": 7,
+          "name": "read_tasks"
+        },
+        {
+          "complexity": 2,
+          "line": 142,
+          "logical_lines": 5,
+          "name": "read_events"
+        },
+        {
+          "complexity": 8,
+          "line": 148,
+          "logical_lines": 50,
+          "name": "_build_intent"
+        },
+        {
+          "complexity": 1,
+          "line": 199,
+          "logical_lines": 14,
+          "name": "prepare_transition"
+        },
+        {
+          "complexity": 2,
+          "line": 214,
+          "logical_lines": 8,
+          "name": "apply_prepared_snapshot"
+        },
+        {
+          "complexity": 4,
+          "line": 223,
+          "logical_lines": 12,
+          "name": "_append_intent_event"
+        },
+        {
+          "complexity": 1,
+          "line": 236,
+          "logical_lines": 8,
+          "name": "_finalize_intent"
+        },
+        {
+          "complexity": 1,
+          "line": 245,
+          "logical_lines": 17,
+          "name": "transition"
+        },
+        {
+          "complexity": 4,
+          "line": 263,
+          "logical_lines": 16,
+          "name": "_recover_locked"
+        },
+        {
+          "complexity": 1,
+          "line": 280,
+          "logical_lines": 3,
+          "name": "recover"
+        },
+        {
+          "complexity": 7,
+          "line": 284,
+          "logical_lines": 11,
+          "name": "verify"
+        },
+        {
+          "complexity": 8,
+          "line": 296,
+          "logical_lines": 15,
+          "name": "_validate_controller"
+        },
+        {
+          "complexity": 3,
+          "line": 313,
+          "logical_lines": 10,
+          "name": "_lease_guard"
+        },
+        {
+          "complexity": 7,
+          "line": 324,
+          "logical_lines": 36,
+          "name": "claim_controller"
+        },
+        {
+          "complexity": 2,
+          "line": 361,
+          "logical_lines": 6,
+          "name": "release_controller"
+        },
+        {
+          "complexity": 6,
+          "line": 368,
+          "logical_lines": 16,
+          "name": "write_inbox_result"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 344,
+      "parse_ok": true
+    },
+    "tests/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "tests/regression/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "tests/regression/test_backend_defaults_red.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 13,
+          "logical_lines": 6,
+          "name": "test_codex_is_recommended_for_every_core_role"
+        },
+        {
+          "complexity": 1,
+          "line": 20,
+          "logical_lines": 15,
+          "name": "test_active_defaults_use_role_appropriate_gpt_5_6_tiers"
+        },
+        {
+          "complexity": 5,
+          "line": 36,
+          "logical_lines": 10,
+          "name": "test_consensus_panels_default_to_codex_and_current_family"
+        },
+        {
+          "complexity": 4,
+          "line": 47,
+          "logical_lines": 23,
+          "name": "test_active_launch_surfaces_do_not_default_to_cursor"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 63,
+      "parse_ok": true
+    },
+    "tests/regression/test_contamination_red.py": {
+      "functions": [
+        {
+          "complexity": 3,
+          "line": 18,
+          "logical_lines": 25,
+          "name": "test_inherited_project_a_environment_cannot_redirect_project_b"
+        },
+        {
+          "complexity": 3,
+          "line": 44,
+          "logical_lines": 12,
+          "name": "test_generic_entrypoints_contain_no_project_or_host_tokens"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 51,
+      "parse_ok": true
+    },
+    "tests/regression/test_finite_execution_red.py": {
+      "functions": [
+        {
+          "complexity": 6,
+          "line": 12,
+          "logical_lines": 14,
+          "name": "test_legacy_loops_are_finite_shims"
+        },
+        {
+          "complexity": 1,
+          "line": 27,
+          "logical_lines": 4,
+          "name": "test_worker_and_test_timeout_defaults_are_finite"
+        },
+        {
+          "complexity": 1,
+          "line": 32,
+          "logical_lines": 6,
+          "name": "test_finite_controller_module_exists"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 32,
+      "parse_ok": true
+    },
+    "tests/regression/test_integration_red.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 12,
+          "logical_lines": 8,
+          "name": "load_integrator"
+        },
+        {
+          "complexity": 1,
+          "line": 23,
+          "logical_lines": 17,
+          "name": "test_candidate_is_applied_to_temporary_worktree_before_target"
+        },
+        {
+          "complexity": 1,
+          "line": 41,
+          "logical_lines": 7,
+          "name": "test_integrator_has_target_head_cas_and_preapply_gates"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 41,
+      "parse_ok": true
+    },
+    "tests/regression/test_permissions_red.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 14,
+          "logical_lines": 8,
+          "name": "load_agent_wrapper"
+        },
+        {
+          "complexity": 1,
+          "line": 25,
+          "logical_lines": 17,
+          "name": "command_for"
+        },
+        {
+          "complexity": 1,
+          "line": 43,
+          "logical_lines": 6,
+          "name": "test_read_only_role_never_requests_full_access"
+        },
+        {
+          "complexity": 1,
+          "line": 50,
+          "logical_lines": 5,
+          "name": "test_writer_uses_explicit_bounded_permissions"
+        },
+        {
+          "complexity": 1,
+          "line": 56,
+          "logical_lines": 6,
+          "name": "test_unrestricted_parent_preflight_is_available"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 53,
+      "parse_ok": true
+    },
+    "tests/regression/test_progress_red.py": {
+      "functions": [
+        {
+          "complexity": 2,
+          "line": 15,
+          "logical_lines": 19,
+          "name": "progress_block"
+        },
+        {
+          "complexity": 1,
+          "line": 37,
+          "logical_lines": 8,
+          "name": "run_gate"
+        },
+        {
+          "complexity": 1,
+          "line": 46,
+          "logical_lines": 15,
+          "name": "accepted_job"
+        },
+        {
+          "complexity": 1,
+          "line": 62,
+          "logical_lines": 20,
+          "name": "test_area_changes_do_not_reset_no_delivery_debt"
+        },
+        {
+          "complexity": 1,
+          "line": 83,
+          "logical_lines": 16,
+          "name": "test_fake_delivery_without_acceptance_evidence_is_rejected"
+        },
+        {
+          "complexity": 1,
+          "line": 100,
+          "logical_lines": 16,
+          "name": "test_enabler_requires_named_task_id_not_free_text"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 105,
+      "parse_ok": true
+    },
+    "tests/regression/test_quality_deprecation_red.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 14,
+          "logical_lines": 8,
+          "name": "run_quality"
+        },
+        {
+          "complexity": 3,
+          "line": 23,
+          "logical_lines": 4,
+          "name": "test_legacy_worker_loop_is_now_a_thin_shim"
+        },
+        {
+          "complexity": 2,
+          "line": 28,
+          "logical_lines": 10,
+          "name": "test_new_oversized_file_fails_with_specific_evidence"
+        },
+        {
+          "complexity": 1,
+          "line": 39,
+          "logical_lines": 24,
+          "name": "test_expired_deprecation_fails"
+        },
+        {
+          "complexity": 1,
+          "line": 64,
+          "logical_lines": 10,
+          "name": "test_new_core_import_of_compat_fails"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 66,
+      "parse_ok": true
+    },
+    "tests/regression/test_state_red.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 16,
+          "logical_lines": 14,
+          "name": "test_mutation_without_expected_revision_is_rejected"
+        },
+        {
+          "complexity": 1,
+          "line": 31,
+          "logical_lines": 22,
+          "name": "test_stale_expected_revision_reports_cas_conflict"
+        },
+        {
+          "complexity": 1,
+          "line": 54,
+          "logical_lines": 6,
+          "name": "test_single_writer_state_engine_exists"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 54,
+      "parse_ok": true
+    },
+    "tests/unit/__init__.py": {
+      "functions": [],
+      "hard_limit": 450,
+      "logical_lines": 1,
+      "parse_ok": true
+    },
+    "tests/unit/test_cli_lifecycle.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 15,
+          "logical_lines": 12,
+          "name": "run_cli"
+        },
+        {
+          "complexity": 2,
+          "line": 30,
+          "logical_lines": 19,
+          "name": "test_project_and_skill_commands_emit_json_and_verify"
+        },
+        {
+          "complexity": 2,
+          "line": 50,
+          "logical_lines": 32,
+          "name": "test_cli_ignores_inherited_project_root_and_uses_explicit_target"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 75,
+      "parse_ok": true
+    },
+    "tests/unit/test_identity.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 26,
+          "logical_lines": 6,
+          "name": "git"
+        },
+        {
+          "complexity": 1,
+          "line": 34,
+          "logical_lines": 13,
+          "name": "init_project"
+        },
+        {
+          "complexity": 1,
+          "line": 50,
+          "logical_lines": 12,
+          "name": "test_inherited_aiflow_environment_does_not_select_another_project"
+        },
+        {
+          "complexity": 1,
+          "line": 63,
+          "logical_lines": 10,
+          "name": "test_two_clones_share_project_id_but_not_checkout_id"
+        },
+        {
+          "complexity": 1,
+          "line": 74,
+          "logical_lines": 10,
+          "name": "test_linked_worktrees_share_checkout_and_have_distinct_worktree_ids"
+        },
+        {
+          "complexity": 1,
+          "line": 85,
+          "logical_lines": 9,
+          "name": "test_runtime_and_cache_are_checkout_scoped"
+        },
+        {
+          "complexity": 1,
+          "line": 95,
+          "logical_lines": 10,
+          "name": "test_duplicate_checkout_id_at_two_live_roots_fails_closed"
+        },
+        {
+          "complexity": 1,
+          "line": 106,
+          "logical_lines": 14,
+          "name": "test_thread_cwd_or_checkout_mismatch_is_rejected"
+        },
+        {
+          "complexity": 1,
+          "line": 121,
+          "logical_lines": 10,
+          "name": "test_environment_scrubbing_removes_inherited_context"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 116,
+      "parse_ok": true
+    },
+    "tests/unit/test_progress_policy.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 20,
+          "logical_lines": 21,
+          "name": "task"
+        },
+        {
+          "complexity": 1,
+          "line": 44,
+          "logical_lines": 8,
+          "name": "test_research_is_read_only_and_enabler_names_one_target"
+        },
+        {
+          "complexity": 1,
+          "line": 53,
+          "logical_lines": 10,
+          "name": "test_delivery_priority_beats_housekeeping_and_enabler"
+        },
+        {
+          "complexity": 1,
+          "line": 64,
+          "logical_lines": 13,
+          "name": "test_enabler_debt_cannot_be_reset_by_lateral_work"
+        },
+        {
+          "complexity": 1,
+          "line": 78,
+          "logical_lines": 14,
+          "name": "test_post_execution_gate_rejects_fake_delivery_metadata"
+        },
+        {
+          "complexity": 1,
+          "line": 93,
+          "logical_lines": 11,
+          "name": "test_two_no_delta_checkpoints_replan_once_then_block"
+        },
+        {
+          "complexity": 1,
+          "line": 105,
+          "logical_lines": 27,
+          "name": "test_report_is_deterministic_and_milestone_requires_fresh_evidence"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 120,
+      "parse_ok": true
+    },
+    "tests/unit/test_project_lifecycle.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 17,
+          "logical_lines": 3,
+          "name": "init_git"
+        },
+        {
+          "complexity": 1,
+          "line": 23,
+          "logical_lines": 11,
+          "name": "test_profile_graph_is_explicit_and_does_not_install_every_skill"
+        },
+        {
+          "complexity": 1,
+          "line": 35,
+          "logical_lines": 14,
+          "name": "test_init_is_idempotent_and_lock_contains_hashes"
+        },
+        {
+          "complexity": 1,
+          "line": 50,
+          "logical_lines": 15,
+          "name": "test_verify_detects_drift_and_uninstall_preserves_modified_managed_file"
+        },
+        {
+          "complexity": 1,
+          "line": 66,
+          "logical_lines": 13,
+          "name": "test_upgrade_and_rollback_are_transactional_and_backup_aware"
+        },
+        {
+          "complexity": 1,
+          "line": 80,
+          "logical_lines": 7,
+          "name": "test_link_mode_requires_immutable_source_version"
+        },
+        {
+          "complexity": 3,
+          "line": 88,
+          "logical_lines": 15,
+          "name": "test_every_profile_installs_and_verifies_only_its_selected_skills"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 91,
+      "parse_ok": true
+    },
+    "tests/unit/test_quality.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 17,
+          "logical_lines": 2,
+          "name": "init"
+        },
+        {
+          "complexity": 2,
+          "line": 22,
+          "logical_lines": 14,
+          "name": "test_baseline_freezes_existing_oversize_and_rejects_growth"
+        },
+        {
+          "complexity": 2,
+          "line": 37,
+          "logical_lines": 15,
+          "name": "test_function_complexity_and_tiny_forwarder_are_not_line_limit_loopholes"
+        },
+        {
+          "complexity": 1,
+          "line": 53,
+          "logical_lines": 37,
+          "name": "test_expired_exception_and_deprecation_contract_fail"
+        },
+        {
+          "complexity": 1,
+          "line": 91,
+          "logical_lines": 9,
+          "name": "test_core_to_compat_dependency_fails"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 90,
+      "parse_ok": true
+    },
+    "tests/unit/test_skill_management.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 25,
+          "logical_lines": 7,
+          "name": "test_authoritative_seed_imports_three_named_skills"
+        },
+        {
+          "complexity": 1,
+          "line": 33,
+          "logical_lines": 17,
+          "name": "test_seed_rejects_traversal_and_symlink_members"
+        },
+        {
+          "complexity": 1,
+          "line": 51,
+          "logical_lines": 10,
+          "name": "test_validate_requires_matching_folder_frontmatter_and_safe_resources"
+        },
+        {
+          "complexity": 2,
+          "line": 62,
+          "logical_lines": 15,
+          "name": "test_repository_scope_collision_is_reported_not_silently_selected"
+        },
+        {
+          "complexity": 1,
+          "line": 78,
+          "logical_lines": 15,
+          "name": "test_sync_detects_hash_drift_before_replacing_vendored_skill"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 81,
+      "parse_ok": true
+    },
+    "tests/unit/test_state_store.py": {
+      "functions": [
+        {
+          "complexity": 1,
+          "line": 23,
+          "logical_lines": 9,
+          "name": "init_project"
+        },
+        {
+          "complexity": 2,
+          "line": 35,
+          "logical_lines": 9,
+          "name": "make_store"
+        },
+        {
+          "complexity": 1,
+          "line": 45,
+          "logical_lines": 17,
+          "name": "test_stale_revision_is_rejected_and_state_is_unchanged"
+        },
+        {
+          "complexity": 1,
+          "line": 63,
+          "logical_lines": 14,
+          "name": "test_two_controllers_cannot_claim_one_run"
+        },
+        {
+          "complexity": 1,
+          "line": 78,
+          "logical_lines": 14,
+          "name": "test_expired_cross_host_lease_is_ambiguous_not_stolen"
+        },
+        {
+          "complexity": 1,
+          "line": 93,
+          "logical_lines": 18,
+          "name": "test_snapshot_event_recovery_is_deterministic_and_idempotent"
+        },
+        {
+          "complexity": 2,
+          "line": 112,
+          "logical_lines": 13,
+          "name": "test_events_are_sequenced_and_checksum_chained"
+        },
+        {
+          "complexity": 1,
+          "line": 126,
+          "logical_lines": 18,
+          "name": "test_child_result_writes_inbox_without_mutating_run"
+        },
+        {
+          "complexity": 1,
+          "line": 145,
+          "logical_lines": 7,
+          "name": "test_canonical_mutation_requires_active_controller_lease"
+        },
+        {
+          "complexity": 1,
+          "line": 153,
+          "logical_lines": 26,
+          "name": "test_two_projects_run_and_stop_without_crossing_state_or_process_lease"
+        }
+      ],
+      "hard_limit": 450,
+      "logical_lines": 164,
+      "parse_ok": true
+    }
+  },
+  "schema_version": 1
+}

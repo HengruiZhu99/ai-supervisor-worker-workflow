@@ -60,7 +60,7 @@ def main() -> int:
         ("repository", root, Path(".agents/skills")),
     ]
     if args.include_system:
-        locations.append(("codex-user", Path.home() / ".codex", Path("skills")))
+        locations.append(("codex-user", Path.home() / ".agents", Path("skills")))
         locations.append(("codex-admin", Path("/etc/codex"), Path("skills")))
 
     seen: set[Path] = set()

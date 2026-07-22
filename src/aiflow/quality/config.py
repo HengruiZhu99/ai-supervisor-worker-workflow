@@ -1,4 +1,47 @@
-schema_version = 1
+DEFAULT_QUALITY_TOML = """schema_version = 1
+
+[files.python]
+soft_logical_lines = 300
+hard_logical_lines = 450
+
+[files.python_cli_api]
+soft_logical_lines = 250
+hard_logical_lines = 400
+
+[files.shell]
+soft_logical_lines = 100
+hard_logical_lines = 160
+
+[files.typescript_javascript]
+soft_logical_lines = 300
+hard_logical_lines = 450
+
+[files.react_component]
+soft_logical_lines = 200
+hard_logical_lines = 300
+
+[functions]
+soft_logical_lines = 60
+hard_logical_lines = 100
+soft_complexity = 8
+hard_complexity = 12
+
+[diff]
+soft_source_files = 8
+soft_logical_lines = 500
+hard_multiplier = 2.0
+
+[oversized_existing]
+allow_growth = false
+require_architecture_impact_note = true
+
+[housekeeping]
+max_tasks_per_milestone = 1
+max_fraction = 0.10
+"""
+
+
+DEFAULT_DEPRECATIONS_TOML = """schema_version = 1
 
 [[deprecation]]
 id = "legacy-worker-loop"
@@ -43,3 +86,4 @@ removal_deadline = "2027-01-31"
 owner = "workflow-maintainers"
 compat_tests = ["tests/regression/test_integration_red.py"]
 remaining_call_sites = 1
+"""
