@@ -18,6 +18,7 @@ from aiflow.state.store import (  # noqa: E402
     LeaseConflict,
     RevisionConflict,
     RunStore,
+    StateError,
 )
 from aiflow.state.atomic import atomic_write_json, signed  # noqa: E402
 
@@ -182,18 +183,31 @@ class StateStoreTests(unittest.TestCase):
             init_project(project)
             store = self.make_store(project)
             before = store.read_run()
+            result = {
+                "project_id": before["project_id"],
+                "checkout_id": before["checkout_id"],
+                "worktree_id": before["worktree_id"],
+                "run_id": before["run_id"],
+                "status": "completed",
+            }
             result_path = store.write_inbox_result(
                 task_id="T0001",
                 agent_id="worker-1",
-                result={
-                    "project_id": before["project_id"],
-                    "checkout_id": before["checkout_id"],
-                    "worktree_id": before["worktree_id"],
-                    "run_id": before["run_id"],
-                    "status": "completed",
-                },
+                result=result,
             )
             self.assertTrue(result_path.is_file())
+            self.assertEqual(
+                store.write_inbox_result(
+                    task_id="T0001", agent_id="worker-1", result=result
+                ),
+                result_path,
+            )
+            with self.assertRaises(StateError):
+                store.write_inbox_result(
+                    task_id="T0001",
+                    agent_id="worker-1",
+                    result={**result, "status": "failed"},
+                )
             self.assertEqual(store.read_run(), before)
 
     def test_canonical_mutation_requires_active_controller_lease(self) -> None:
