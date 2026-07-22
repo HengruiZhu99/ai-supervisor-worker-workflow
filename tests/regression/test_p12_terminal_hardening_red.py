@@ -18,6 +18,7 @@ from aiflow.controller.attestation import (  # noqa: E402
     AttestationError,
     attest_preconditions,
 )
+from aiflow.api.service import ApiService  # noqa: E402
 from aiflow.controller.lifecycle import RunLifecycle  # noqa: E402
 from aiflow.controller.runner import Budgets  # noqa: E402
 from aiflow.integration.transaction import (  # noqa: E402
@@ -421,6 +422,52 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             )
             task = lifecycle.status(started["run_id"])["tasks"][0]
             self.assertEqual(task["pre_commands"], [command])
+
+    def test_gui_api_creates_an_executable_bounded_default_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root)
+            command = artifact_command("feature.txt")
+            config = root / ".aiflow" / "project.toml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    "test_focused = []",
+                    f"test_red = {json.dumps(command)}\ntest_focused = {json.dumps(command)}",
+                ),
+                encoding="utf-8",
+            )
+            context = context_for(root, tmp)
+            service = ApiService(context, agent_backend=lambda _capsule: {})
+            created = service.start(
+                {
+                    "mode": "solo",
+                    "objective": "bounded GUI task",
+                    "acceptance_ids": ["AC-1"],
+                    "allowed_scope": ["feature.txt"],
+                    "checkout_id": context.checkout_id,
+                }
+            )
+            task = service.lifecycle.status(created["run_id"])["tasks"][0]
+            self.assertEqual(task["allowed_scope"], ["feature.txt"])
+            self.assertEqual(task["pre_commands"], [command])
+            self.assertEqual(task["commands"], [command])
+
+    def test_gui_api_rejects_an_incomplete_default_contract_at_intake(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root)
+            context = context_for(root, tmp)
+            service = ApiService(context, agent_backend=lambda _capsule: {})
+            with self.assertRaisesRegex(ValueError, "test_red"):
+                service.start(
+                    {
+                        "mode": "solo",
+                        "objective": "incomplete GUI task",
+                        "allowed_scope": ["feature.txt"],
+                        "checkout_id": context.checkout_id,
+                    }
+                )
+            self.assertEqual(service.lifecycle.list(), [])
 
     def test_unsafe_task_id_is_rejected_before_run_creation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
