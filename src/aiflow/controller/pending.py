@@ -6,7 +6,7 @@ from typing import Any, Callable, Mapping
 
 from aiflow.agents.results import validate_child_result
 from aiflow.controller.attestation import AttestationError
-from aiflow.integration.recovery import orphaned_result, pending_integration_matches
+from aiflow.integration.recovery import orphaned_result, recover_pending_checkout
 from aiflow.state.store import RunStore
 
 
@@ -34,7 +34,7 @@ def pending_record_matches(workspace: Path, record: Mapping[str, Any]) -> bool:
     return bool(
         record.get("status") == "INTEGRATION_PENDING"
         and isinstance(integration, Mapping)
-        and pending_integration_matches(workspace, integration)
+        and recover_pending_checkout(workspace, integration)
     )
 
 
@@ -45,34 +45,36 @@ def adopt_orphaned_integration(
     agent_id: str,
     persist: Persist,
 ) -> str | None:
-    record = next((item for item in records if item.get("status") == "READY"), None)
-    if record is None:
-        return None
-    attempt = int(record.get("attempts", 0)) + 1
-    try:
-        orphaned = orphaned_result(store, record, agent_id=agent_id, attempt=attempt)
-        if orphaned is None:
-            return None
-        result, inbox, integration = orphaned
-        validate_child_result(
-            result,
-            identities=store.context.identity_fields(store.run_id),
-            task_id=str(record["id"]),
-        )
-        record["status"] = "INTEGRATION_PENDING"
-        record["integration"] = integration
-        relative = str(inbox.relative_to(store.path))
-        record["evidence"] = sorted(
-            {str(value) for value in record.get("evidence", [])} | {relative}
-        )
-        persist(
-            event_type="task_integration_adopted", evidence=list(record["evidence"])
-        )
-    except Exception as exc:
-        mark_reconciliation_required(record, exc)
-        persist(event_type="integration_reconciliation_required")
-        return "blocked"
-    return "adopted"
+    for record in (item for item in records if item.get("status") == "READY"):
+        attempt = int(record.get("attempts", 0)) + 1
+        try:
+            orphaned = orphaned_result(
+                store, record, agent_id=agent_id, attempt=attempt
+            )
+            if orphaned is None:
+                continue
+            result, inbox, integration = orphaned
+            validate_child_result(
+                result,
+                identities=store.context.identity_fields(store.run_id),
+                task_id=str(record["id"]),
+            )
+            record["status"] = "INTEGRATION_PENDING"
+            record["integration"] = integration
+            relative = str(inbox.relative_to(store.path))
+            record["evidence"] = sorted(
+                {str(value) for value in record.get("evidence", [])} | {relative}
+            )
+            persist(
+                event_type="task_integration_adopted",
+                evidence=list(record["evidence"]),
+            )
+        except Exception as exc:
+            mark_reconciliation_required(record, exc)
+            persist(event_type="integration_reconciliation_required")
+            return "blocked"
+        return "adopted"
+    return None
 
 
 def terminal_state(records: list[dict[str, Any]]) -> str:

@@ -302,5 +302,4 @@ class OrchestratedTaskRunner:
         self._apply_candidate(
             result, record, candidate, worktree.base_sha, target_before
         )
-        worktree.remove()
         return result

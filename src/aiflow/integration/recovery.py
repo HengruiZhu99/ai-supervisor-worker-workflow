@@ -5,6 +5,10 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
+from aiflow.integration.checkout import (
+    refresh_bound_target,
+    rollback_bound_target,
+)
 from aiflow.security.process import run_owned_process
 from aiflow.state.atomic import read_json, verify_signed
 from aiflow.state.store import RunStore
@@ -24,6 +28,10 @@ def git_head(root: Path) -> str:
 def _git_value(root: Path, *arguments: str) -> str:
     completed = run_owned_process(["git", *arguments], cwd=root, timeout=10)
     return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+def _git(root: Path, *arguments: str):
+    return run_owned_process(["git", *arguments], cwd=root, timeout=10)
 
 
 def _gate_evidence_valid(value: object) -> bool:
@@ -50,7 +58,9 @@ def _exact_writer_candidate(worktree: Path, base_sha: str, candidate: str) -> bo
     )
 
 
-def pending_integration_matches(root: Path, integration: Mapping[str, Any]) -> bool:
+def _pending_identity(
+    integration: Mapping[str, Any],
+) -> tuple[str, str, str, str] | None:
     integrated = str(integration.get("integrated_commit", ""))
     tested_tree = str(integration.get("tested_tree", ""))
     target_before = str(integration.get("target_before", ""))
@@ -61,14 +71,22 @@ def pending_integration_matches(root: Path, integration: Mapping[str, Any]) -> b
         re.fullmatch(r"[0-9a-f]{40,64}", value)
         for value in (integrated, tested_tree, target_before)
     ):
-        return False
+        return None
     expected_id = hashlib.sha256(
         f"{target_ref}\0{target_before}\0{integrated}\0{tested_tree}".encode()
     ).hexdigest()
     if transaction_id != expected_id:
-        return False
+        return None
     if not _gate_evidence_valid(gate_evidence):
+        return None
+    return integrated, tested_tree, target_before, target_ref
+
+
+def pending_integration_matches(root: Path, integration: Mapping[str, Any]) -> bool:
+    identity = _pending_identity(integration)
+    if identity is None:
         return False
+    integrated, tested_tree, _target_before, target_ref = identity
     symbolic = _git_value(root, "symbolic-ref", "-q", "HEAD") or "HEAD"
     status = run_owned_process(["git", "status", "--porcelain"], cwd=root, timeout=10)
     return bool(
@@ -78,6 +96,44 @@ def pending_integration_matches(root: Path, integration: Mapping[str, Any]) -> b
         and status.returncode == 0
         and not status.stdout.strip()
     )
+
+
+def recover_pending_checkout(root: Path, integration: Mapping[str, Any]) -> bool:
+    if pending_integration_matches(root, integration):
+        return True
+    identity = _pending_identity(integration)
+    if identity is None:
+        return False
+    integrated, tested_tree, target_before, target_ref = identity
+    symbolic = _git_value(root, "symbolic-ref", "-q", "HEAD") or "HEAD"
+    if (
+        symbolic != target_ref
+        or git_head(root) != integrated
+        or _git_value(root, "rev-parse", "HEAD^{tree}") != tested_tree
+        or _git(root, "diff-index", "--quiet", target_before, "--").returncode
+        or _git_value(root, "ls-files", "--others", "--exclude-standard")
+    ):
+        return False
+    failure = refresh_bound_target(
+        _git,
+        root,
+        captured=target_before,
+        integrated=integrated,
+        target_ref=target_ref,
+    )
+    if not failure and pending_integration_matches(root, integration):
+        return True
+    try:
+        rollback_bound_target(
+            _git,
+            root,
+            captured=target_before,
+            integrated=integrated,
+            target_ref=target_ref,
+        )
+    except RuntimeError:
+        pass
+    return False
 
 
 def pending_result(

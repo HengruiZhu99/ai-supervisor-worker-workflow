@@ -32,8 +32,8 @@ from aiflow.domain.progress import ProgressBlocked, ProgressPolicy, Task
 from aiflow.integration.transaction import IntegrationTransaction
 from aiflow.integration.recovery import (
     git_head,
-    pending_integration_matches,
     pending_result,
+    recover_pending_checkout,
     retire_writer_worktree,
 )
 from aiflow.state.store import RunStore
@@ -333,6 +333,13 @@ class TaskExecutionEngine:
         )
         self.closed.update(claimed)
         self._persist(event_type="task_accepted", evidence=list(record["evidence"]))
+        integration = record.get("integration")
+        if isinstance(integration, Mapping):
+            try:
+                retire_writer_worktree(self.store, integration)
+            except Exception as exc:
+                record["cleanup_detail"] = f"{type(exc).__name__}: {exc}"[:1000]
+                self._persist(event_type="task_worktree_cleanup_deferred")
         complete = all(item.get("status") == "ACCEPTED" for item in self.records)
         return (
             "succeeded"
@@ -391,7 +398,7 @@ class TaskExecutionEngine:
                         "gate_evidence": list(applied.evidence),
                     }
                 )
-            elif not pending_integration_matches(self.workspace, integration):
+            elif not recover_pending_checkout(self.workspace, integration):
                 raise AttestationError(
                     "pending integration target is ambiguous and needs reconciliation"
                 )
@@ -401,7 +408,6 @@ class TaskExecutionEngine:
             identities = self.store.context.identity_fields(self.store.run_id)
             validate_child_result(result, identities=identities, task_id=task.id)
             claimed = self._validate_acceptance(task, record, result)
-            retire_writer_worktree(self.store, integration)
         except Exception as exc:
             mark_reconciliation_required(record, exc)
             self._persist(event_type="integration_reconciliation_required")

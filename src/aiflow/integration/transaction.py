@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import re
-import shutil
 import tempfile
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 from typing import Any, Callable, Mapping
 
 from aiflow.security.process import run_owned_process
+from aiflow.integration.checkout import refresh_bound_target, rollback_bound_target
 
 
 Command = tuple[str, ...]
@@ -62,6 +61,7 @@ class IntegrationTransaction:
         self.before_apply = before_apply
         self.after_apply = after_apply
         self.on_prepared = on_prepared
+        self._prepared_commit = ""
 
     def _git(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return self.runner(["git", *args], cwd)
@@ -212,7 +212,7 @@ class IntegrationTransaction:
         target_ref: str,
         tested_tree: str,
         evidence: list[str],
-    ) -> str:
+    ) -> tuple[str, str]:
         del base_sha
         parents = ["-p", captured]
         if method == "merge":
@@ -231,11 +231,12 @@ class IntegrationTransaction:
         )
         integrated = created.stdout.strip()
         if created.returncode or not integrated:
-            return "final apply failed"
+            return "final apply failed", ""
+        self._prepared_commit = integrated
         if not self._target_matches(target_ref, captured):
-            return self._target_drift_reason(target_ref)
+            return self._target_drift_reason(target_ref), integrated
         if self._target_dirty():
-            return "dirty target"
+            return "dirty target", integrated
         self._record_prepared(
             target_ref=target_ref,
             captured=captured,
@@ -244,60 +245,26 @@ class IntegrationTransaction:
             evidence=evidence,
         )
         if not self._target_matches(target_ref, captured):
-            return self._target_drift_reason(target_ref)
+            return self._target_drift_reason(target_ref), integrated
         if self._target_dirty():
-            return "dirty target"
+            return "dirty target", integrated
         updated = self._git(self.target, "update-ref", target_ref, integrated, captured)
         if updated.returncode:
-            return "target HEAD changed"
+            return "target HEAD changed", integrated
         if self._target_ref() != target_ref:
             self._git(self.target, "update-ref", target_ref, captured, integrated)
-            return "target symbolic ref changed"
+            return "target symbolic ref changed", integrated
         if self._target_dirty_against(captured):
             self._git(self.target, "update-ref", target_ref, captured, integrated)
-            return "dirty target"
-        refreshed = self._git(self.target, "read-tree", "--reset", "-u", integrated)
-        if refreshed.returncode:
-            self._git(self.target, "update-ref", target_ref, captured, integrated)
-            self._git(self.target, "read-tree", "--reset", captured)
-            return "target worktree refresh failed"
-        return ""
-
-    def _preserve_untracked(self) -> str:
-        result = self._git(
-            self.target, "ls-files", "--others", "--exclude-standard", "-z"
+            return "dirty target", integrated
+        failure = refresh_bound_target(
+            self._git,
+            self.target,
+            captured=captured,
+            integrated=integrated,
+            target_ref=target_ref,
         )
-        paths = [value for value in result.stdout.split("\0") if value]
-        if not paths:
-            return ""
-        common = self._git(self.target, "rev-parse", "--git-common-dir").stdout.strip()
-        common_path = (
-            Path(common) if Path(common).is_absolute() else self.target / common
-        )
-        recovery = common_path.resolve() / "aiflow" / "recovery" / str(uuid.uuid4())
-        for relative in paths:
-            source = (self.target / relative).resolve()
-            if self.target not in source.parents or not source.exists():
-                continue
-            destination = recovery / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(source), destination)
-        return str(recovery)
-
-    def _rollback_applied(self, captured: str) -> str:
-        recovery = self._preserve_untracked()
-        current = self._head(self.target)
-        updated = self._git(self.target, "update-ref", "HEAD", captured, current)
-        restored = self._git(self.target, "read-tree", "--reset", "-u", captured)
-        if (
-            updated.returncode
-            or restored.returncode
-            or self._git(self.target, "status", "--porcelain").stdout.strip()
-        ):
-            raise RuntimeError(
-                "failed integration could not restore the captured target"
-            )
-        return recovery
+        return failure, integrated
 
     def _test_candidate(
         self,
@@ -329,8 +296,9 @@ class IntegrationTransaction:
         tested_tree: str,
         evidence: list[str],
     ) -> IntegrationResult:
+        integrated = ""
         try:
-            failure = self._apply_target(
+            failure, integrated = self._apply_target(
                 candidate,
                 method,
                 base_sha,
@@ -350,7 +318,21 @@ class IntegrationTransaction:
             if self.after_apply:
                 self.after_apply()
         except KeyboardInterrupt:
-            recovery = self._rollback_applied(captured)
+            prepared = integrated or self._prepared_commit
+            target_value = self._git(
+                self.target, "rev-parse", target_ref
+            ).stdout.strip()
+            recovery = (
+                rollback_bound_target(
+                    self._git,
+                    self.target,
+                    captured=captured,
+                    integrated=prepared,
+                    target_ref=target_ref,
+                )
+                if prepared and target_value == prepared
+                else ""
+            )
             return self._result(
                 False,
                 "user interruption",
@@ -359,15 +341,26 @@ class IntegrationTransaction:
                 tested_tree=tested_tree,
                 recovery_path=recovery,
             )
+        drift = not self._target_matches(target_ref, integrated)
         dirty = self._git(self.target, "status", "--porcelain").stdout.strip()
         target_tree = self._tree(self.target)
-        if dirty or target_tree != tested_tree:
+        if drift or dirty or target_tree != tested_tree:
             reason = (
-                "post-apply target dirty"
-                if dirty
-                else "applied tree differs from tested tree"
+                self._target_drift_reason(target_ref)
+                if drift
+                else (
+                    "post-apply target dirty"
+                    if dirty
+                    else "applied tree differs from tested tree"
+                )
             )
-            recovery = self._rollback_applied(captured)
+            recovery = rollback_bound_target(
+                self._git,
+                self.target,
+                captured=captured,
+                integrated=integrated,
+                target_ref=target_ref,
+            )
             return self._result(
                 False,
                 reason,
@@ -388,6 +381,7 @@ class IntegrationTransaction:
         base_sha: str = "",
         expected_head: str = "",
     ) -> IntegrationResult:
+        self._prepared_commit = ""
         if not self._valid_ref(candidate):
             return IntegrationResult(False, "invalid candidate ref", "", "")
         if not self._valid_ref(base_sha, optional=True):
