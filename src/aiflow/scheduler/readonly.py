@@ -55,7 +55,14 @@ class ReadOnlyScheduler:
         if not SAFE_USER.fullmatch(user):
             raise SchedulerError("scheduler user contains unsafe characters")
         if self.kind == "slurm":
-            return ("squeue", "--noheader", "--user", user, "--format", "%i|%T|%P|%M|%R|%j")
+            return (
+                "squeue",
+                "--noheader",
+                "--user",
+                user,
+                "--format",
+                "%i|%T|%P|%M|%R|%j",
+            )
         return ("qstat", "-u", user, "-f", "-F", "dsv")
 
     def validate_command(self, command: tuple[str, ...]) -> None:
@@ -64,7 +71,11 @@ class ReadOnlyScheduler:
             raise SchedulerError("scheduler monitoring is read-only")
 
     def parse(self, output: str) -> list[dict[str, str]]:
-        return self._parse_slurm(output) if self.kind == "slurm" else self._parse_pbs(output)
+        return (
+            self._parse_slurm(output)
+            if self.kind == "slurm"
+            else self._parse_pbs(output)
+        )
 
     def _parse_slurm(self, output: str) -> list[dict[str, str]]:
         rows = []

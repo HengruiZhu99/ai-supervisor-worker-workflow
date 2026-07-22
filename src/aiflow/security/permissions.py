@@ -37,4 +37,6 @@ def validate_orchestrated_parent(
             "orchestrated mode refuses an unrestricted parent permission profile"
         )
     if selected not in {"read-only", "workspace-write"}:
-        raise PermissionBoundaryError(f"unknown effective parent permission profile: {selected}")
+        raise PermissionBoundaryError(
+            f"unknown effective parent permission profile: {selected}"
+        )

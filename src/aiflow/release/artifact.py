@@ -22,10 +22,15 @@ REQUIRED = {
     ".agents/skills/tdd-solo/SKILL.md",
 }
 FORBIDDEN_STATE_NAMES = {
-    "RUN.json", "TASKS.json", "EVENTS.jsonl", "TRANSACTION.json",
-    "CONTROLLER_LEASE.json", "MUTATING_RUN.json", "project.lock",
+    "RUN.json",
+    "TASKS.json",
+    "EVENTS.jsonl",
+    "TRANSACTION.json",
+    "CONTROLLER_LEASE.json",
+    "MUTATING_RUN.json",
+    "project.lock",
 }
-BOOTSTRAP = '''from __future__ import annotations
+BOOTSTRAP = """from __future__ import annotations
 import sys
 import tempfile
 import zipfile
@@ -44,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix="aiflow-artifact-") as temporary:
     import aiflow.cli.main as cli
     cli.DISTRIBUTION_ROOT_OVERRIDE = root
     raise SystemExit(cli.main())
-'''
+"""
 
 
 def _digest(path: Path) -> str:
@@ -56,7 +61,11 @@ def _digest(path: Path) -> str:
 
 
 def _ignored(_: str, names: list[str]) -> set[str]:
-    return {name for name in names if name == "__pycache__" or name.endswith((".pyc", ".pyo"))}
+    return {
+        name
+        for name in names
+        if name == "__pycache__" or name.endswith((".pyc", ".pyo"))
+    }
 
 
 def _validate_source_tree(root: Path) -> None:
@@ -68,30 +77,34 @@ def _validate_source_tree(root: Path) -> None:
             raise ValueError(f"missing artifact source tree: {relative}")
         for path in (source, *source.rglob("*")):
             if path.is_symlink():
-                raise ValueError(f"artifact source contains symlink: {path.relative_to(root)}")
+                raise ValueError(
+                    f"artifact source contains symlink: {path.relative_to(root)}"
+                )
             if path.exists() and not (path.is_file() or path.is_dir()):
-                raise ValueError(f"artifact source contains special file: {path.relative_to(root)}")
+                raise ValueError(
+                    f"artifact source contains special file: {path.relative_to(root)}"
+                )
 
 
 def _stage(distribution_root: Path, stage: Path) -> dict[str, str]:
     _validate_source_tree(distribution_root)
-    shutil.copytree(distribution_root / "src" / "aiflow", stage / "aiflow", ignore=_ignored)
+    shutil.copytree(
+        distribution_root / "src" / "aiflow", stage / "aiflow", ignore=_ignored
+    )
     shutil.copytree(distribution_root / ".agents", stage / ".agents", ignore=_ignored)
     codex = distribution_root / ".codex"
     if codex.is_dir():
         shutil.copytree(codex, stage / ".codex", ignore=_ignored)
     (stage / "__main__.py").write_text(BOOTSTRAP, encoding="utf-8")
     files = sorted(path for path in stage.rglob("*") if path.is_file())
-    manifest = {
-        path.relative_to(stage).as_posix(): _digest(path)
-        for path in files
-    }
+    manifest = {path.relative_to(stage).as_posix(): _digest(path) for path in files}
     (stage / "ARTIFACT_MANIFEST.json").write_text(
         json.dumps(
             {"schema_version": 1, "workflow_version": __version__, "files": manifest},
             indent=2,
             sort_keys=True,
-        ) + "\n",
+        )
+        + "\n",
         encoding="utf-8",
     )
     return manifest
@@ -119,15 +132,23 @@ def build_artifact(distribution_root: Path, destination: Path) -> dict[str, Any]
     manifest_file = artifact.with_suffix(artifact.suffix + ".manifest.json")
     manifest_file.write_text(
         json.dumps(
-            {"schema_version": 1, "artifact": artifact.name, "sha256": checksum, "files": manifest},
+            {
+                "schema_version": 1,
+                "artifact": artifact.name,
+                "sha256": checksum,
+                "files": manifest,
+            },
             indent=2,
             sort_keys=True,
-        ) + "\n",
+        )
+        + "\n",
         encoding="utf-8",
     )
     verified = verify_artifact(artifact)
     if not verified["ok"]:
-        raise ValueError("built artifact failed verification: " + "; ".join(verified["errors"]))
+        raise ValueError(
+            "built artifact failed verification: " + "; ".join(verified["errors"])
+        )
     return {
         "artifact": str(artifact),
         "checksum_file": str(checksum_file),
@@ -155,14 +176,25 @@ def verify_artifact(artifact: Path) -> dict[str, Any]:
     if missing:
         errors.append("missing required payload: " + ", ".join(missing))
     errors.extend(_external_manifest_errors(path, actual, manifest))
-    return {"ok": not errors, "errors": sorted(set(errors)), "sha256": actual, "files": len(names)}
+    return {
+        "ok": not errors,
+        "errors": sorted(set(errors)),
+        "sha256": actual,
+        "files": len(names),
+    }
 
 
 def _inspect_archive(path: Path) -> tuple[list[str], set[str], dict[str, str]]:
     try:
         with zipfile.ZipFile(path) as archive:
             return _inspect_open_archive(archive)
-    except (OSError, KeyError, ValueError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+    except (
+        OSError,
+        KeyError,
+        ValueError,
+        json.JSONDecodeError,
+        zipfile.BadZipFile,
+    ) as exc:
         return [f"invalid zipapp: {exc}"], set(), {}
 
 
@@ -232,7 +264,9 @@ def _payload_errors(name: str, content: bytes) -> list[str]:
     return errors
 
 
-def _external_manifest_errors(path: Path, checksum: str, manifest: dict[str, str]) -> list[str]:
+def _external_manifest_errors(
+    path: Path, checksum: str, manifest: dict[str, str]
+) -> list[str]:
     external_path = path.with_suffix(path.suffix + ".manifest.json")
     try:
         external = json.loads(external_path.read_text(encoding="utf-8"))

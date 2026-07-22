@@ -3,14 +3,19 @@ from __future__ import annotations
 import ast
 import json
 import os
-import subprocess
 import tempfile
 import tomllib
 from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
-from aiflow.quality.architecture import cycle_errors, dependencies, layer_errors, module_name
+from aiflow.quality.architecture import (
+    cycle_errors,
+    dependencies,
+    layer_errors,
+    module_name,
+)
+from aiflow.quality.diff_budget import SOURCE_SUFFIXES, diff_errors, source_lines
 
 
 DEFAULTS = {
@@ -22,11 +27,17 @@ DEFAULTS = {
     "function": 100,
     "complexity": 12,
 }
-SOURCE_SUFFIXES = {".py", ".sh", ".bash", ".js", ".jsx", ".ts", ".tsx"}
 IGNORED_PARTS = {".git", ".worktrees", "__pycache__", "node_modules", "backups"}
 DEPRECATION_FIELDS = {
-    "id", "symbol_or_path", "replacement", "introduced_version", "removal_version",
-    "removal_deadline", "owner", "compat_tests", "remaining_call_sites",
+    "id",
+    "symbol_or_path",
+    "replacement",
+    "introduced_version",
+    "removal_version",
+    "removal_deadline",
+    "owner",
+    "compat_tests",
+    "remaining_call_sites",
 }
 EXCEPTION_FIELDS = {"owner", "reason", "scope", "created", "expires", "removal_target"}
 
@@ -44,17 +55,6 @@ def _atomic_json(path: Path, payload: object) -> None:
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
-
-
-def logical_lines(path: Path) -> int:
-    try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return 0
-    return sum(
-        1 for line in lines
-        if line.strip() and not line.lstrip().startswith(("#", "//"))
-    )
 
 
 def complexity(node: ast.AST) -> int:
@@ -80,12 +80,16 @@ def python_metrics(path: Path) -> tuple[list[dict[str, Any]], ast.Module | None]
     functions = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            functions.append({
-                "name": node.name,
-                "line": node.lineno,
-                "logical_lines": max(1, (node.end_lineno or node.lineno) - node.lineno + 1),
-                "complexity": complexity(node),
-            })
+            functions.append(
+                {
+                    "name": node.name,
+                    "line": node.lineno,
+                    "logical_lines": max(
+                        1, (node.end_lineno or node.lineno) - node.lineno + 1
+                    ),
+                    "complexity": complexity(node),
+                }
+            )
     return functions, tree
 
 
@@ -129,17 +133,33 @@ class QualityChecker:
 
     def _policy(self) -> dict[str, Any]:
         config = self._toml("quality.toml")
-        files = config.get("files", {}) if isinstance(config.get("files", {}), dict) else {}
+        files = (
+            config.get("files", {}) if isinstance(config.get("files", {}), dict) else {}
+        )
         functions = config.get("functions", {})
         limits = dict(DEFAULTS)
-        for key in ("python", "python_cli_api", "shell", "typescript_javascript", "react_component"):
+        for key in (
+            "python",
+            "python_cli_api",
+            "shell",
+            "typescript_javascript",
+            "react_component",
+        ):
             section = files.get(key, {}) if isinstance(files, dict) else {}
             if isinstance(section, dict) and "hard_logical_lines" in section:
                 limits[key] = int(section["hard_logical_lines"])
         if isinstance(functions, dict):
-            limits["function"] = int(functions.get("hard_logical_lines", limits["function"]))
-            limits["complexity"] = int(functions.get("hard_complexity", limits["complexity"]))
-        return {"limits": limits, "exceptions": config.get("exception", []), "raw": config}
+            limits["function"] = int(
+                functions.get("hard_logical_lines", limits["function"])
+            )
+            limits["complexity"] = int(
+                functions.get("hard_complexity", limits["complexity"])
+            )
+        return {
+            "limits": limits,
+            "exceptions": config.get("exception", []),
+            "raw": config,
+        }
 
     def _sources(self) -> Iterable[Path]:
         for path in self.root.rglob("*"):
@@ -167,9 +187,11 @@ class QualityChecker:
         files: dict[str, Any] = {}
         for path in sorted(self._sources()):
             relative = path.relative_to(self.root).as_posix()
-            functions, tree = python_metrics(path) if path.suffix == ".py" else ([], None)
+            functions, tree = (
+                python_metrics(path) if path.suffix == ".py" else ([], None)
+            )
             files[relative] = {
-                "logical_lines": logical_lines(path),
+                "logical_lines": source_lines(path),
                 "hard_limit": self._file_limit(relative),
                 "functions": functions,
                 "parse_ok": tree is not None if path.suffix == ".py" else True,
@@ -198,7 +220,9 @@ class QualityChecker:
             return ["quality exception table must be an array"]
         for index, entry in enumerate(entries):
             if not isinstance(entry, dict) or not EXCEPTION_FIELDS <= entry.keys():
-                errors.append(f"quality exception {index} lacks required ownership/expiry fields")
+                errors.append(
+                    f"quality exception {index} lacks required ownership/expiry fields"
+                )
                 continue
             try:
                 expiry = date.fromisoformat(str(entry["expires"]))
@@ -206,7 +230,9 @@ class QualityChecker:
                 errors.append(f"quality exception {index} has invalid expiry")
                 continue
             if expiry < date.today():
-                errors.append(f"expired quality exception: {entry['scope']} expired {expiry}")
+                errors.append(
+                    f"expired quality exception: {entry['scope']} expired {expiry}"
+                )
         return errors
 
     def _deprecations(self) -> list[str]:
@@ -219,12 +245,16 @@ class QualityChecker:
             return ["deprecation table must be an array"]
         for index, entry in enumerate(entries):
             if not isinstance(entry, dict) or not DEPRECATION_FIELDS <= entry.keys():
-                errors.append(f"deprecation {index} lacks replacement/owner/tests/usage/expiry")
+                errors.append(
+                    f"deprecation {index} lacks replacement/owner/tests/usage/expiry"
+                )
                 continue
             try:
                 deadline = date.fromisoformat(str(entry["removal_deadline"]))
             except ValueError:
-                errors.append(f"deprecation {entry.get('id', index)} has invalid removal deadline")
+                errors.append(
+                    f"deprecation {entry.get('id', index)} has invalid removal deadline"
+                )
                 continue
             if deadline < date.today():
                 errors.append(
@@ -233,7 +263,9 @@ class QualityChecker:
             for test in entry["compat_tests"]:
                 relative = str(test)
                 if not (self.root / relative).is_file():
-                    errors.append(f"compatibility test missing: {entry['id']} -> {relative}")
+                    errors.append(
+                        f"compatibility test missing: {entry['id']} -> {relative}"
+                    )
             observed = self._deprecation_usage(str(entry["symbol_or_path"]))
             declared = int(entry["remaining_call_sites"])
             if observed != declared:
@@ -267,11 +299,15 @@ class QualityChecker:
         for relative, metric in files.items():
             if not relative.endswith(".py"):
                 continue
-            errors.extend(self._inspect_architecture_file(relative, metric, graph, authorities))
+            errors.extend(
+                self._inspect_architecture_file(relative, metric, graph, authorities)
+            )
         errors.extend(cycle_errors(graph))
         for name, paths in authorities.items():
             if len(paths) > 1:
-                errors.append(f"duplicate class authority {name}: {', '.join(sorted(paths))}")
+                errors.append(
+                    f"duplicate class authority {name}: {', '.join(sorted(paths))}"
+                )
         return errors
 
     def _inspect_architecture_file(
@@ -300,80 +336,6 @@ class QualityChecker:
                 authorities.setdefault(node.name, []).append(relative)
         return errors
 
-    def _diff_errors(self) -> list[str]:
-        if not (self.root / ".git").exists():
-            return []
-        base = os.environ.get("AIFLOW_DIFF_BASE", "HEAD")
-        verified = subprocess.run(
-            ["git", "-C", str(self.root), "rev-parse", "--verify", base],
-            text=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-            check=False,
-        )
-        if verified.returncode and base == "HEAD":
-            return []
-        if verified.returncode:
-            return [f"cannot measure source diff from {base}"]
-        result = subprocess.run(
-            ["git", "-C", str(self.root), "diff", "--numstat", base],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-            check=False,
-        )
-        if result.returncode:
-            return [f"cannot measure source diff from {base}"]
-        rows = self._source_diff_rows(result.stdout)
-        rows.extend(self._untracked_source_rows())
-        return self._diff_budget_errors(rows)
-
-    def _untracked_source_rows(self) -> list[tuple[int, int, str]]:
-        result = subprocess.run(
-            ["git", "-C", str(self.root), "ls-files", "--others", "--exclude-standard", "-z"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-            check=False,
-        )
-        if result.returncode:
-            return []
-        rows: list[tuple[int, int, str]] = []
-        for relative in result.stdout.split("\0"):
-            path = self.root / relative
-            if relative and path.is_file() and path.suffix.lower() in SOURCE_SUFFIXES:
-                rows.append((logical_lines(path), 0, relative))
-        return rows
-
-    @staticmethod
-    def _source_diff_rows(output: str) -> list[tuple[int, int, str]]:
-        source_rows: list[tuple[int, int, str]] = []
-        for line in output.splitlines():
-            parts = line.split("\t", 2)
-            if len(parts) != 3:
-                continue
-            added, removed, path = parts
-            if path and Path(path).suffix.lower() in SOURCE_SUFFIXES and added.isdigit() and removed.isdigit():
-                source_rows.append((int(added), int(removed), path))
-        return source_rows
-
-    def _diff_budget_errors(self, source_rows: list[tuple[int, int, str]]) -> list[str]:
-        config = self.policy["raw"].get("diff", {})
-        soft_files = int(config.get("soft_source_files", 8))
-        soft_lines = int(config.get("soft_logical_lines", 500))
-        multiplier = float(config.get("hard_multiplier", 2.0))
-        files, lines = len(source_rows), sum(add + remove for add, remove, _ in source_rows)
-        errors = []
-        if files > soft_files * multiplier or lines > soft_lines * multiplier:
-            errors.append(f"diff hard budget exceeded: {files} files, {lines} changed lines")
-        note = self.root / "docs" / "architecture-impact.md"
-        if (files > soft_files or lines > soft_lines) and not note.is_file():
-            errors.append("soft diff budget requires docs/architecture-impact.md")
-        return errors
-
     def check(self) -> dict[str, Any]:
         files = self._measure()
         previous = self._baseline().get("files", {})
@@ -381,7 +343,7 @@ class QualityChecker:
             self._exceptions()
             + self._deprecations()
             + self._architecture(files)
-            + self._diff_errors()
+            + diff_errors(self.root, self.policy["raw"])
         )
         for relative, metric in files.items():
             old = previous.get(relative, {}) if isinstance(previous, dict) else {}
@@ -390,7 +352,9 @@ class QualityChecker:
         return {"ok": not errors, "errors": sorted(errors), "files_checked": len(files)}
 
     @staticmethod
-    def _file_errors(relative: str, metric: dict[str, Any], old: dict[str, Any]) -> list[str]:
+    def _file_errors(
+        relative: str, metric: dict[str, Any], old: dict[str, Any]
+    ) -> list[str]:
         lines, limit = metric["logical_lines"], metric["hard_limit"]
         old_lines = int(old.get("logical_lines", 0)) if isinstance(old, dict) else 0
         if lines <= limit:
@@ -398,7 +362,9 @@ class QualityChecker:
         if not old or old_lines <= limit:
             return [f"file hard limit exceeded: {relative} has {lines}>{limit}"]
         if lines > old_lines:
-            return [f"oversized no-growth violation: {relative} grew {old_lines}->{lines}"]
+            return [
+                f"oversized no-growth violation: {relative} grew {old_lines}->{lines}"
+            ]
         return []
 
     def _function_errors(

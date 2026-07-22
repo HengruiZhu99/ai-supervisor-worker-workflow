@@ -45,4 +45,6 @@ def run_owned_process(
                 pass
         stdout, stderr = process.communicate()
         return subprocess.CompletedProcess(list(command), 124, stdout, stderr)
-    return subprocess.CompletedProcess(list(command), process.returncode, stdout, stderr)
+    return subprocess.CompletedProcess(
+        list(command), process.returncode, stdout, stderr
+    )

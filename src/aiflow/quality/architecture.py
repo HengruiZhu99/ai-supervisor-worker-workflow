@@ -36,11 +36,18 @@ def dependencies(tree: ast.Module) -> set[str]:
         lineno = getattr(node, "lineno", 0)
         if any(start <= lineno <= end for start, end in hidden):
             continue
-        if isinstance(node, ast.ImportFrom) and str(node.module or "").startswith("aiflow"):
+        if isinstance(node, ast.ImportFrom) and str(node.module or "").startswith(
+            "aiflow"
+        ):
             module = str(node.module)
-            result.update(module if alias.name == "*" else f"{module}.{alias.name}" for alias in node.names)
+            result.update(
+                module if alias.name == "*" else f"{module}.{alias.name}"
+                for alias in node.names
+            )
         elif isinstance(node, ast.Import):
-            result.update(alias.name for alias in node.names if alias.name.startswith("aiflow"))
+            result.update(
+                alias.name for alias in node.names if alias.name.startswith("aiflow")
+            )
     return result
 
 
@@ -62,8 +69,14 @@ def layer_errors(relative: str, module: str, imported: set[str]) -> list[str]:
         parts = dependency.split(".")
         target = parts[1] if len(parts) > 1 else ""
         target_rank = LAYER_RANK.get(target)
-        if source_rank is not None and target_rank is not None and target_rank > source_rank:
-            errors.append(f"layer violation: {relative} ({source}) imports {dependency} ({target})")
+        if (
+            source_rank is not None
+            and target_rank is not None
+            and target_rank > source_rank
+        ):
+            errors.append(
+                f"layer violation: {relative} ({source}) imports {dependency} ({target})"
+            )
     return errors
 
 

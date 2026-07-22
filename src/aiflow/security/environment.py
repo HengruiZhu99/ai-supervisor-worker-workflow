@@ -19,11 +19,17 @@ INJECTABLE_AIFLOW_KEYS = {
 
 
 def scrub_environment(
-    source: Mapping[str, str] | None = None, *, injected: Mapping[str, str] | None = None
+    source: Mapping[str, str] | None = None,
+    *,
+    injected: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """Remove inherited AIFLOW context and inject only controller-validated values."""
     original = os.environ if source is None else source
-    cleaned = {str(key): str(value) for key, value in original.items() if not key.startswith("AIFLOW_")}
+    cleaned = {
+        str(key): str(value)
+        for key, value in original.items()
+        if not key.startswith("AIFLOW_")
+    }
     for key, value in (injected or {}).items():
         if key not in INJECTABLE_AIFLOW_KEYS:
             raise ValueError(f"unsupported AIFLOW environment key: {key}")

@@ -10,7 +10,9 @@ PATTERNS = {
     "openai-key": re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}"),
     "github-token": re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
     "aws-access-key": re.compile(r"AKIA[0-9A-Z]{16}"),
-    "private-key": re.compile("-----BEGIN " + r"(?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    "private-key": re.compile(
+        "-----BEGIN " + r"(?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
+    ),
 }
 
 
@@ -53,6 +55,10 @@ class SecretScanner:
             check=False,
         )
         if result.returncode != 0:
-            raise ValueError(result.stderr.decode(errors="replace").strip() or "git ls-files failed")
-        paths = [self.root / value.decode() for value in result.stdout.split(b"\0") if value]
+            raise ValueError(
+                result.stderr.decode(errors="replace").strip() or "git ls-files failed"
+            )
+        paths = [
+            self.root / value.decode() for value in result.stdout.split(b"\0") if value
+        ]
         return self.scan(paths)
