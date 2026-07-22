@@ -58,7 +58,7 @@
     ".aiflow/deprecations.toml": "bb32d88b0bef469e39f8ffacff1baa024a25663f489ae7eb44a83f3f6c0e5492",
     ".aiflow/handoffs/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     ".aiflow/project.toml": "aaf32d328c9904b79b95450e8392ad97c116b01816037833fb7840484ef16ae2",
-    ".aiflow/quality.toml": "b29d4dafc5d765b7fe2839ab313431fe38ffc2523989121caa382d763c31e0e3",
+    ".aiflow/quality.toml": "8dddf7237f983b27518ad286776bb6f9dd970ed000d508f616dce47e97b16a8a",
     ".aiflow/site.toml": "49e3626e3ba4216dbc9a28fdbf2479655c66a8634fecb978b9a261cd73be84de",
     ".codex/agents/codebase-mapper.toml": "c9e239cf7e42909d41417584ddbdb900cef72bb0f5c591d72333b2733cc263a0",
     ".codex/agents/docs-researcher.toml": "acede7acae0a6c030731c50932596e5ddf6ca61328d29f1cf2c5b93947b7fd54",
