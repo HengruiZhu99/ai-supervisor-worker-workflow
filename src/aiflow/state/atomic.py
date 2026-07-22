@@ -9,7 +9,9 @@ from typing import Any, Mapping
 
 
 def canonical_bytes(payload: Mapping[str, Any]) -> bytes:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
 
 
 def payload_checksum(payload: Mapping[str, Any]) -> str:

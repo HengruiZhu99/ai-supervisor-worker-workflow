@@ -9,27 +9,36 @@ from aiflow.state.atomic import signed, verify_signed
 
 
 def make_event(
-    *, sequence: int, state_revision: int, event_type: str,
-    identities: Mapping[str, str], data: Mapping[str, Any],
-    occurred_at: str, previous_checksum: str,
+    *,
+    sequence: int,
+    state_revision: int,
+    event_type: str,
+    identities: Mapping[str, str],
+    data: Mapping[str, Any],
+    occurred_at: str,
+    previous_checksum: str,
 ) -> dict[str, Any]:
-    return signed({
-        "schema_version": 1,
-        "sequence": sequence,
-        "state_revision": state_revision,
-        "event_type": event_type,
-        **identities,
-        "occurred_at": occurred_at,
-        "previous_checksum": previous_checksum,
-        "data": dict(data),
-    })
+    return signed(
+        {
+            "schema_version": 1,
+            "sequence": sequence,
+            "state_revision": state_revision,
+            "event_type": event_type,
+            **identities,
+            "occurred_at": occurred_at,
+            "previous_checksum": previous_checksum,
+            "data": dict(data),
+        }
+    )
 
 
 def read_events(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     events: list[dict[str, Any]] = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
         try:
             event = json.loads(line)
         except json.JSONDecodeError as exc:

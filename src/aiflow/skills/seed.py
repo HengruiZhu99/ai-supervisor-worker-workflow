@@ -53,16 +53,23 @@ def import_seed(
         except (OSError, zipfile.BadZipFile) as exc:
             raise SeedImportError(f"invalid skill seed: {exc}") from exc
         with handle:
-            members = [(info, _validate_member(info, seen)) for info in handle.infolist()]
+            members = [
+                (info, _validate_member(info, seen)) for info in handle.infolist()
+            ]
             for info, relative in members:
                 destination = staging.joinpath(*relative.parts)
                 if not destination.resolve().is_relative_to(staging.resolve()):
-                    raise SeedImportError(f"ZIP member escapes staging: {info.filename!r}")
+                    raise SeedImportError(
+                        f"ZIP member escapes staging: {info.filename!r}"
+                    )
                 if info.is_dir():
                     destination.mkdir(parents=True, exist_ok=True)
                     continue
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                with handle.open(info) as archive_member, destination.open("xb") as output:
+                with (
+                    handle.open(info) as archive_member,
+                    destination.open("xb") as output,
+                ):
                     shutil.copyfileobj(archive_member, output)
                 os.chmod(destination, (info.external_attr >> 16) & 0o777 or 0o644)
         source_root = staging / "nr-design-tdd" / "skills"

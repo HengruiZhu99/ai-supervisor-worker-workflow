@@ -14,7 +14,9 @@ if TYPE_CHECKING:
 CURRENT_SCHEMA = 1
 
 
-def _base(store: "RunStore", event: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _base(
+    store: "RunStore", event: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
     identities = store.context.identity_fields(store.run_id)
     occurred = str(event["occurred_at"])
     mode = str(event.get("data", {}).get("mode", "solo"))
@@ -43,7 +45,14 @@ def _replay(store: "RunStore") -> tuple[dict[str, Any], dict[str, Any]]:
     if not events or events[0].get("event_type") != "run_created":
         raise RuntimeError("event history has no run_created root")
     run, tasks = _base(store, events[0])
-    protected = {"schema_version", "state_revision", "project_id", "checkout_id", "worktree_id", "run_id"}
+    protected = {
+        "schema_version",
+        "state_revision",
+        "project_id",
+        "checkout_id",
+        "worktree_id",
+        "run_id",
+    }
     for event in events[1:]:
         data = event.get("data", {})
         updates = data.get("updates", {})
@@ -51,16 +60,20 @@ def _replay(store: "RunStore") -> tuple[dict[str, Any], dict[str, Any]]:
         if not isinstance(updates, dict) or not isinstance(task_updates, dict):
             raise RuntimeError(f"event {event['sequence']} lacks replayable updates")
         if protected.intersection(updates) or protected.intersection(task_updates):
-            raise RuntimeError(f"event {event['sequence']} attempts protected replay mutation")
+            raise RuntimeError(
+                f"event {event['sequence']} attempts protected replay mutation"
+            )
         run.update(updates)
         tasks.update(task_updates)
         revision = int(event["state_revision"])
         occurred = str(event["occurred_at"])
-        run.update({
-            "state_revision": revision,
-            "controller_id": str(data.get("controller_id", "")),
-            "updated_at": occurred,
-        })
+        run.update(
+            {
+                "state_revision": revision,
+                "controller_id": str(data.get("controller_id", "")),
+                "updated_at": occurred,
+            }
+        )
         tasks.update({"state_revision": revision, "updated_at": occurred})
     return signed(run), signed(tasks)
 
@@ -69,7 +82,12 @@ def _backup(store: "RunStore") -> Path:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     backup = store.path / "evidence" / f"repair-{stamp}"
     backup.mkdir(parents=True, exist_ok=False)
-    for path in (store.run_file, store.tasks_file, store.intent_file, store.committed_file):
+    for path in (
+        store.run_file,
+        store.tasks_file,
+        store.intent_file,
+        store.committed_file,
+    ):
         if path.is_file():
             shutil.copy2(path, backup / path.name)
     return backup
@@ -78,7 +96,9 @@ def _backup(store: "RunStore") -> Path:
 def repair_store(store: "RunStore") -> dict[str, Any]:
     with store._lock():
         if store.intent_file.exists():
-            raise RuntimeError("resolve the prepared transaction before snapshot repair")
+            raise RuntimeError(
+                "resolve the prepared transaction before snapshot repair"
+            )
         run, tasks = _replay(store)
         backup = _backup(store)
         atomic_write_json(store.run_file, run)
@@ -104,11 +124,15 @@ def migrate_store(store: "RunStore") -> dict[str, Any]:
         if source == CURRENT_SCHEMA:
             store.verify()
             return {
-                "status": "current", "run_id": store.run_id,
-                "from_version": source, "to_version": CURRENT_SCHEMA,
+                "status": "current",
+                "run_id": store.run_id,
+                "from_version": source,
+                "to_version": CURRENT_SCHEMA,
             }
         if source != 0:
-            raise RuntimeError(f"unsupported state migration {source}->{CURRENT_SCHEMA}")
+            raise RuntimeError(
+                f"unsupported state migration {source}->{CURRENT_SCHEMA}"
+            )
         backup = _backup(store)
         migrated_payloads = []
         for payload in (run, tasks):
@@ -129,8 +153,10 @@ def migrate_store(store: "RunStore") -> dict[str, Any]:
         atomic_write_json(store.intent_file, intent)
         store._apply_migration_intent(intent)
         result = {
-            "status": "migrated", "run_id": store.run_id,
-            "from_version": source, "to_version": CURRENT_SCHEMA,
+            "status": "migrated",
+            "run_id": store.run_id,
+            "from_version": source,
+            "to_version": CURRENT_SCHEMA,
             "backup": str(backup),
         }
         atomic_write_json(backup / "MIGRATION.json", result)

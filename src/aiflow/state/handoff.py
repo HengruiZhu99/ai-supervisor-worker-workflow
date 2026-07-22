@@ -44,7 +44,15 @@ def create_handoff(
         raise HandoffError("run identity does not match the selected checkout")
     contract = context.root / ".aiflow" / "project.toml"
     command = shlex.join(
-        ["aiflow", "--project-root", str(context.root), "run", "resume", "--run-id", run_id]
+        [
+            "aiflow",
+            "--project-root",
+            str(context.root),
+            "run",
+            "resume",
+            "--run-id",
+            run_id,
+        ]
     )
     payload = signed(
         {
@@ -74,13 +82,17 @@ def verify_handoff(path: Path, context: ProjectContext) -> dict[str, Any]:
     except (OSError, ValueError) as exc:
         raise HandoffError(str(exc)) from exc
     expected = context.identity_fields(str(payload.get("run_id", "")))
-    mismatches = [key for key, value in expected.items() if str(payload.get(key, "")) != value]
+    mismatches = [
+        key for key, value in expected.items() if str(payload.get(key, "")) != value
+    ]
     if mismatches:
         raise HandoffError("handoff identity mismatch: " + ", ".join(mismatches))
     if str(payload.get("git_head", "")) != _git(context, "rev-parse", "HEAD"):
         raise HandoffError("handoff Git HEAD is stale")
     contract = context.root / str(payload.get("contract_path", ""))
-    if not contract.is_file() or str(payload.get("contract_sha256", "")) != _sha256(contract):
+    if not contract.is_file() or str(payload.get("contract_sha256", "")) != _sha256(
+        contract
+    ):
         raise HandoffError("handoff project contract is stale")
     run_path = context.state_root / "runs" / expected["run_id"] / "RUN.json"
     current = read_json(run_path)

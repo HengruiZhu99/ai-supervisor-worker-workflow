@@ -55,7 +55,10 @@ def local_process_identity() -> dict[str, Any]:
 
 
 def owner_is_live(owner: Mapping[str, Any]) -> bool:
-    if owner.get("host_id") != local_host_id() or owner.get("boot_id") != local_boot_id():
+    if (
+        owner.get("host_id") != local_host_id()
+        or owner.get("boot_id") != local_boot_id()
+    ):
         return False
     try:
         pid = int(owner["pid"])

@@ -54,7 +54,9 @@ def metadata(path: Path) -> dict[str, str]:
         if separator:
             result[key.strip()] = value.strip().strip('"').strip("'")
     if set(result) != {"name", "description"}:
-        raise SkillValidationError(f"frontmatter must contain only name and description: {path}")
+        raise SkillValidationError(
+            f"frontmatter must contain only name and description: {path}"
+        )
     if not NAME.fullmatch(result["name"]) or not result["description"]:
         raise SkillValidationError(f"invalid skill name or empty description: {path}")
     return result
@@ -83,7 +85,8 @@ class SkillManager:
         if recursive:
             return sorted({path.parent for path in root.rglob("SKILL.md")})
         return sorted(
-            path for path in root.iterdir()
+            path
+            for path in root.iterdir()
             if path.is_dir() and (path / "SKILL.md").is_file()
         )
 
@@ -92,13 +95,15 @@ class SkillManager:
         for scope, root in self.scopes.items():
             for directory in self._skill_dirs(root, recursive=scope == "system/plugin"):
                 info = metadata(directory / "SKILL.md")
-                rows.append({
-                    "scope": scope,
-                    "name": info["name"],
-                    "description": info["description"],
-                    "path": str(directory),
-                    "hash": tree_hash(directory),
-                })
+                rows.append(
+                    {
+                        "scope": scope,
+                        "name": info["name"],
+                        "description": info["description"],
+                        "path": str(directory),
+                        "hash": tree_hash(directory),
+                    }
+                )
         return rows
 
     def validate(self) -> dict[str, str]:
@@ -112,7 +117,9 @@ class SkillManager:
                 )
             for path in directory.rglob("*"):
                 if path.is_symlink():
-                    raise SkillValidationError(f"repository skill contains a symlink: {path}")
+                    raise SkillValidationError(
+                        f"repository skill contains a symlink: {path}"
+                    )
             hashes[info["name"]] = tree_hash(directory)
         return hashes
 
@@ -121,22 +128,30 @@ class SkillManager:
         by_name: dict[str, list[dict[str, str]]] = {}
         for row in rows:
             by_name.setdefault(row["name"], []).append(row)
-        collisions = {name: entries for name, entries in by_name.items() if len(entries) > 1}
+        collisions = {
+            name: entries for name, entries in by_name.items() if len(entries) > 1
+        }
         if collisions:
             detail = "; ".join(
                 f"{name}: {', '.join(row['scope'] for row in entries)}"
                 for name, entries in sorted(collisions.items())
             )
-            raise SkillCollision(f"duplicate skill names require explicit resolution: {detail}")
+            raise SkillCollision(
+                f"duplicate skill names require explicit resolution: {detail}"
+            )
         return {"ok": True, "skills": rows, "collisions": {}}
 
-    def sync(self, source: Path, *, expected_hashes: Mapping[str, str]) -> dict[str, str]:
+    def sync(
+        self, source: Path, *, expected_hashes: Mapping[str, str]
+    ) -> dict[str, str]:
         repository = self.scopes["repository"]
         assert repository is not None
         current = self.validate()
         for name, expected in expected_hashes.items():
             if current.get(name) != expected:
-                raise SkillValidationError(f"refusing to overwrite drifted skill: {name}")
+                raise SkillValidationError(
+                    f"refusing to overwrite drifted skill: {name}"
+                )
         repository.mkdir(parents=True, exist_ok=True)
         updated: dict[str, str] = {}
         for source_dir in self._skill_dirs(source):
