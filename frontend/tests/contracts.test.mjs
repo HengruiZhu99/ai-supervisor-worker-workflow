@@ -47,3 +47,8 @@ test("a successful snapshot clears stale transient errors", () => {
 test("CI rejects flaky browser tests instead of masking them with retries", () => {
   assert.match(playwrightConfig, /failOnFlakyTests:\s*!!process\.env\.CI/);
 });
+
+test("stale EventSource errors cannot close a replacement connection", () => {
+  assert.match(source, /const connection = new EventSource/);
+  assert.match(source, /connection\.close\(\)/);
+});
