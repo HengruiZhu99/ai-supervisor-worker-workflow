@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install -e '.[dev]'
+      - name: Syntax, lint, and types
+        run: |
+          python -m compileall -q src scripts tests
+          ruff check src/aiflow tests --select E9,F63,F7,F82
+          mypy src/aiflow --ignore-missing-imports --allow-untyped-defs --disable-error-code=import-untyped
+      - name: Unit and regression
+        run: |
+          python -m unittest discover -s tests/unit -p 'test_*.py'
+          python -m unittest discover -s tests/regression -p 'test_*.py'
+      - name: Integration and acceptance
+        run: |
+          python -m unittest discover -s tests/integration -p 'test_*.py'
+          python -m unittest discover -s tests/acceptance -p 'test_*.py'
+          python -m unittest discover -s scripts -p 'test_*.py'
+      - name: Architecture, skills, agents, and ownership
+        run: |
+          bin/aiflow --project-root . quality check
+          bin/aiflow --project-root . project verify
+          bin/aiflow --project-root . skills validate
+          python scripts/secret_scan.py
+      - name: Shell syntax and ShellCheck
+        run: |
+          bash -n install.sh scripts/*.sh scripts/lib/*.sh
+          shellcheck -S error install.sh scripts/*.sh scripts/lib/*.sh
+
+  frontend:
+    name: Frontend and GUI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Type, lint, unit, and build
+        working-directory: frontend
+        run: |
+          npm run check
+          npm run lint
+          npm test
+          npm run build
+      - name: Generated asset drift
+        run: git diff --exit-code -- src/aiflow/api/static/app.js
+      - name: Browser install and E2E
+        working-directory: frontend
+        run: |
+          npx playwright install chromium
+          npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-failure-${{ github.run_id }}
+          path: |
+            frontend/test-results
+            frontend/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+  offline-artifact:
+    name: Offline artifact and archive audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - run: bin/aiflow package build --distribution-root . --output-dir dist
+      - run: bin/aiflow package verify dist/aiflow-0.4.0.dev0.pyz
+      - run: python -m unittest tests.integration.test_offline_artifact
+      - run: python scripts/secret_scan.py

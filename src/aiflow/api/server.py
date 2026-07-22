@@ -5,7 +5,7 @@ import secrets
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, cast
 from urllib.parse import urlsplit
 
 from aiflow.api.security import RequestSecurity, SecurityError, validate_bind
@@ -23,7 +23,7 @@ STATIC_FILES = {
 
 class ProjectHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = False
+    allow_reuse_address = True
 
     def __init__(
         self,
@@ -72,7 +72,7 @@ class ProjectRequestHandler(BaseHTTPRequestHandler):
 
     def _authorize_read(self) -> bool:
         try:
-            self.server.security.authorize_read(self.headers)
+            self.server.security.authorize_read(cast(Mapping[str, str], self.headers))
         except SecurityError as exc:
             self._error(HTTPStatus.FORBIDDEN, str(exc))
             return False
@@ -80,7 +80,7 @@ class ProjectRequestHandler(BaseHTTPRequestHandler):
 
     def _payload(self) -> dict[str, Any] | None:
         try:
-            self.server.security.authorize_mutation(self.headers)
+            self.server.security.authorize_mutation(cast(Mapping[str, str], self.headers))
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):

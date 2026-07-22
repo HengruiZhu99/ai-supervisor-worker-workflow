@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "build": "esbuild src/main.tsx --bundle --minify --outfile=../src/aiflow/api/static/app.js",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "lint": "tsc --noEmit --noUnusedLocals --noUnusedParameters",
+    "test": "node --test tests/contracts.test.mjs",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "react": "19.2.8",
@@ -14,6 +17,7 @@
   "devDependencies": {
     "@types/react": "19.2.10",
     "@types/react-dom": "19.2.3",
+    "@playwright/test": "1.61.1",
     "esbuild": "0.28.1",
     "typescript": "7.0.2"
   }

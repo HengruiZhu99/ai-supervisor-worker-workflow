@@ -12,7 +12,7 @@ dependencies = []
 [project.optional-dependencies]
 gui = []
 hpc = []
-dev = []
+dev = ["ruff==0.15.22", "mypy==2.3.0"]
 
 [project.scripts]
 aiflow = "aiflow.cli.main:main"

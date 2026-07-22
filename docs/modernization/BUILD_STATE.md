@@ -2,21 +2,21 @@
 
 ## Current checkpoint
 
-- Phase: `P11`
-- State: `P9_P10_ACCEPTED_LOCALLY`
+- Phase: `P12`
+- State: `P11_ACCEPTED_LOCALLY`
 - Branch: `codex/aiflow-v2-lightweight-multiproject`
 - Base: `e9311a932dc2d5bab57c2cfd7ed734b8e1ca5466`
-- Active acceptance target: modular project-isolated API/SSE and Solo-first static UI,
-  transactional offline artifact, and read-only scheduler fixtures
+- Active acceptance target: independent architecture, security, scientific/TDD,
+  contamination, UI, and release audits with no unresolved critical/high finding
 - Acceptance IDs closed: `AC-PERM-001`, `AC-BACKEND-001`, `AC-ID-001`, `AC-ID-002`,
   `AC-ID-003`, `AC-ID-004`, `AC-STATE-001`, `AC-INSTALL-001`, `AC-SKILL-001`,
   `AC-PROGRESS-001`, `AC-PROGRESS-002`, `AC-PROGRESS-003`, `AC-PERM-002`,
   `AC-BACKEND-002`, `AC-ID-005`, `AC-STATE-002`, `AC-SOLO-001`, `AC-SOLO-003`,
   `AC-AUTO-001`, `AC-EXEC-001`, `AC-EXEC-002`, `AC-QUALITY-001`, `AC-DEPR-001`,
   `AC-INTEGRATE-001`, `AC-STATE-003`, `AC-MIGRATE-001`, `AC-GUI-001`, `AC-GUI-002`,
-  `AC-HPC-001`, `AC-HANDOFF-001`
-- Next action: complete the deterministic acceptance scenario matrix, CI, operator
-  documentation, archive/secret audit, and release evidence without publication.
+  `AC-HPC-001`, `AC-HANDOFF-001`, `AC-SOLO-002`, `AC-QUALITY-002`, `AC-PACKAGE-001`
+- Next action: complete fresh read-only P12 audits, resolve any critical/high finding,
+  close the acceptance matrix, and record the exact terminal state.
 
 ## Immutable inputs
 
@@ -37,7 +37,7 @@ for narrow high-volume classification/routing. Deterministic style gates use no 
 
 - unchanged failing command repeats: 0
 - same normalized implementation failure: 0
-- consecutive accepted checkpoints without acceptance delta: 0 (P5 closed three IDs)
+- consecutive accepted checkpoints without acceptance delta: 0 (P11 closed three IDs)
 - environment corrections: 0
 
 ## Safe resume

@@ -33,7 +33,7 @@ class DeterministicWatchdog:
         self._seen.add(signature)
         if self.diagnose is None:
             return "ACTION_REQUIRED"
-        capsule = {"signature": signature, "event": dict(event)}
+        capsule: dict[str, object] = {"signature": signature, "event": dict(event)}
         self.diagnose(capsule)
         return "DIAGNOSED"
 

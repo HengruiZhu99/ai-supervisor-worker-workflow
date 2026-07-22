@@ -16,6 +16,7 @@ from aiflow.skills.installer import InstallError, ProjectInstaller
 from aiflow.skills.manager import SkillCollision, SkillManager, SkillValidationError
 from aiflow.state.lifecycle import RunLifecycle
 from aiflow.state.store import StateError
+from aiflow.state.handoff import verify_handoff
 from aiflow.cli.web import gui_command, hub_command
 from aiflow.cli.release import package_command
 
@@ -138,6 +139,7 @@ def _permission_preflight(mode: str, parent_sandbox: str) -> None:
 
 def run_command(args: argparse.Namespace) -> int:
     lifecycle = _lifecycle(args)
+    result: Any
     if args.run_action == "start":
         _permission_preflight(args.mode, args.parent_sandbox)
         result = lifecycle.start(
@@ -147,6 +149,8 @@ def run_command(args: argparse.Namespace) -> int:
         )
     elif args.run_action == "list":
         result = lifecycle.list()
+    elif args.run_action == "verify-handoff":
+        result = verify_handoff(Path(args.path).expanduser().resolve(), lifecycle.context)
     else:
         run_id = _run_id(lifecycle, args.run_id)
         if args.run_action == "status":
@@ -157,6 +161,12 @@ def run_command(args: argparse.Namespace) -> int:
             result = lifecycle.resume(run_id, budgets=_budgets(args))
         elif args.run_action == "stop":
             result = lifecycle.stop(run_id)
+        elif args.run_action == "pause":
+            revision = int(lifecycle.status(run_id)["state_revision"])
+            result = lifecycle.pause(run_id, expected_revision=revision)
+        elif args.run_action == "handoff":
+            revision = int(lifecycle.status(run_id)["state_revision"])
+            result = lifecycle.handoff(run_id, expected_revision=revision)
         else:  # pragma: no cover
             raise StateError(f"unknown run action: {args.run_action}")
     _print(result)
@@ -258,6 +268,14 @@ def _add_package_commands(commands: argparse._SubParsersAction) -> None:
     package.set_defaults(func=package_command)
 
 
+def _add_handoff_actions(actions: argparse._SubParsersAction) -> None:
+    for name in ("pause", "handoff"):
+        action = actions.add_parser(name)
+        action.add_argument("--run-id", default="")
+    verify = actions.add_parser("verify-handoff")
+    verify.add_argument("path")
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="aiflow")
     result.add_argument("--version", action="version", version=__version__)
@@ -323,6 +341,7 @@ def parser() -> argparse.ArgumentParser:
     _add_budgets(resume)
     stop = run_actions.add_parser("stop")
     stop.add_argument("--run-id", default="")
+    _add_handoff_actions(run_actions)
     runs.set_defaults(func=run_command)
 
     controller = commands.add_parser("controller", help="run the finite deterministic controller")

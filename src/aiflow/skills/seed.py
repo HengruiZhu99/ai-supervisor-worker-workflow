@@ -62,16 +62,16 @@ def import_seed(
                     destination.mkdir(parents=True, exist_ok=True)
                     continue
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                with handle.open(info) as source, destination.open("xb") as output:
-                    shutil.copyfileobj(source, output)
+                with handle.open(info) as archive_member, destination.open("xb") as output:
+                    shutil.copyfileobj(archive_member, output)
                 os.chmod(destination, (info.external_attr >> 16) & 0o777 or 0o644)
         source_root = staging / "nr-design-tdd" / "skills"
         for name in EXPECTED_SKILLS:
-            source = source_root / name
-            if not (source / "SKILL.md").is_file():
+            skill_source = source_root / name
+            if not (skill_source / "SKILL.md").is_file():
                 raise SeedImportError(f"required seed skill is absent: {name}")
             destination = target / name
             if destination.exists():
                 raise SeedImportError(f"skill import conflict: {destination}")
-            shutil.copytree(source, destination)
+            shutil.copytree(skill_source, destination)
     return EXPECTED_SKILLS

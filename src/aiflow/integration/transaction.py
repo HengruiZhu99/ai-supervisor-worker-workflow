@@ -72,6 +72,7 @@ class IntegrationTransaction:
         return ""
 
     def _prepare(self, worktree: Path, candidate: str, method: str, base_sha: str) -> str:
+        command: tuple[str, ...]
         if method == "merge":
             command = ("merge", "--no-commit", "--no-ff", candidate)
         elif method == "cherry-pick":

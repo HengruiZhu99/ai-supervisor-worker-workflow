@@ -11,6 +11,9 @@ __pycache__/
 .aiflow/backups/
 .aiflow/.transactions/
 frontend/node_modules/
+frontend/playwright-report/
+frontend/test-results/
+dist/
 .ai/supervisor_runs/*.log
 .ai/supervisor_runs/*.pid
 .ai/supervisor_runs/*.answer.md

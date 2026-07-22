@@ -22,7 +22,7 @@ def validate_child_result(
     missing = REQUIRED - result.keys()
     if missing:
         raise ChildResultError(f"child result lacks fields: {sorted(missing)}")
-    if int(result.get("schema_version", 0)) != 1:
+    if str(result.get("schema_version", "")) != "1":
         raise ChildResultError("unsupported child result schema")
     if result.get("status") not in {"completed", "blocked", "failed"}:
         raise ChildResultError("invalid child result status")

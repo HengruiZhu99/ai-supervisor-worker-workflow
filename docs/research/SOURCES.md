@@ -86,3 +86,15 @@ behind command/config builders and validation rather than assumed from model mem
   Deterministic style/format/quality gates and the idle watchdog make zero model calls.
   All role mappings and reasoning efforts remain configurable; historical fixtures and
   explicit user pins are not rewritten blindly.
+
+## CI runtimes
+
+- Sources: the official [`actions/checkout`](https://github.com/actions/checkout),
+  [`actions/setup-python` releases](https://github.com/actions/setup-python/releases),
+  [`actions/setup-node` releases](https://github.com/actions/setup-node/releases), and
+  [Python active releases](https://www.python.org/downloads/), checked 2026-07-22.
+- Verified facts: the official action documentation uses `checkout@v6`,
+  `setup-python@v6`, and `setup-node@v6`; Python 3.11 through 3.14 remain supported while
+  3.15 is pre-release.
+- Design impact: CI uses the v6 action lines and tests Python 3.11–3.14; pre-release
+  Python is not a mandatory gate.
