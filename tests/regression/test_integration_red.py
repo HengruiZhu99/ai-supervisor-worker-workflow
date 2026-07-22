@@ -28,13 +28,48 @@ class IntegrationTransactionRegressionTests(unittest.TestCase):
             "base_sha": "base",
             "commit": "candidate-sha",
         }
-        completed = module.subprocess.CompletedProcess([], 0, stdout="", stderr="")
-        with mock.patch.object(module, "run", return_value=completed) as run:
+
+        def completed(args, cwd):
+            del cwd
+            stdout = ""
+            returncode = 0
+            if args[1:4] == ["symbolic-ref", "-q", "HEAD"]:
+                stdout = "refs/heads/codex/test\n"
+            elif args[1:] == ["rev-parse", "HEAD"]:
+                stdout = "base\n"
+            elif args[1:] == [
+                "merge-base",
+                "--is-ancestor",
+                "candidate-sha",
+                "base",
+            ]:
+                returncode = 1
+            return module.subprocess.CompletedProcess(
+                args, returncode, stdout=stdout, stderr=""
+            )
+
+        with mock.patch.object(module, "run", side_effect=completed) as run:
             module.integrate(ROOT, status, "merge")
-        first_command = run.call_args_list[0].args[0]
+        calls = run.call_args_list
         self.assertEqual(
-            first_command[:3],
-            ["git", "worktree", "add"],
+            calls[0].args[0][:3],
+            ["git", "symbolic-ref", "-q"],
+            "the target ref must be bound before candidate gates",
+        )
+        worktree_index = next(
+            index
+            for index, call in enumerate(calls)
+            if call.args[0][:3] == ["git", "worktree", "add"]
+        )
+        merge_index, merge_call = next(
+            (index, call)
+            for index, call in enumerate(calls)
+            if call.args[0][1:2] == ["merge"]
+        )
+        self.assertLess(worktree_index, merge_index)
+        self.assertNotEqual(
+            Path(merge_call.args[1]).resolve(),
+            ROOT.resolve(),
             "candidate is merged directly into the target before integrated-state tests",
         )
 
