@@ -256,6 +256,25 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             task = lifecycle.status(started["run_id"])["tasks"][0]
             self.assertEqual(task["pre_commands"], [command])
 
+    def test_unsafe_task_id_is_rejected_before_run_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root)
+            lifecycle = RunLifecycle(context_for(root, tmp), runtime_env=runtime(tmp))
+            with self.assertRaises(ValueError):
+                lifecycle.start(
+                    mode="solo",
+                    objective="reject unsafe task identity",
+                    task_specs=(
+                        {
+                            "id": "../escape",
+                            "objective": "reject unsafe task identity",
+                            "acceptance_ids": ["AC-1"],
+                        },
+                    ),
+                )
+            self.assertEqual(lifecycle.list(), [])
+
 
 if __name__ == "__main__":
     unittest.main()
