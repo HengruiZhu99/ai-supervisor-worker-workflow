@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess
 import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+import subprocess
 from typing import Callable
+
+from aiflow.security.process import run_owned_process
 
 
 Command = tuple[str, ...]
@@ -34,13 +36,9 @@ class IntegrationResult:
 
 
 def run_command(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_owned_process(
         args,
         cwd=cwd,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
         timeout=1800,
     )
 

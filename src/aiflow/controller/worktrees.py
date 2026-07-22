@@ -35,6 +35,22 @@ class TaskWorktree:
     context: ProjectContext | None = None
     branch: str = ""
 
+    def _verify_existing(self) -> None:
+        assert self.path is not None
+        status = _git(self.path, "status", "--porcelain")
+        head = _git(self.path, "rev-parse", "HEAD")
+        branch = _git(self.path, "branch", "--show-current")
+        if status.returncode or status.stdout.strip():
+            raise WorktreeError(
+                "pre-existing task worktree is dirty; explicit reconciliation is required"
+            )
+        if head.returncode or head.stdout.strip() != self.base_sha:
+            raise WorktreeError(
+                "pre-existing task worktree is not at the captured base"
+            )
+        if branch.returncode or branch.stdout.strip() != self.branch:
+            raise WorktreeError("pre-existing task worktree has the wrong branch")
+
     def create(self) -> "TaskWorktree":
         base = _git(self.target.root, "rev-parse", "HEAD")
         if base.returncode:
@@ -69,6 +85,7 @@ class TaskWorktree:
                 raise WorktreeError(
                     f"cannot create task worktree: {added.stderr.strip()}"
                 )
+        self._verify_existing()
         self.context = resolve_project(explicit_root=self.path)
         if self.context.git_common_dir != self.target.git_common_dir:
             raise WorktreeError("task worktree escaped the active checkout")

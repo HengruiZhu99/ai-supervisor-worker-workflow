@@ -17,7 +17,7 @@ from aiflow.state.store import RunStore, StateError
 from aiflow.state.handoff import create_handoff
 from aiflow.state.leases import maintain_controller
 from aiflow.state.locks import owned_directory_lock
-from aiflow.state.ownership import owner_is_live
+from aiflow.state.ownership import owner_is_live, owner_is_local
 
 
 class RunLifecycle:
@@ -63,6 +63,10 @@ class RunLifecycle:
                 current = read_json(lease)
                 verify_signed(current, "checkout mutation lease")
                 if current.get("run_id") != run_id:
+                    if not owner_is_local(current):
+                        raise StateError(
+                            "checkout mutation lease belongs to an ambiguous foreign host/boot"
+                        )
                     if owner_is_live(current):
                         raise StateError(
                             f"checkout mutation is already owned by run {current.get('run_id')}"
@@ -116,6 +120,8 @@ class RunLifecycle:
             raise ValueError(f"unknown run mode: {mode}")
         if not objective.strip():
             raise ValueError("run objective is required")
+        if mode == "solo" and len(task_specs) > 1:
+            raise ValueError("Solo mode accepts exactly one bounded task")
         if task_specs:
             tasks = task_records(task_specs, worktree_id=self.context.worktree_id)
         else:

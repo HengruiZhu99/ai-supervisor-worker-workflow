@@ -190,6 +190,8 @@ class CodexAgentBackend:
                 self.model or ROLE_MODELS.get(role, "gpt-5.6-sol"),
                 "-c",
                 f'model_reasoning_effort="{self.reasoning_effort}"',
+                "-c",
+                "agents.enabled=false",
                 "--output-schema",
                 str(schema),
                 "--output-last-message",

@@ -106,6 +106,20 @@ class ProgressPolicy:
                 raise TaskContractError(
                     f"task {item.id} targets unknown acceptance IDs: {sorted(unknown)}"
                 )
+        unresolved_enablers = [
+            item.unblocks_task_id
+            for item in self._tasks.values()
+            if item.status == "ACCEPTED"
+            and item.value_class is ValueClass.ENABLER
+            and item.unblocks_task_id not in self._accepted
+        ]
+        if len(set(unresolved_enablers)) > 1:
+            raise TaskContractError("accepted state contains competing progress debt")
+        self._progress_debt = unresolved_enablers[0] if unresolved_enablers else ""
+        self._housekeeping_used = sum(
+            item.status == "ACCEPTED" and item.value_class is ValueClass.HOUSEKEEPING
+            for item in self._tasks.values()
+        )
 
     def _ready(self, item: Task) -> bool:
         return item.status == "READY" and set(item.dependencies) <= self._accepted

@@ -8,7 +8,11 @@ from typing import Iterator
 
 from aiflow.state.atomic import atomic_write_json, read_json, signed, verify_signed
 from aiflow.state.errors import StateError
-from aiflow.state.ownership import local_process_identity, owner_is_live
+from aiflow.state.ownership import (
+    local_process_identity,
+    owner_is_live,
+    owner_is_local,
+)
 from aiflow.state.time import utc_now
 
 
@@ -26,7 +30,7 @@ def _recover(lock: Path, owner_file: Path, *, orphan_grace: float) -> bool:
     except (OSError, ValueError, json.JSONDecodeError):
         return False
     else:
-        if owner_is_live(owner):
+        if not owner_is_local(owner) or owner_is_live(owner):
             return False
     try:
         owner_file.unlink(missing_ok=True)

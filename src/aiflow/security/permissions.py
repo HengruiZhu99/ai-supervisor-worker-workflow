@@ -27,11 +27,15 @@ def validate_orchestrated_parent(
         raise PermissionBoundaryError(
             "orchestrated mode requires an explicit parent permission preflight"
         )
-    if effective and effective != claimed:
+    if not effective:
+        raise PermissionBoundaryError(
+            "orchestrated mode cannot verify the effective parent permission profile"
+        )
+    if effective != claimed:
         raise PermissionBoundaryError(
             f"claimed parent sandbox {claimed!r} does not match effective profile {effective!r}"
         )
-    selected = effective or claimed
+    selected = effective
     if selected in {"danger-full-access", "full-access", "unrestricted"}:
         raise PermissionBoundaryError(
             "orchestrated mode refuses an unrestricted parent permission profile"
