@@ -21,6 +21,57 @@ from tests.regression.test_p12_terminal_hardening_red import artifact_command
 
 
 class P12RecoveryIdentityRegressionTests(unittest.TestCase):
+    def test_writer_worktree_remains_until_acceptance_is_durable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root, commit=True)
+            context = context_for(root, tmp)
+            command = artifact_command("T0001.txt")
+            lifecycle = RunLifecycle(context, runtime_env=runtime(tmp))
+            started = lifecycle.start(
+                mode="orchestrated",
+                objective="retain recovery material",
+                task_specs=(
+                    {
+                        "id": "T0001",
+                        "objective": "retain recovery material",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-1"],
+                        "allowed_scope": ["T0001.txt"],
+                        "pre_commands": [command],
+                        "commands": [command],
+                    },
+                ),
+            )
+            with (
+                mock.patch.object(
+                    TaskExecutionEngine,
+                    "_finalize_acceptance",
+                    side_effect=SystemExit("crash before durable acceptance"),
+                ),
+                self.assertRaises(SystemExit),
+            ):
+                RunLifecycle(
+                    context,
+                    runtime_env=runtime(tmp),
+                    agent_backend=OrchestratedBackend(root, command),
+                ).resume(started["run_id"])
+            pending = lifecycle.status(started["run_id"])["tasks"][0]
+            self.assertEqual(pending["status"], "INTEGRATION_PENDING")
+            writer = Path(pending["integration"]["writer_worktree_path"])
+            self.assertTrue(writer.is_dir())
+
+            result = RunLifecycle(
+                context,
+                runtime_env=runtime(tmp),
+                agent_backend=OrchestratedBackend(root, command),
+            ).resume(
+                started["run_id"],
+                budgets=Budgets(max_tasks=2, max_attempts=1, max_idle=1),
+            )
+            self.assertEqual(result["status"], "SUCCEEDED", result)
+            self.assertFalse(writer.exists())
+
     def test_orphaned_signed_inbox_is_adopted_before_writer_redispatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
