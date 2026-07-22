@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import http.client
 import os
 import subprocess
 import sys
@@ -16,10 +17,12 @@ from threading import Thread
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from aiflow.api.hub import ProjectHub, ReadOnlyHubError
-from aiflow.api.server import create_server
-from aiflow.identity.context import resolve_project
-from aiflow.skills.installer import ProjectInstaller
+from aiflow.api.hub import ProjectHub, ReadOnlyHubError  # noqa: E402
+from aiflow.api.server import create_server  # noqa: E402
+from aiflow.api.service import ApiService  # noqa: E402
+from aiflow.controller.lifecycle import RunLifecycle  # noqa: E402
+from aiflow.identity.context import resolve_project  # noqa: E402
+from aiflow.skills.installer import ProjectInstaller  # noqa: E402
 
 
 def project(path: Path) -> None:
@@ -64,6 +67,37 @@ def request(url: str, *, method: str = "GET", token: str = "", payload=None):
 
 
 class ApiProjectIsolationTests(unittest.TestCase):
+    def test_sse_response_stays_streaming_without_content_length(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "project"
+            project(path)
+            with running_server(path, "token") as (server, _url):
+                server.service.events.publish("run", {"status": "PAUSED"})
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+                try:
+                    connection.request("GET", "/api/v1/events")
+                    response = connection.getresponse()
+                    self.assertEqual(response.status, 200)
+                    self.assertIsNone(response.getheader("Content-Length"))
+                    self.assertTrue(response.readline().startswith(b"id: "))
+                    self.assertEqual(response.readline().strip(), b"event: run")
+                finally:
+                    connection.close()
+
+    def test_service_publishes_cli_side_state_changes_to_sse_buffer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "project"
+            project(path)
+            context = resolve_project(
+                explicit_root=path,
+                env={"XDG_STATE_HOME": str(Path(tmp) / "registry")},
+            )
+            service = ApiService(context)
+            RunLifecycle(context).start(mode="solo", objective="external CLI change")
+            service.sync_events()
+            replay = service.events.replay("")
+            self.assertTrue(any(event.event_type == "run" for event in replay.events))
+
     def test_two_servers_keep_identity_state_and_tokens_isolated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             first, second = Path(tmp) / "first", Path(tmp) / "second"
@@ -87,7 +121,11 @@ class ApiProjectIsolationTests(unittest.TestCase):
                             first_url + "/api/v1/runs",
                             method="POST",
                             token="first-token",
-                            payload={"mode": "solo", "objective": "fix norm"},
+                            payload={
+                                "mode": "solo",
+                                "objective": "fix norm",
+                                "checkout_id": first_snapshot["project"]["checkout_id"],
+                            },
                         )
                     )
                     self.assertEqual(created["mode"], "solo")
@@ -98,7 +136,11 @@ class ApiProjectIsolationTests(unittest.TestCase):
                             second_url + "/api/v1/runs",
                             method="POST",
                             token="first-token",
-                            payload={"mode": "solo", "objective": "wrong project"},
+                            payload={
+                                "mode": "solo",
+                                "objective": "wrong project",
+                                "checkout_id": second_snapshot["project"]["checkout_id"],
+                            },
                         )
                     self.assertEqual(denied.exception.code, 403)
             finally:
@@ -112,12 +154,17 @@ class ApiProjectIsolationTests(unittest.TestCase):
             path = Path(tmp) / "project"
             project(path)
             with running_server(path, "token") as (_, url):
+                snapshot = json.load(request(url + "/api/v1/snapshot"))
                 created = json.load(
                     request(
                         url + "/api/v1/runs",
                         method="POST",
                         token="token",
-                        payload={"mode": "solo", "objective": "bounded task"},
+                        payload={
+                            "mode": "solo",
+                            "objective": "bounded task",
+                            "checkout_id": snapshot["project"]["checkout_id"],
+                        },
                     )
                 )
                 mutation = {

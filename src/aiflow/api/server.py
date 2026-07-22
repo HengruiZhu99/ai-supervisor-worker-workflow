@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import json
 import secrets
+import sys
+import threading
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socket import socket
 from typing import Any, Mapping, cast
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from aiflow.api.security import RequestSecurity, SecurityError, validate_bind
 from aiflow.api.service import ApiService
@@ -36,12 +40,26 @@ class ProjectHTTPServer(ThreadingHTTPServer):
         validate_bind(address[0], allow_remote=allow_remote)
         self.service = ApiService(context)
         self.session_token = token
+        self.stopping = threading.Event()
         super().__init__(address, ProjectRequestHandler)
         self.security = RequestSecurity(
             token=token,
             host=address[0],
             port=int(self.server_address[1]),
         )
+
+    def server_close(self) -> None:
+        self.stopping.set()
+        super().server_close()
+
+    def handle_error(
+        self,
+        request: socket | tuple[bytes, socket],
+        client_address: Any,
+    ) -> None:
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class ProjectRequestHandler(BaseHTTPRequestHandler):
@@ -111,16 +129,46 @@ class ProjectRequestHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.NOT_FOUND, "route not found")
 
     def _events(self) -> None:
-        last_id = self.headers.get("Last-Event-ID", "")
+        query = parse_qs(urlsplit(self.path).query)
+        last_id = self.headers.get("Last-Event-ID", "") or query.get("last_event_id", [""])[0]
+        self.server.service.sync_events()
         replay = self.server.service.events.replay(last_id)
         if replay.reset:
-            event = self.server.service.events.publish("reset", self.server.service.snapshot())
-            body = event.encode().encode()
-        else:
-            body = "".join(event.encode() for event in replay.events).encode()
-            if not body:
-                body = b": keepalive\n\n"
-        self._bytes(HTTPStatus.OK, "text/event-stream; charset=utf-8", body)
+            payload = json.dumps(self.server.service.snapshot(), separators=(",", ":"), sort_keys=True)
+            body = f"event: reset\ndata: {payload}\n\n".encode()
+            self.close_connection = True
+            self._bytes(HTTPStatus.OK, "text/event-stream; charset=utf-8", body)
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        cursor = last_id
+        last_write = time.monotonic()
+        try:
+            while not self.server.stopping.is_set():
+                self.server.service.sync_events()
+                pending = self.server.service.events.wait_after(cursor, timeout=1.0)
+                if pending.reset:
+                    payload = json.dumps(
+                        self.server.service.snapshot(), separators=(",", ":"), sort_keys=True
+                    )
+                    self.wfile.write(f"event: reset\ndata: {payload}\n\n".encode())
+                    self.wfile.flush()
+                    return
+                for event in pending.events:
+                    self.wfile.write(event.encode().encode())
+                    cursor = str(event.event_id)
+                    last_write = time.monotonic()
+                if time.monotonic() - last_write >= 15:
+                    self.wfile.write(b": keepalive\n\n")
+                    last_write = time.monotonic()
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionError, OSError):
+            self.close_connection = True
+            return
 
     def do_POST(self) -> None:
         payload = self._payload()
@@ -150,7 +198,7 @@ def create_server(
     context: ProjectContext,
     *,
     host: str = "127.0.0.1",
-    port: int = 8765,
+    port: int = 0,
     token: str = "",
     allow_remote: bool = False,
 ) -> ProjectHTTPServer:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from threading import Timer
 
 from aiflow.api.sse import EventBuffer
 
@@ -24,6 +25,16 @@ class EventBufferTests(unittest.TestCase):
         self.assertTrue(events.replay("1").reset)
         self.assertTrue(events.replay("not-an-id").reset)
         self.assertLessEqual(len(events.replay("").events), 2)
+
+    def test_stream_wait_wakes_when_a_new_event_is_published(self) -> None:
+        events = EventBuffer(limit=2)
+        timer = Timer(0.05, lambda: events.publish("run", {"revision": 1}))
+        timer.start()
+        try:
+            replay = events.wait_after("", timeout=1.0)
+        finally:
+            timer.join(timeout=1)
+        self.assertEqual([event.event_type for event in replay.events], ["run"])
 
 
 if __name__ == "__main__":

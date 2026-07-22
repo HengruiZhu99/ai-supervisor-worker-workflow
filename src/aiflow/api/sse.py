@@ -31,17 +31,35 @@ class EventBuffer:
         self._events: deque[ServerEvent] = deque(maxlen=limit)
         self._next_id = 1
         self._lock = threading.Lock()
+        self._changed = threading.Condition(self._lock)
 
     def publish(self, event_type: str, data: dict[str, Any]) -> ServerEvent:
-        with self._lock:
+        with self._changed:
             event = ServerEvent(self._next_id, event_type, dict(data))
             self._next_id += 1
             self._events.append(event)
+            self._changed.notify_all()
             return event
 
     def replay(self, last_event_id: str) -> Replay:
         with self._lock:
-            retained = tuple(self._events)
+            return self._replay_locked(last_event_id)
+
+    def wait_after(self, last_event_id: str, *, timeout: float) -> Replay:
+        with self._changed:
+            replay = self._replay_locked(last_event_id)
+            if replay.reset or replay.events:
+                return replay
+            self._changed.wait(timeout=max(0.0, timeout))
+            return self._replay_locked(last_event_id)
+
+    @property
+    def latest_id(self) -> int:
+        with self._lock:
+            return self._events[-1].event_id if self._events else 0
+
+    def _replay_locked(self, last_event_id: str) -> Replay:
+        retained = tuple(self._events)
         if not last_event_id:
             return Replay(retained)
         try:

@@ -253,11 +253,11 @@ def _add_budgets(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_web_commands(commands: argparse._SubParsersAction) -> None:
-    for name, command, default_port in (("gui", gui_command, 8765), ("hub", hub_command, 8766)):
+    for name, command in (("gui", gui_command), ("hub", hub_command)):
         help_text = "serve the project UI" if name == "gui" else "serve the read-only project hub"
         web = commands.add_parser(name, help=help_text)
         web.add_argument("--host", default="127.0.0.1")
-        web.add_argument("--port", type=int, default=default_port)
+        web.add_argument("--port", type=int, default=0)
         web.add_argument("--allow-remote", action="store_true")
         web.add_argument("--no-open", action="store_true")
         web.add_argument("--check", action="store_true")

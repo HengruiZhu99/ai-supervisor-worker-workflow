@@ -11,6 +11,7 @@ class SecurityError(ValueError):
 
 
 def validate_bind(host: str, *, allow_remote: bool = False) -> str:
+    del allow_remote
     normalized = host.strip().strip("[]")
     if normalized == "localhost":
         return host
@@ -18,9 +19,15 @@ def validate_bind(host: str, *, allow_remote: bool = False) -> str:
         loopback = ipaddress.ip_address(normalized).is_loopback
     except ValueError:
         loopback = False
-    if not loopback and not allow_remote:
-        raise SecurityError("non-loopback GUI bind requires --allow-remote")
+    if not loopback:
+        raise SecurityError("AIFLOW web servers are loopback-only; use SSH local forwarding")
     return host
+
+
+def format_authority(host: str, port: int) -> str:
+    normalized = host.strip().strip("[]")
+    rendered = f"[{normalized}]" if ":" in normalized else normalized
+    return f"{rendered}:{port}"
 
 
 def _header(headers: Mapping[str, str], name: str) -> str:
@@ -40,8 +47,7 @@ class RequestSecurity:
 
     @property
     def authority(self) -> str:
-        host = f"[{self.host}]" if ":" in self.host and not self.host.startswith("[") else self.host
-        return f"{host}:{self.port}"
+        return format_authority(self.host, self.port)
 
     @property
     def origin(self) -> str:

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Iterable
 from urllib.parse import urlsplit
 
 from aiflow.api.hub import ProjectHub
-from aiflow.api.security import SecurityError, validate_bind
+from aiflow.api.security import format_authority, validate_bind
 from aiflow.identity.context import ProjectContext
 
 
@@ -24,7 +25,7 @@ class HubHTTPServer(ThreadingHTTPServer):
         validate_bind(address[0], allow_remote=allow_remote)
         self.hub = ProjectHub(projects)
         super().__init__(address, HubRequestHandler)
-        self.authority = f"{address[0]}:{self.server_port}"
+        self.authority = format_authority(address[0], self.server_port)
 
 
 class HubRequestHandler(BaseHTTPRequestHandler):
@@ -55,8 +56,9 @@ class HubRequestHandler(BaseHTTPRequestHandler):
             )
         elif path == "/":
             items = "".join(
-                f"<li><strong>{project['name']}</strong><br><code>{project['root']}</code>"
-                f"<br>checkout {project['checkout_id'][-8:]}</li>"
+                f"<li><strong>{escape(project['name'])}</strong><br>"
+                f"<code>{escape(project['root'])}</code><br>checkout "
+                f"{escape(project['checkout_id'][-8:])}</li>"
                 for project in payload["projects"]
             )
             body = (
@@ -81,7 +83,7 @@ def create_hub_server(
     projects: Iterable[ProjectContext],
     *,
     host: str = "127.0.0.1",
-    port: int = 8766,
+    port: int = 0,
     allow_remote: bool = False,
 ) -> HubHTTPServer:
     return HubHTTPServer((host, port), projects, allow_remote=allow_remote)

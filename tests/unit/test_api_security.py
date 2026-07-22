@@ -6,12 +6,13 @@ from aiflow.api.security import RequestSecurity, SecurityError, validate_bind
 
 
 class ApiSecurityTests(unittest.TestCase):
-    def test_loopback_is_default_and_remote_bind_requires_explicit_opt_in(self) -> None:
+    def test_loopback_is_mandatory_even_when_legacy_remote_flag_is_present(self) -> None:
         self.assertEqual(validate_bind("127.0.0.1"), "127.0.0.1")
         self.assertEqual(validate_bind("::1"), "::1")
         with self.assertRaises(SecurityError):
             validate_bind("0.0.0.0")
-        self.assertEqual(validate_bind("0.0.0.0", allow_remote=True), "0.0.0.0")
+        with self.assertRaises(SecurityError):
+            validate_bind("0.0.0.0", allow_remote=True)
 
     def test_mutation_requires_matching_host_origin_token_and_json_size(self) -> None:
         security = RequestSecurity(

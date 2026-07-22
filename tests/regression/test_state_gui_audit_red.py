@@ -8,12 +8,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from aiflow.cli.main import parser  # noqa: E402
+from aiflow.cli.web import _write_endpoint_metadata, endpoint_metadata_path  # noqa: E402
 from aiflow.identity.context import resolve_project  # noqa: E402
 from aiflow.state.atomic import atomic_write_json, signed  # noqa: E402
 from aiflow.state.store import RunStore  # noqa: E402
@@ -94,10 +96,42 @@ class StateGuiAuditRegressionTests(unittest.TestCase):
         self.assertEqual(args.port, 0)
 
     def test_frontend_has_recurring_fallback_and_focusable_skip_target(self) -> None:
-        source = (ROOT / "frontend" / "src" / "main.tsx").read_text(encoding="utf-8")
+        source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((ROOT / "frontend" / "src").glob("*.ts*"))
+        )
         self.assertIn("scheduleFallbackPoll", source)
         self.assertIn('tabIndex={-1}', source)
         self.assertIn("worktree", source)
+
+    def test_gui_does_not_print_mutation_token_and_e2e_uses_disposable_projects(self) -> None:
+        web = (ROOT / "src" / "aiflow" / "cli" / "web.py").read_text(encoding="utf-8")
+        config = (ROOT / "frontend" / "playwright.config.ts").read_text(encoding="utf-8")
+        self.assertNotIn(
+            'print(json.dumps({"checkout_id": context.checkout_id, "mutation_token": token}',
+            web,
+        )
+        self.assertIn("endpoint_metadata_path", web)
+        self.assertIn("gui_e2e_servers.py", config)
+
+    def test_gui_endpoint_metadata_is_checkout_scoped_and_private(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root)
+            context = resolve_project(
+                explicit_root=root,
+                env={"XDG_STATE_HOME": str(Path(tmp) / "registry")},
+            )
+            with mock.patch.dict(
+                os.environ,
+                {"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")},
+                clear=False,
+            ):
+                path = _write_endpoint_metadata(context, url="http://127.0.0.1:1/", token="secret")
+                self.assertEqual(path, endpoint_metadata_path(context))
+                self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                self.assertEqual(json.loads(path.read_text())["mutation_token"], "secret")
 
 
 if __name__ == "__main__":
