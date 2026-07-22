@@ -22,6 +22,7 @@ from aiflow.state.store import RunStore
 InvokeAgent = Callable[[dict[str, Any]], Mapping[str, Any]]
 ValidateAcceptance = Callable[[Mapping[str, Any]], None]
 StageIntegration = Callable[[Mapping[str, Any], str, str], Mapping[str, str]]
+RecordPrepared = Callable[[Mapping[str, str]], None]
 
 
 class OrchestratedTaskRunner:
@@ -35,12 +36,14 @@ class OrchestratedTaskRunner:
         timeout: float,
         validate_acceptance: ValidateAcceptance,
         stage_integration: StageIntegration,
+        record_prepared: RecordPrepared,
     ) -> None:
         self.store = store
         self.invoke = invoke
         self.timeout = timeout
         self.validate_acceptance = validate_acceptance
         self.stage_integration = stage_integration
+        self.record_prepared = record_prepared
 
     @staticmethod
     def _capsule(
@@ -186,8 +189,8 @@ class OrchestratedTaskRunner:
             "target_after": "",
             "tested_tree": "",
             "target_tree": "",
+            "writer_worktree_path": str(worktree.path),
         }
-        worktree.remove()
         staged = self.stage_integration(result, candidate, worktree.base_sha)
         return candidate, staged["target_before"]
 
@@ -200,9 +203,15 @@ class OrchestratedTaskRunner:
         target_before: str,
     ) -> None:
         commands = tuple(tuple(command) for command in record.get("commands", []))
+
+        def record_prepared(details: Mapping[str, str]) -> None:
+            result["orchestration"].update(details)
+            self.record_prepared(details)
+
         integrated = IntegrationTransaction(
             self.store.context.root,
             gates=GateCommands(focused=commands),
+            on_prepared=record_prepared,
         ).apply(
             candidate,
             method="merge",
@@ -293,4 +302,5 @@ class OrchestratedTaskRunner:
         self._apply_candidate(
             result, record, candidate, worktree.base_sha, target_before
         )
+        worktree.remove()
         return result

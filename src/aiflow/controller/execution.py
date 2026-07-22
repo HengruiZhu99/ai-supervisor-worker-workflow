@@ -14,6 +14,12 @@ from aiflow.controller.attestation import (
     workspace_snapshot,
 )
 from aiflow.controller.orchestration import OrchestratedTaskRunner
+from aiflow.controller.pending import (
+    mark_reconciliation_required,
+    pending_record_matches,
+    terminal_state,
+    update_prepared_record,
+)
 from aiflow.controller.runner import Budgets, ControllerOutcome, ControllerRunner
 from aiflow.controller.watchdog import DeterministicWatchdog
 from aiflow.domain.evidence import validate_cycle
@@ -21,9 +27,10 @@ from aiflow.controller.tasks import record_to_task
 from aiflow.domain.progress import ProgressBlocked, ProgressPolicy, Task
 from aiflow.integration.transaction import GateCommands, IntegrationTransaction
 from aiflow.integration.recovery import (
-    candidate_is_integrated,
     git_head,
+    pending_integration_matches,
     pending_result,
+    retire_writer_worktree,
 )
 from aiflow.state.store import RunStore
 
@@ -130,14 +137,6 @@ class TaskExecutionEngine:
         )
         return "blocked" if blocked else f"retry:{signature}"
 
-    def _terminal_state(self) -> str:
-        return (
-            "succeeded"
-            if self.records
-            and all(record.get("status") == "ACCEPTED" for record in self.records)
-            else "blocked"
-        )
-
     def _next_task(self) -> Task | None:
         try:
             return self.policy.next_task()
@@ -200,6 +199,9 @@ class TaskExecutionEngine:
                         identities,
                     )
                 ),
+                record_prepared=lambda details: self._record_prepared_integration(
+                    task.id, details
+                ),
             ).execute(record, capsule)
         else:
             injected = {
@@ -256,12 +258,22 @@ class TaskExecutionEngine:
             "target_before": target_before,
             "inbox": relative,
             "attempt": attempt,
+            "writer_worktree_path": str(
+                result.get("orchestration", {}).get("writer_worktree_path", "")
+            ),
         }
         self._persist(
             event_type="task_integration_prepared", evidence=list(mutable["evidence"])
         )
         self._prepared_inbox = inbox
         return {"target_before": target_before, "inbox": relative}
+
+    def _record_prepared_integration(
+        self, task_id: str, details: Mapping[str, str]
+    ) -> None:
+        record = self._record(task_id)
+        update_prepared_record(record, details)
+        self._persist(event_type="task_integration_ready")
 
     def _cold_review(
         self,
@@ -362,15 +374,25 @@ class TaskExecutionEngine:
         if record is None:
             return None
         try:
-            result, inbox, integration = pending_result(self.store, record)
+            result, inbox, persisted = pending_result(self.store, record)
+            integration = dict(persisted)
+            record["integration"] = integration
             candidate = str(integration.get("candidate", ""))
             target_before = str(integration.get("target_before", ""))
             if git_head(self.workspace) == target_before:
                 commands = tuple(
                     tuple(command) for command in record.get("commands", [])
                 )
+
+                def record_prepared(details: Mapping[str, str]) -> None:
+                    integration.update(details)
+                    result.setdefault("orchestration", {}).update(details)
+                    self._record_prepared_integration(str(record["id"]), details)
+
                 applied = IntegrationTransaction(
-                    self.workspace, gates=GateCommands(focused=commands)
+                    self.workspace,
+                    gates=GateCommands(focused=commands),
+                    on_prepared=record_prepared,
                 ).apply(
                     candidate,
                     method="merge",
@@ -389,16 +411,21 @@ class TaskExecutionEngine:
                         "target_tree": applied.target_tree,
                     }
                 )
-            elif not candidate_is_integrated(self.workspace, candidate):
+            elif not pending_integration_matches(self.workspace, integration):
                 raise AttestationError(
                     "pending integration target is ambiguous and needs reconciliation"
                 )
+            else:
+                result.setdefault("orchestration", {}).update(integration)
             task = self.policy.task(str(record["id"]))
             identities = self.store.context.identity_fields(self.store.run_id)
             validate_child_result(result, identities=identities, task_id=task.id)
             claimed = self._validate_acceptance(task, record, result)
+            retire_writer_worktree(self.store, integration)
         except Exception as exc:
-            return self._failure(record, exc)
+            mark_reconciliation_required(record, exc)
+            self._persist(event_type="integration_reconciliation_required")
+            return "blocked"
         return self._finalize_acceptance(
             record,
             attempt=int(integration.get("attempt", 1)),
@@ -407,22 +434,13 @@ class TaskExecutionEngine:
             result=result,
         )
 
-    def _pending_apply_completed(self, record: Mapping[str, Any]) -> bool:
-        integration = record.get("integration", {})
-        if record.get("status") != "INTEGRATION_PENDING" or not isinstance(
-            integration, Mapping
-        ):
-            return False
-        candidate = str(integration.get("candidate", ""))
-        return bool(candidate and candidate_is_integrated(self.workspace, candidate))
-
     def _step(self) -> str:
         recovered = self._recover_pending_integration()
         if recovered is not None:
             return recovered
         task = self._next_task()
         if task is None:
-            return self._terminal_state()
+            return terminal_state(self.records)
         record = self._record(task.id)
         if int(record.get("attempts", 0)) >= self.budgets.max_attempts:
             record["status"] = "BLOCKED"
@@ -440,7 +458,7 @@ class TaskExecutionEngine:
                 result=result,
             )
         except Exception as exc:
-            if self._pending_apply_completed(record):
+            if pending_record_matches(self.workspace, record):
                 return "progress"
             return self._failure(record, exc)
         return self._finalize_acceptance(

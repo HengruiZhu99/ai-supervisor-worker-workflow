@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -19,13 +21,36 @@ def git_head(root: Path) -> str:
     return completed.stdout.strip()
 
 
-def candidate_is_integrated(root: Path, candidate: str) -> bool:
-    completed = run_owned_process(
-        ["git", "merge-base", "--is-ancestor", candidate, "HEAD"],
-        cwd=root,
-        timeout=10,
+def _git_value(root: Path, *arguments: str) -> str:
+    completed = run_owned_process(["git", *arguments], cwd=root, timeout=10)
+    return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+def pending_integration_matches(root: Path, integration: Mapping[str, Any]) -> bool:
+    integrated = str(integration.get("integrated_commit", ""))
+    tested_tree = str(integration.get("tested_tree", ""))
+    target_before = str(integration.get("target_before", ""))
+    target_ref = str(integration.get("target_ref", ""))
+    transaction_id = str(integration.get("transaction_id", ""))
+    if not all(
+        re.fullmatch(r"[0-9a-f]{40,64}", value)
+        for value in (integrated, tested_tree, target_before)
+    ):
+        return False
+    expected_id = hashlib.sha256(
+        f"{target_ref}\0{target_before}\0{integrated}\0{tested_tree}".encode()
+    ).hexdigest()
+    if transaction_id != expected_id:
+        return False
+    symbolic = _git_value(root, "symbolic-ref", "-q", "HEAD") or "HEAD"
+    status = run_owned_process(["git", "status", "--porcelain"], cwd=root, timeout=10)
+    return bool(
+        symbolic == target_ref
+        and git_head(root) == integrated
+        and _git_value(root, "rev-parse", "HEAD^{tree}") == tested_tree
+        and status.returncode == 0
+        and not status.stdout.strip()
     )
-    return completed.returncode == 0
 
 
 def pending_result(
@@ -41,3 +66,22 @@ def pending_result(
     result = read_json(inbox)
     verify_signed(result, "pending integration inbox")
     return result, inbox, integration
+
+
+def retire_writer_worktree(store: RunStore, integration: Mapping[str, Any]) -> None:
+    raw = str(integration.get("writer_worktree_path", ""))
+    if not raw:
+        return
+    path = Path(raw).resolve()
+    parent = (store.runtime / "agent-worktrees").resolve()
+    if parent not in path.parents:
+        raise IntegrationRecoveryError("pending writer worktree escaped runtime scope")
+    if not path.exists():
+        return
+    removed = run_owned_process(
+        ["git", "worktree", "remove", str(path)],
+        cwd=store.context.root,
+        timeout=60,
+    )
+    if removed.returncode:
+        raise IntegrationRecoveryError("pending writer worktree cleanup failed")

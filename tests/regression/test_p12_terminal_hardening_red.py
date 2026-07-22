@@ -272,6 +272,9 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
                 )
             self.assertEqual(result["status"], "SUCCEEDED", result)
             self.assertTrue((root / "T0001.txt").is_file())
+            accepted = lifecycle.status(started["run_id"])["tasks"][0]
+            writer_path = Path(accepted["integration"]["writer_worktree_path"])
+            self.assertFalse(writer_path.exists())
 
     def test_candidate_ancestry_without_exact_tested_tree_never_accepts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

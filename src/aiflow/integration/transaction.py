@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import tempfile
@@ -7,13 +8,14 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
-from typing import Callable
+from typing import Callable, Mapping
 
 from aiflow.security.process import run_owned_process
 
 
 Command = tuple[str, ...]
 Runner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
+PreparedCallback = Callable[[Mapping[str, str]], None]
 
 
 @dataclass(frozen=True)
@@ -52,12 +54,14 @@ class IntegrationTransaction:
         runner: Runner = run_command,
         before_apply: Callable[[], None] | None = None,
         after_apply: Callable[[], None] | None = None,
+        on_prepared: PreparedCallback | None = None,
     ) -> None:
         self.target = target.resolve()
         self.gates = gates or GateCommands()
         self.runner = runner
         self.before_apply = before_apply
         self.after_apply = after_apply
+        self.on_prepared = on_prepared
 
     def _git(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return self.runner(["git", *args], cwd)
@@ -177,6 +181,26 @@ class IntegrationTransaction:
                     return f"{label} gate failed", evidence
         return "", evidence
 
+    def _record_prepared(
+        self,
+        *,
+        target_ref: str,
+        captured: str,
+        integrated: str,
+        tested_tree: str,
+    ) -> None:
+        details = {
+            "transaction_id": hashlib.sha256(
+                f"{target_ref}\0{captured}\0{integrated}\0{tested_tree}".encode()
+            ).hexdigest(),
+            "integrated_commit": integrated,
+            "tested_tree": tested_tree,
+            "target_ref": target_ref,
+            "target_before": captured,
+        }
+        if self.on_prepared:
+            self.on_prepared(details)
+
     def _apply_target(
         self,
         candidate: str,
@@ -205,6 +229,16 @@ class IntegrationTransaction:
         integrated = created.stdout.strip()
         if created.returncode or not integrated:
             return "final apply failed"
+        if not self._target_matches(target_ref, captured):
+            return self._target_drift_reason(target_ref)
+        if self._target_dirty():
+            return "dirty target"
+        self._record_prepared(
+            target_ref=target_ref,
+            captured=captured,
+            integrated=integrated,
+            tested_tree=tested_tree,
+        )
         if not self._target_matches(target_ref, captured):
             return self._target_drift_reason(target_ref)
         if self._target_dirty():
