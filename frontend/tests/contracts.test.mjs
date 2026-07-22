@@ -53,7 +53,9 @@ test("stale EventSource errors cannot close a replacement connection", () => {
   assert.match(source, /connection\.close\(\)/);
 });
 
-test("snapshot reconciliation continues while SSE appears connected", () => {
-  assert.match(source, /setInterval\(\(\) => void refresh\(\), 5000\)/);
-  assert.match(source, /clearInterval\(reconciliation\)/);
+test("SSE fallback is finite and never becomes permanent polling", () => {
+  assert.doesNotMatch(source, /setInterval\(/);
+  assert.match(source, /MAX_FALLBACK_POLLS/);
+  assert.match(source, /fallbackPolls\s*>=\s*MAX_FALLBACK_POLLS/);
+  assert.match(source, /clearTimeout\(timer\)/);
 });

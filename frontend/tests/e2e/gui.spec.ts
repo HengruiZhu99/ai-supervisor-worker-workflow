@@ -150,3 +150,19 @@ test("browser receives a reset snapshot after the project server restarts", asyn
   });
   await expect(page.getByRole("heading", { name: objective })).toBeVisible();
 });
+
+test("healthy SSE remains idle without permanent snapshot polling", async ({
+  page,
+}) => {
+  let snapshots = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/v1/snapshot") snapshots += 1;
+  });
+  await page.reload();
+  await expect(
+    page.getByRole("banner", { name: "Project identity" }),
+  ).toBeVisible();
+  snapshots = 0;
+  await page.waitForTimeout(5_500);
+  expect(snapshots).toBe(0);
+});
