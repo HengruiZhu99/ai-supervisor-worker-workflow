@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -117,6 +120,25 @@ class IdentityIsolationTests(unittest.TestCase):
             registry.register("same-checkout", first)
             with self.assertRaises(IdentityCollision):
                 registry.register("same-checkout", second)
+
+    def test_concurrent_registry_updates_do_not_lose_checkout_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            registry_path = Path(tmp) / "registry.json"
+            common = Path(tmp) / "common"
+            common.mkdir()
+            count = 32
+            ready = threading.Barrier(count)
+
+            def register(index: int) -> None:
+                ready.wait(timeout=5)
+                CheckoutRegistry(registry_path).register(f"checkout-{index}", common)
+
+            with ThreadPoolExecutor(max_workers=count) as pool:
+                list(pool.map(register, range(count)))
+            records = json.loads(registry_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                set(records), {f"checkout-{index}" for index in range(count)}
+            )
 
     def test_thread_cwd_or_checkout_mismatch_is_rejected(self) -> None:
         record = {
