@@ -88,6 +88,10 @@ def bounded_default_contract(
         raise ValueError(
             "project command test_regression is required before run creation"
         )
+    if not any(command in commands for command in pre_commands):
+        raise ValueError(
+            "a project pre-change command must be rerun by the post-change gates"
+        )
     return pre_commands, commands, scopes
 
 

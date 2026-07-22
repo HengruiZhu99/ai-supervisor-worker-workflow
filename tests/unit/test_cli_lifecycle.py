@@ -187,6 +187,7 @@ class LifecycleCliTests(unittest.TestCase):
                 ).returncode,
                 0,
             )
+            configure_commands(project)
             task_file = project / "tasks.json"
             command = [
                 sys.executable,

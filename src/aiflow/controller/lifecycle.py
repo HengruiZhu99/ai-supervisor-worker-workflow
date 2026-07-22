@@ -11,6 +11,7 @@ from aiflow.controller.runner import Budgets, ControllerRunner
 from aiflow.controller.watchdog import DeterministicWatchdog
 from aiflow.controller.tasks import (
     bounded_default_contract,
+    project_command_group,
     project_commands,
     project_pre_commands,
     task_records,
@@ -178,6 +179,14 @@ class RunLifecycle:
             raise ValueError("run objective is required")
         if mode == "solo" and len(task_specs) > 1:
             raise ValueError("Solo mode accepts exactly one bounded task")
+        if (
+            mode == "orchestrated"
+            and task_specs
+            and not project_command_group(self.context.root, "test_regression")
+        ):
+            raise ValueError(
+                "orchestrated task contracts require project test_regression"
+            )
         tasks, default_contract = self._prepare_tasks(
             task_specs, task_kind, allowed_scope
         )
