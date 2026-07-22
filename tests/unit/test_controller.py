@@ -33,7 +33,13 @@ class ControllerTests(unittest.TestCase):
         self.assertTrue(all(value > 0 for value in budgets.as_dict().values()))
         calls: list[str] = []
         runner = ControllerRunner(
-            budgets=Budgets(max_wall_time=5, max_tasks=2, max_attempts=2, max_idle=1, max_agent_calls=2),
+            budgets=Budgets(
+                max_wall_time=5,
+                max_tasks=2,
+                max_attempts=2,
+                max_idle=1,
+                max_agent_calls=2,
+            ),
             agent_call=lambda _: calls.append("model"),
         )
         outcome = runner.run(lambda: "idle")
@@ -55,13 +61,17 @@ class ControllerTests(unittest.TestCase):
             root = Path(tmp) / "project"
             init_project(root)
             context = resolve_project(explicit_root=root)
-            lifecycle = RunLifecycle(context, runtime_env={"XDG_RUNTIME_DIR": str(Path(tmp) / "run")})
+            lifecycle = RunLifecycle(
+                context, runtime_env={"XDG_RUNTIME_DIR": str(Path(tmp) / "run")}
+            )
             started = lifecycle.start(
                 mode="solo", objective="bounded feature", acceptance_ids=("AC-1",)
             )
             self.assertEqual(started["status"], "PAUSED")
             run_id = started["run_id"]
-            self.assertEqual(lifecycle.status(run_id)["tasks"][0]["objective"], "bounded feature")
+            self.assertEqual(
+                lifecycle.status(run_id)["tasks"][0]["objective"], "bounded feature"
+            )
             resumed = lifecycle.resume(run_id, budgets=Budgets(max_idle=1))
             self.assertEqual(resumed["outcome"], "IDLE_EXIT")
             stopped = lifecycle.stop(run_id)
@@ -69,9 +79,17 @@ class ControllerTests(unittest.TestCase):
 
     def test_controller_budget_exhaustion_is_terminal(self) -> None:
         runner = ControllerRunner(
-            budgets=Budgets(max_wall_time=5, max_tasks=1, max_attempts=2, max_idle=2, max_agent_calls=1)
+            budgets=Budgets(
+                max_wall_time=5,
+                max_tasks=1,
+                max_attempts=2,
+                max_idle=2,
+                max_agent_calls=1,
+            )
         )
-        self.assertEqual(runner.run(lambda: "progress"), ControllerOutcome.BUDGET_EXHAUSTED)
+        self.assertEqual(
+            runner.run(lambda: "progress"), ControllerOutcome.BUDGET_EXHAUSTED
+        )
 
 
 if __name__ == "__main__":

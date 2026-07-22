@@ -88,7 +88,9 @@ class LifecycleCliTests(unittest.TestCase):
             project = Path(tmp) / "project"
             project.mkdir()
             subprocess.run(["git", "init", "-q"], cwd=project, check=True)
-            self.assertEqual(run_cli(project, "project", "init", "--profile", "solo").returncode, 0)
+            self.assertEqual(
+                run_cli(project, "project", "init", "--profile", "solo").returncode, 0
+            )
             started = run_cli(
                 project,
                 "run",
@@ -117,18 +119,28 @@ class LifecycleCliTests(unittest.TestCase):
             stopped = run_cli(project, "run", "stop", "--run-id", run_id)
             self.assertEqual(json.loads(stopped.stdout)["status"], "STOPPED")
 
-    def test_orchestrated_start_refuses_missing_or_unrestricted_parent_preflight(self) -> None:
+    def test_orchestrated_start_refuses_missing_or_unrestricted_parent_preflight(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             project.mkdir()
             subprocess.run(["git", "init", "-q"], cwd=project, check=True)
             self.assertEqual(
-                run_cli(project, "project", "init", "--profile", "orchestrated").returncode,
+                run_cli(
+                    project, "project", "init", "--profile", "orchestrated"
+                ).returncode,
                 0,
             )
             base = (
-                "run", "start", "--mode", "orchestrated", "--objective", "goal",
-                "--acceptance-id", "AC-1",
+                "run",
+                "start",
+                "--mode",
+                "orchestrated",
+                "--objective",
+                "goal",
+                "--acceptance-id",
+                "AC-1",
             )
             missing = run_cli(project, *base)
             self.assertNotEqual(missing.returncode, 0)
@@ -144,7 +156,9 @@ class LifecycleCliTests(unittest.TestCase):
             project = Path(tmp) / "project"
             project.mkdir()
             subprocess.run(["git", "init", "-q"], cwd=project, check=True)
-            self.assertEqual(run_cli(project, "project", "init", "--profile", "solo").returncode, 0)
+            self.assertEqual(
+                run_cli(project, "project", "init", "--profile", "solo").returncode, 0
+            )
             gui = run_cli(project, "gui", "--check")
             self.assertEqual(gui.returncode, 0, gui.stderr)
             self.assertTrue(json.loads(gui.stdout)["ok"])

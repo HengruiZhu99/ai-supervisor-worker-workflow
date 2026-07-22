@@ -12,10 +12,13 @@ class FrontendContractTests(unittest.TestCase):
     @staticmethod
     def source() -> str:
         return "\n".join(
-            path.read_text() for path in sorted((ROOT / "frontend" / "src").glob("*.ts*"))
+            path.read_text()
+            for path in sorted((ROOT / "frontend" / "src").glob("*.ts*"))
         )
 
-    def test_react_typescript_source_and_node_free_built_assets_are_present(self) -> None:
+    def test_react_typescript_source_and_node_free_built_assets_are_present(
+        self,
+    ) -> None:
         package = json.loads((ROOT / "frontend" / "package.json").read_text())
         source = self.source()
         built = (ROOT / "src" / "aiflow" / "api" / "static" / "app.js").read_text()
@@ -24,9 +27,11 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("createRoot", source)
         self.assertIn("EventSource", source)
         self.assertIn("EventSource", built)
-        self.assertNotIn("from \"react\"", built)
+        self.assertNotIn('from "react"', built)
 
-    def test_progressive_disclosure_identity_and_accessibility_are_source_contracts(self) -> None:
+    def test_progressive_disclosure_identity_and_accessibility_are_source_contracts(
+        self,
+    ) -> None:
         source = self.source()
         for marker in (
             'id="project-identity"',
@@ -35,7 +40,7 @@ class FrontendContractTests(unittest.TestCase):
             "Advanced contract settings",
             "skip-link",
             "aria-label",
-            "role=\"status\"",
+            'role="status"',
             "Export handoff",
             "Resume",
             "Pause",

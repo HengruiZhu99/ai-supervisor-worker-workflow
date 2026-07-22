@@ -6,7 +6,9 @@ from aiflow.api.security import RequestSecurity, SecurityError, validate_bind
 
 
 class ApiSecurityTests(unittest.TestCase):
-    def test_loopback_is_mandatory_even_when_legacy_remote_flag_is_present(self) -> None:
+    def test_loopback_is_mandatory_even_when_legacy_remote_flag_is_present(
+        self,
+    ) -> None:
         self.assertEqual(validate_bind("127.0.0.1"), "127.0.0.1")
         self.assertEqual(validate_bind("::1"), "::1")
         with self.assertRaises(SecurityError):

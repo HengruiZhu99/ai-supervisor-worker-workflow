@@ -22,7 +22,13 @@ class HpcProfileTests(unittest.TestCase):
             self.assertIn("monitor_read_only = true", site)
             self.assertIn("min_poll_seconds = 5", site)
             self.assertIn('setup_script = ""', site)
-            for cluster_specific in ("/lustre", "/gpfs", "/scratch", "nersc", "frontier"):
+            for cluster_specific in (
+                "/lustre",
+                "/gpfs",
+                "/scratch",
+                "nersc",
+                "frontier",
+            ):
                 self.assertNotIn(cluster_specific, site.lower())
 
 

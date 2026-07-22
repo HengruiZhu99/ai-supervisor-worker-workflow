@@ -40,8 +40,10 @@ class ChildResultTests(unittest.TestCase):
         validate_child_result(
             result,
             identities={
-                "project_id": "project", "checkout_id": "checkout",
-                "worktree_id": "worktree", "run_id": "run",
+                "project_id": "project",
+                "checkout_id": "checkout",
+                "worktree_id": "worktree",
+                "run_id": "run",
             },
             task_id="T0001",
         )

@@ -31,7 +31,9 @@ class EvidenceContractTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             validate_cycle("bug", feature)
 
-    def test_numerical_requires_units_shapes_reference_tolerance_and_convergence(self) -> None:
+    def test_numerical_requires_units_shapes_reference_tolerance_and_convergence(
+        self,
+    ) -> None:
         evidence = {
             **common(),
             "reference": "analytic L2 norm",
@@ -54,11 +56,17 @@ class EvidenceContractTests(unittest.TestCase):
 
     def test_performance_and_portability_guards_are_discriminating(self) -> None:
         performance = {
-            **common(), "baseline_metric": 100.0, "candidate_metric": 102.0,
-            "max_regression": 0.05, "metric": "milliseconds", "samples": 7,
-            "direction": "lower-is-better", "warmups": 2,
+            **common(),
+            "baseline_metric": 100.0,
+            "candidate_metric": 102.0,
+            "max_regression": 0.05,
+            "metric": "milliseconds",
+            "samples": 7,
+            "direction": "lower-is-better",
+            "warmups": 2,
             "comparability": "same input, executable, and resources",
-            "equivalent_work": True, "output_equivalent": True,
+            "equivalent_work": True,
+            "output_equivalent": True,
         }
         portability = {
             **common(),
@@ -72,8 +80,12 @@ class EvidenceContractTests(unittest.TestCase):
                 for name in ("serial", "openmp", "cuda-build")
             },
         }
-        self.assertEqual(validate_cycle("performance", performance)["status"], "VERIFIED")
-        self.assertEqual(validate_cycle("portability", portability)["status"], "VERIFIED")
+        self.assertEqual(
+            validate_cycle("performance", performance)["status"], "VERIFIED"
+        )
+        self.assertEqual(
+            validate_cycle("portability", portability)["status"], "VERIFIED"
+        )
         performance["candidate_metric"] = 106.0
         with self.assertRaises(EvidenceError):
             validate_cycle("performance", performance)

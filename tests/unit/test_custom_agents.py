@@ -10,7 +10,9 @@ AGENTS = ROOT / ".codex" / "agents"
 
 
 class CustomAgentContractTests(unittest.TestCase):
-    def test_narrow_agents_are_depth_one_codex_roles_with_explicit_permissions(self) -> None:
+    def test_narrow_agents_are_depth_one_codex_roles_with_explicit_permissions(
+        self,
+    ) -> None:
         expected = {
             "task-router": ("gpt-5.6-luna", "read-only"),
             "codebase-mapper": ("gpt-5.6-terra", "read-only"),
@@ -25,7 +27,9 @@ class CustomAgentContractTests(unittest.TestCase):
         found = {path.stem for path in AGENTS.glob("*.toml")}
         self.assertEqual(found, set(expected))
         for name, (model, sandbox) in expected.items():
-            payload = tomllib.loads((AGENTS / f"{name}.toml").read_text(encoding="utf-8"))
+            payload = tomllib.loads(
+                (AGENTS / f"{name}.toml").read_text(encoding="utf-8")
+            )
             self.assertEqual(payload["name"], name)
             self.assertEqual(payload["model"], model)
             self.assertEqual(payload["sandbox_mode"], sandbox)
@@ -35,8 +39,12 @@ class CustomAgentContractTests(unittest.TestCase):
             self.assertIn("subagents", instructions)
             self.assertIn("do not invoke aiflow-autonomous", instructions)
 
-    def test_project_config_uses_current_concurrency_key_and_no_default_consensus(self) -> None:
-        payload = tomllib.loads((ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
+    def test_project_config_uses_current_concurrency_key_and_no_default_consensus(
+        self,
+    ) -> None:
+        payload = tomllib.loads(
+            (ROOT / ".codex" / "config.toml").read_text(encoding="utf-8")
+        )
         self.assertTrue(payload["agents"]["enabled"])
         self.assertEqual(payload["agents"]["max_concurrent_threads_per_session"], 4)
         self.assertNotIn("max_threads", payload["agents"])

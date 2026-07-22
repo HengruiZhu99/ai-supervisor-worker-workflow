@@ -14,7 +14,10 @@ class EventBufferTests(unittest.TestCase):
         third = events.publish("run", {"status": "RUNNING"})
         replay = events.replay(str(first.event_id))
         self.assertFalse(replay.reset)
-        self.assertEqual([event.event_id for event in replay.events], [second.event_id, third.event_id])
+        self.assertEqual(
+            [event.event_id for event in replay.events],
+            [second.event_id, third.event_id],
+        )
         self.assertIn("id: 2", second.encode())
         self.assertIn("event: run", second.encode())
 
