@@ -42,6 +42,59 @@ RESULT_SCHEMA = {
     "additionalProperties": True,
 }
 
+ANALYSIS_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "project_id",
+        "checkout_id",
+        "worktree_id",
+        "run_id",
+        "task_id",
+        "agent_role",
+        "status",
+        "summary",
+        "findings",
+        "recommended_next_action",
+    ],
+    "additionalProperties": True,
+}
+
+REVIEW_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "project_id",
+        "checkout_id",
+        "worktree_id",
+        "run_id",
+        "task_id",
+        "agent_role",
+        "status",
+        "recommendation",
+        "blocks_acceptance",
+        "findings",
+        "full_diff_reviewed",
+        "files_reviewed",
+        "unreviewed_files",
+    ],
+    "additionalProperties": True,
+}
+
+ROLE_MODELS = {
+    "codebase-mapper": "gpt-5.6-terra",
+    "docs-researcher": "gpt-5.6-terra",
+    "ui-auditor": "gpt-5.6-terra",
+    "task-router": "gpt-5.6-luna",
+    "test-architect": "gpt-5.6-sol",
+    "implementation-worker": "gpt-5.6-sol",
+    "scientific-reviewer": "gpt-5.6-sol",
+    "engineering-reviewer": "gpt-5.6-sol",
+    "release-auditor": "gpt-5.6-sol",
+}
+
 
 class CodexAgentBackend:
     """Bounded live Codex adapter; mandatory CI substitutes FakeAgentBackend."""
@@ -50,7 +103,7 @@ class CodexAgentBackend:
         self,
         workspace: Path,
         *,
-        model: str = "gpt-5.6-sol",
+        model: str = "",
         reasoning_effort: str = "high",
         timeout: int = 14_400,
     ) -> None:
@@ -61,32 +114,80 @@ class CodexAgentBackend:
 
     @staticmethod
     def _prompt(capsule: Mapping[str, Any]) -> str:
+        mode = str(capsule.get("mode", "solo"))
+        role = str(capsule.get("agent_role", "implementation-worker"))
+        action = str(capsule.get("action", "execute_task"))
+        if mode == "solo":
+            instruction = (
+                "Use $tdd-solo to execute exactly this durable task. "
+                "Do not launch subagents."
+            )
+        else:
+            instruction = (
+                "The sole parent controller is applying $aiflow-autonomous. "
+                f"Act only as its bounded direct-child {role} for action {action}. "
+                "Do not launch or request subagents and do not mutate canonical AIFLOW state."
+            )
         return (
-            "Use $tdd-solo to execute exactly the durable task capsule below. "
-            "Do not launch subagents. Work only in the named checkout/worktree, preserve user work, "
+            instruction
+            + " Work only in the named checkout/worktree, preserve user work, "
             "and obey the bounded test-first cycle for its task kind. Finish by returning only a JSON "
             "object matching the supplied output schema; identity fields and acceptance evidence must "
             "match the capsule exactly.\n\nTASK CAPSULE\n"
             + json.dumps(dict(capsule), indent=2, sort_keys=True)
         )
 
+    def _workspace(self, capsule: Mapping[str, Any]) -> Path:
+        candidate = Path(
+            str(capsule.get("working_directory", self.workspace))
+        ).resolve()
+        if not candidate.is_dir():
+            raise RuntimeError("agent working directory does not exist")
+
+        def common(path: Path) -> Path:
+            completed = run_owned_process(
+                ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                cwd=path,
+                timeout=10,
+            )
+            if completed.returncode:
+                raise RuntimeError("agent working directory is not a Git worktree")
+            return Path(completed.stdout.strip()).resolve()
+
+        if common(candidate) != common(self.workspace):
+            raise RuntimeError("agent working directory belongs to another checkout")
+        return candidate
+
+    @staticmethod
+    def _schema(action: str) -> dict[str, Any]:
+        if action == "analyze_task":
+            return ANALYSIS_SCHEMA
+        if action == "review_task":
+            return REVIEW_SCHEMA
+        return RESULT_SCHEMA
+
     def run(self, capsule: Mapping[str, Any]) -> dict[str, Any]:
+        action = str(capsule.get("action", "execute_task"))
+        role = str(capsule.get("agent_role", "implementation-worker"))
+        workspace = self._workspace(capsule)
         with tempfile.TemporaryDirectory(prefix="aiflow-codex-result-") as temporary:
             directory = Path(temporary)
             schema = directory / "result.schema.json"
             output = directory / "result.json"
-            schema.write_text(json.dumps(RESULT_SCHEMA, indent=2), encoding="utf-8")
+            schema.write_text(
+                json.dumps(self._schema(action), indent=2), encoding="utf-8"
+            )
             command = [
                 "codex",
                 "--ask-for-approval",
                 "never",
                 "--sandbox",
-                "workspace-write",
+                "workspace-write" if action == "execute_task" else "read-only",
                 "exec",
                 "-C",
-                str(self.workspace),
+                str(workspace),
                 "-m",
-                self.model,
+                self.model or ROLE_MODELS.get(role, "gpt-5.6-sol"),
                 "-c",
                 f'model_reasoning_effort="{self.reasoning_effort}"',
                 "--output-schema",
@@ -103,11 +204,11 @@ class CodexAgentBackend:
                 "AIFLOW_TASK_ID": str(capsule["task_id"]),
                 "AIFLOW_MODE": str(capsule["mode"]),
                 "AIFLOW_PROJECT_ROOT": str(self.workspace),
-                "AIFLOW_WORKTREE_ROOT": str(self.workspace),
+                "AIFLOW_WORKTREE_ROOT": str(workspace),
             }
             completed = run_owned_process(
                 command,
-                cwd=self.workspace,
+                cwd=workspace,
                 injected=injected,
                 timeout=self.timeout,
                 input_text=self._prompt(capsule),
