@@ -145,7 +145,7 @@ quorum, `no_consensus` escalation, and read-only execution safety - are in
 
 ### Skill stewardship
 
-The supervisor owns skill creation decisions. Before creating a skill, the supervisor should list existing skills, compare triggers and checklists for overlap, and reject suggestions that are too narrow or already covered. Project-specific skills belong in this repository under `skills/`. Generally reusable scientific-coding workflow skills belong in the reusable workflow package under `external/ai-supervisor-worker-workflow/skills/` and should be committed and pushed there before updating the submodule pointer.
+The supervisor owns skill creation decisions. Before creating a skill, the supervisor should list existing skills, compare triggers and checklists for overlap, and reject suggestions that are too narrow or already covered. Repository skills are canonical under `.agents/skills/`. Run `aiflow skills doctor` before creating or syncing a skill, and never silently resolve a duplicate name across repository, user, administrator, or plugin scopes.
 
 Skills must be discoverable by all workflow agents. The supervisor loop and
 worker loop should include the `python3 scripts/list_skills.py` output in their

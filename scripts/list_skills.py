@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-#========================================================================================
-# BBHK spectral numerical relativity code
-# Copyright(C) 2026 Hengrui Zhu
-#========================================================================================
-
-"""List project-local and reusable workflow skills for duplication checks."""
+"""List canonical repository and optional Codex skill scopes."""
 
 from __future__ import annotations
 
@@ -56,19 +51,17 @@ def main() -> int:
     parser.add_argument(
         "--include-system",
         action="store_true",
-        help="include the user's ~/.cursor and ~/.codex skills when available",
+        help="include user and administrator Codex skill scopes when available",
     )
     args = parser.parse_args()
 
     root = git_root()
     locations: list[tuple[str, Path, Path]] = [
-        ("project", root, Path("skills")),
-        ("workflow-submodule", root, Path("external/ai-supervisor-worker-workflow/skills")),
-        ("workflow-installed", root, Path("skills")),
+        ("repository", root, Path(".agents/skills")),
     ]
     if args.include_system:
-        locations.append(("cursor-user", Path.home() / ".cursor", Path("skills")))
         locations.append(("codex-user", Path.home() / ".codex", Path("skills")))
+        locations.append(("codex-admin", Path("/etc/codex"), Path("skills")))
 
     seen: set[Path] = set()
     rows = []

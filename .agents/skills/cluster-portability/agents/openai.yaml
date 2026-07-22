@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cluster Portability"
+  short_description: "Separate portable workflow from site profiles"
+  default_prompt: "Use $cluster-portability to review this workflow for site contamination."

@@ -139,7 +139,7 @@ write_available_skills() {
   echo
   echo '```text'
   if ! python3 "$AI_WORKFLOW_PACKAGE_ROOT/scripts/list_skills.py" 2>/dev/null; then
-    echo "Skill listing unavailable; inspect project skills/ and workflow package skills/ manually."
+    echo "Skill listing unavailable; inspect canonical .agents/skills/ manually."
   fi
   echo '```'
   echo
@@ -387,7 +387,7 @@ Rules:
 - Run `python3 scripts/list_skills.py` before creating any new skill. Use the `attempt-artifact-consistency` skill when a retry or review involves contradictory worker reports, commit docs, job status, git history, changed-file lists, or test logs.
 - Treat workflow evolution as reviewed change control: workers propose, reviewers assess, the supervisor deduplicates and decides. Do not let a worker-owned implementation job directly mutate workflow skills, templates, or supervisor protocols unless the job was explicitly a workflow-maintenance job.
 - Record nontrivial workflow evolution proposals or decisions in `.ai/supervisor/workflow_improvement_queue.md` and `.ai/supervisor/skill_decisions.md`. You may use `python3 scripts/record_workflow_improvement.py` for consistent entries.
-- Create a new skill only when it avoids real future duplication and does not overlap existing skills. Project-specific skills go under the project `skills/`; generally reusable scientific-coding workflow skills go under `external/ai-supervisor-worker-workflow/skills/` and require committing/pushing the workflow package plus updating the submodule pointer when possible.
+- Create a new skill only when it avoids real future duplication and does not overlap existing skills. Repository skills are canonical under `.agents/skills/`; run `aiflow skills doctor` and never silently resolve a cross-scope name collision.
 - Prefer the smallest effective workflow change: ledger note, checklist/template update, protocol clarification, script fix, project doc, project-specific skill, then general reusable skill.
 - Record skill and workflow-evolution decisions in `.ai/supervisor/ledger.md`, including created paths or reasons for deferring/rejecting suggestions.
 - Accept or reject completed jobs based on report, tests, diffstat, comprehensive actual-diff review, and commit documentation.

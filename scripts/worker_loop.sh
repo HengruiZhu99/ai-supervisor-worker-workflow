@@ -219,7 +219,7 @@ write_available_skills() {
   echo
   echo '```text'
   if ! (cd "$skill_root" && python3 "$AI_WORKFLOW_PACKAGE_ROOT/scripts/list_skills.py") 2>/dev/null; then
-    echo "Skill listing unavailable; fall back to inspecting project skills/ and workflow package skills/ manually."
+    echo "Skill listing unavailable; fall back to inspecting canonical .agents/skills/ manually."
   fi
   echo '```'
 }

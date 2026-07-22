@@ -1,0 +1,19 @@
+schema_version = 1
+project_id = "02121832-1034-43c7-85af-9250e905c604"
+name = "ai-supervisor-worker-workflow"
+profile = "full"
+
+[commands]
+build = []
+test_focused = []
+test_regression = []
+
+[execution]
+allow_parallel_mutating_runs = false
+default_mode = "solo"
+max_wall_time_seconds = 14400
+max_idle_seconds = 900
+max_attempts_per_task = 3
+
+[gui]
+bind = "127.0.0.1"

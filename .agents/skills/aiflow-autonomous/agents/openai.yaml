@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIFLOW Autonomous"
+  short_description: "Execute a bounded multi-milestone engineering goal"
+  default_prompt: "Use $aiflow-autonomous to execute this accepted multi-milestone goal."

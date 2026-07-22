@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Readiness"
+  short_description: "Audit package evidence before release"
+  default_prompt: "Use $release-readiness to audit this package for release."

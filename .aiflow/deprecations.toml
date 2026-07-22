@@ -1,0 +1,14 @@
+schema_version = 1
+
+# Example:
+#
+# [[deprecation]]
+# id = "legacy-worker-loop"
+# symbol_or_path = "scripts/worker_loop.sh"
+# replacement = "aiflow controller run"
+# introduced_version = "0.4.0"
+# removal_version = "0.6.0"
+# removal_deadline = "2027-01-31"
+# owner = "workflow-maintainers"
+# compat_tests = ["tests/integration/test_legacy_worker_loop.py"]
+# remaining_call_sites = 0

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Experiment Sweep"
+  short_description: "Plan bounded reproducible parameter sweeps"
+  default_prompt: "Use $experiment-sweep to design this reproducible parameter sweep."

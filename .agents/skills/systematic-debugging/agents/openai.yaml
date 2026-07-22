@@ -1,0 +1,4 @@
+interface:
+  display_name: "Systematic Debugging"
+  short_description: "Diagnose failures with bounded hypotheses"
+  default_prompt: "Use $systematic-debugging to reproduce and diagnose this failure."

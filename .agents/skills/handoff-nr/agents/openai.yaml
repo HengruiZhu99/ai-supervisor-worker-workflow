@@ -1,0 +1,6 @@
+interface:
+  display_name: "Handoff NR"
+  short_description: "Verified checkpoint and resume for long scientific Goal runs"
+  default_prompt: "Create or verify a durable handoff for this long-running Goal-mode implementation. Preserve exact contract and Git state, re-verification commands, failed approaches, evidence, and one next action."
+policy:
+  allow_implicit_invocation: false

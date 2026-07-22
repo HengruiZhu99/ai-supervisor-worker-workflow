@@ -1,0 +1,4 @@
+interface:
+  display_name: "HPC Job Monitor"
+  short_description: "Observe scheduler jobs without mutating them"
+  default_prompt: "Use $hpc-job-monitor to inspect this cluster job read-only."

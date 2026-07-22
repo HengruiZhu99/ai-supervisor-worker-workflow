@@ -1,0 +1,4 @@
+interface:
+  display_name: "GUI UX Audit"
+  short_description: "Audit workflow UI behavior and accessibility"
+  default_prompt: "Use $gui-ux-audit to test this workflow interface."

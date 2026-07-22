@@ -1,0 +1,4 @@
+interface:
+  display_name: "HPC Job Triage"
+  short_description: "Diagnose scheduler failures without job mutation"
+  default_prompt: "Use $hpc-job-triage to diagnose this failed cluster job."

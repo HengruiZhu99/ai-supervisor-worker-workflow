@@ -1,127 +1,15 @@
 #!/usr/bin/env bash
-#========================================================================================
-# AI supervisor/worker/reviewer workflow - standalone launcher
-#========================================================================================
-#
-# Install once on your machine (clone this package, put this bin/ on PATH or
-# symlink bin/aiflow into ~/.local/bin), then run it against ANY git repo:
-#
-#   cd /path/to/target-repo && aiflow init        # scope a new project (intake)
-#   aiflow --project-root /path/to/repo status     # or target explicitly
-#
-# The intake commands (init/spec/gate/compile/status) and the dashboard run
-# directly from this tool against the target repo - nothing is copied into the
-# target. The autonomous loops (worker/supervisor/modulator) currently require a
-# one-time `aiflow setup` that vendors the workflow scripts into the target repo
-# (the loops and their agent prompts reference repo-local `scripts/`); `setup`
-# uses copy-mode, NOT a git submodule.
+# AIFLOW v2 lightweight project-isolated entry point.
 
 set -euo pipefail
 
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOOL_HOME="$(cd "$BIN_DIR/.." && pwd)"
-SCRIPTS="$TOOL_HOME/scripts"
+TOOL_ROOT="$(cd "$BIN_DIR/.." && pwd)"
 
-PROJECT_ROOT=""
-args=()
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --project-root) PROJECT_ROOT="${2:-}"; shift 2 ;;
-    --project-root=*) PROJECT_ROOT="${1#*=}"; shift ;;
-    *) args+=("$1"); shift ;;
-  esac
-done
-
-if [[ -z "$PROJECT_ROOT" ]]; then
-  PROJECT_ROOT="${AIFLOW_PROJECT_ROOT:-}"
+# The package is installed once. This source-tree fallback keeps local and offline
+# development deterministic without inheriting any AIFLOW_* project selector.
+if [[ -d "$TOOL_ROOT/src/aiflow" ]]; then
+  export PYTHONPATH="$TOOL_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 fi
-if [[ -z "$PROJECT_ROOT" ]]; then
-  PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-fi
-PROJECT_ROOT="$(cd "$PROJECT_ROOT" 2>/dev/null && pwd || echo "$PROJECT_ROOT")"
 
-export AI_WORKFLOW_PACKAGE_ROOT="$TOOL_HOME"
-
-cmd="${args[0]:-help}"
-# bash 3.2 (macOS) errors on empty-array expansion under `set -u`; build rest safely.
-rest=()
-if [[ ${#args[@]} -gt 1 ]]; then rest=("${args[@]:1}"); fi
-
-require_git_repo() {
-  if [[ ! -d "$PROJECT_ROOT/.git" ]]; then
-    echo "target project root is not a git repository: $PROJECT_ROOT" >&2
-    echo "create/select one, e.g.: mkdir myproj && cd myproj && git init && aiflow init" >&2
-    exit 1
-  fi
-}
-
-require_vendored() {
-  local loop="$1"
-  if [[ ! -f "$PROJECT_ROOT/scripts/$loop" ]]; then
-    echo "the autonomous loops need the workflow vendored into the target first:" >&2
-    echo "  aiflow --project-root \"$PROJECT_ROOT\" setup" >&2
-    exit 1
-  fi
-}
-
-case "$cmd" in
-  init|spec|gate|compile|status)
-    require_git_repo
-    exec python3 "$SCRIPTS/aiflow.py" --project-root "$PROJECT_ROOT" "$cmd" ${rest[@]+"${rest[@]}"}
-    ;;
-  panels)
-    exec python3 "$SCRIPTS/orchestrator.py" list-panels
-    ;;
-  dashboard)
-    require_git_repo
-    exec python3 "$SCRIPTS/workflow_gui.py" --project-root "$PROJECT_ROOT" ${rest[@]+"${rest[@]}"}
-    ;;
-  setup)
-    require_git_repo
-    # Copy-mode vendoring (NOT a submodule). Pass AI_WORKFLOW_OVERWRITE=1 to refresh.
-    exec bash "$TOOL_HOME/install.sh" "$PROJECT_ROOT"
-    ;;
-  worker)
-    require_git_repo; require_vendored worker_loop.sh
-    cd "$PROJECT_ROOT"; exec "$PROJECT_ROOT/scripts/worker_loop.sh" ${rest[@]+"${rest[@]}"}
-    ;;
-  supervisor)
-    require_git_repo; require_vendored supervisor_loop.sh
-    cd "$PROJECT_ROOT"; exec "$PROJECT_ROOT/scripts/supervisor_loop.sh" ${rest[@]+"${rest[@]}"}
-    ;;
-  modulator)
-    require_git_repo; require_vendored modulator_loop.sh
-    cd "$PROJECT_ROOT"; exec "$PROJECT_ROOT/scripts/modulator_loop.sh" ${rest[@]+"${rest[@]}"}
-    ;;
-  test)
-    exec bash -c "cd '$SCRIPTS' && python3 -m unittest test_consensus_core test_orchestrator test_architect_core test_architect"
-    ;;
-  help|--help|-h|*)
-    cat <<EOF
-aiflow - standalone AI multi-agent build tool (tool home: $TOOL_HOME)
-
-Usage: aiflow [--project-root DIR] <command> [args]
-Target repo resolution: --project-root, else \$AIFLOW_PROJECT_ROOT, else the
-current git repo. Current target: $PROJECT_ROOT
-
-Intake (run directly from the tool, no vendoring needed):
-  init        interview -> spec completeness gate -> compile bootstrap
-  spec        resume the interactive Architect interview
-  gate        run the spec completeness gate (add: gate --no-consensus)
-  compile     write the supervisor bootstrap artifacts from the spec
-  status      show current intake state
-  dashboard   open the web dashboard for the target repo
-  panels      list the consensus panels
-
-Autonomous build (require one-time vendoring of the workflow into the target):
-  setup       vendor the workflow into the target repo (copy-mode, not a submodule)
-  worker      run the worker loop in the target
-  supervisor  run the supervisor loop in the target
-  modulator   run the modulator watchdog in the target
-
-Maintenance:
-  test        run the tool's offline unit tests
-EOF
-    [[ "$cmd" == "help" || "$cmd" == "--help" || "$cmd" == "-h" ]] && exit 0 || exit 1
-    ;;
-esac
+exec python3 -m aiflow "$@"

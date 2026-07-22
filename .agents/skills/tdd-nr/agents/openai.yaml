@@ -1,0 +1,6 @@
+interface:
+  display_name: "TDD NR"
+  short_description: "Scientific TDD contract and long-horizon Goal runbook"
+  default_prompt: "Read DESIGN.md, inspect the repository's validation infrastructure, and produce TDD_PLAN.md, GOAL.md, and initialized durable run state. Ask only test-critical questions and do not implement production code."
+policy:
+  allow_implicit_invocation: false

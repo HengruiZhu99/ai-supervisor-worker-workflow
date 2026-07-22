@@ -1,0 +1,4 @@
+interface:
+  display_name: "TDD Solo"
+  short_description: "Complete one bounded task with evidence-first TDD"
+  default_prompt: "Use $tdd-solo to implement this bounded task with one agent."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Experiment Provenance"
+  short_description: "Record reproducible scientific experiment evidence"
+  default_prompt: "Use $experiment-provenance to make this experiment reproducible."

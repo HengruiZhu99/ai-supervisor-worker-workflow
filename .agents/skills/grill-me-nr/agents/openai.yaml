@@ -1,0 +1,6 @@
+interface:
+  display_name: "Grill Me NR"
+  short_description: "Bounded design discovery for scientific and HPC code"
+  default_prompt: "Inspect this repository and turn my request into a decision-complete DESIGN.md. Ask only decision-critical questions and do not implement it."
+policy:
+  allow_implicit_invocation: false

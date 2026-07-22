@@ -2,17 +2,16 @@
 
 ## Current checkpoint
 
-- Phase: `P4-P5`
-- State: `P2_P3_ACCEPTED_LOCALLY`
+- Phase: `P5`
+- State: `P4_ACCEPTED_LOCALLY`
 - Branch: `codex/aiflow-v2-lightweight-multiproject`
 - Base: `e9311a932dc2d5bab57c2cfd7ed734b8e1ca5466`
-- Active acceptance target: project lifecycle, profile validation, progress policy, and
-  skill management for `AC-INSTALL-001`, `AC-SKILL-001`, and `AC-PROGRESS-001` through
-  `AC-PROGRESS-003`
+- Active acceptance target: acceptance-ID task value, progress debt, post-execution
+  evidence, and starvation gates for `AC-PROGRESS-001` through `AC-PROGRESS-003`
 - Acceptance IDs closed: `AC-PERM-001`, `AC-BACKEND-001`, `AC-ID-001`, `AC-ID-002`,
-  `AC-ID-003`, `AC-ID-004`, `AC-STATE-001`
-- Next action: write functional lifecycle/progress/skill tests, import and adapt the
-  verified seed, then implement the canonical CLI surfaces.
+  `AC-ID-003`, `AC-ID-004`, `AC-STATE-001`, `AC-INSTALL-001`, `AC-SKILL-001`
+- Next action: verify the modular progress policy and legacy compatibility gate, then
+  record and commit P5 acceptance evidence.
 
 ## Immutable inputs
 
