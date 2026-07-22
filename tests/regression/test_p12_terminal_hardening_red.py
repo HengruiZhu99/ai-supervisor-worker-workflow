@@ -273,6 +273,59 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             self.assertEqual(result["status"], "SUCCEEDED", result)
             self.assertTrue((root / "T0001.txt").is_file())
 
+    def test_candidate_ancestry_without_exact_tested_tree_never_accepts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root, commit=True)
+            context = context_for(root, tmp)
+            command = artifact_command("T0001.txt")
+            lifecycle = RunLifecycle(context, runtime_env=runtime(tmp))
+            started = lifecycle.start(
+                mode="orchestrated",
+                objective="reject reverted candidate ancestry",
+                task_specs=(
+                    {
+                        "id": "T0001",
+                        "objective": "reject reverted candidate ancestry",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-1"],
+                        "allowed_scope": ["T0001.txt"],
+                        "pre_commands": [command],
+                        "commands": [command],
+                    },
+                ),
+            )
+            with (
+                mock.patch.object(
+                    IntegrationTransaction,
+                    "apply",
+                    side_effect=KeyboardInterrupt("stop after durable prepare"),
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                RunLifecycle(
+                    context,
+                    runtime_env=runtime(tmp),
+                    agent_backend=OrchestratedBackend(root, command),
+                ).resume(started["run_id"])
+
+            pending = lifecycle.status(started["run_id"])["tasks"][0]
+            candidate = str(pending["integration"]["candidate"])
+            git(root, "merge", "--no-ff", "-qm", "external candidate", candidate)
+            git(root, "revert", "-m", "1", "--no-edit", "HEAD")
+            self.assertFalse((root / "T0001.txt").exists())
+
+            result = RunLifecycle(
+                context,
+                runtime_env=runtime(tmp),
+                agent_backend=OrchestratedBackend(root, command),
+            ).resume(
+                started["run_id"],
+                budgets=Budgets(max_tasks=2, max_attempts=2, max_idle=1),
+            )
+            self.assertNotEqual(result["status"], "SUCCEEDED", result)
+            self.assertFalse((root / "T0001.txt").exists())
+
     def test_default_task_imports_project_precondition_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
