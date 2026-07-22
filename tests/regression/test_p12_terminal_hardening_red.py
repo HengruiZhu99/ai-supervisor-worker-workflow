@@ -67,6 +67,78 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
                     injected={},
                 )
 
+    def test_precondition_cannot_change_tracked_executable_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root, commit=True)
+            script = root / "outside.sh"
+            script.write_text("#!/bin/sh\n", encoding="utf-8")
+            git(root, "add", "outside.sh")
+            git(root, "commit", "-qm", "tracked script")
+            command = [
+                sys.executable,
+                "-c",
+                "from pathlib import Path; Path('outside.sh').chmod(0o755); raise SystemExit(1)",
+            ]
+            with self.assertRaises(AttestationError):
+                attest_preconditions(
+                    root,
+                    {"kind": "feature", "pre_commands": [command]},
+                    timeout=5,
+                    injected={},
+                )
+
+    def test_precondition_cannot_advance_a_tracked_gitlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root, commit=True)
+            dependency = root / "vendor" / "dependency"
+            dependency.mkdir(parents=True)
+            git(dependency, "init", "-q")
+            git(dependency, "config", "user.name", "Dependency Test")
+            git(dependency, "config", "user.email", "dependency@example.invalid")
+            (dependency / "value.txt").write_text("one\n", encoding="utf-8")
+            git(dependency, "add", "value.txt")
+            git(dependency, "commit", "-qm", "one")
+            first = git(dependency, "rev-parse", "HEAD").stdout.strip()
+            (dependency / "value.txt").write_text("two\n", encoding="utf-8")
+            git(dependency, "commit", "-am", "two", "-q")
+            second = git(dependency, "rev-parse", "HEAD").stdout.strip()
+            git(dependency, "checkout", "-q", "--detach", first)
+            git(
+                root,
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                f"160000,{first},vendor/dependency",
+            )
+            git(root, "commit", "-qm", "tracked dependency")
+            checkout = [
+                "git",
+                "-C",
+                "vendor/dependency",
+                "checkout",
+                "-q",
+                "--detach",
+                second,
+            ]
+            failing = [
+                sys.executable,
+                "-c",
+                (
+                    "import subprocess; "
+                    f"subprocess.run({checkout!r}, check=True); "
+                    "raise SystemExit(1)"
+                ),
+            ]
+            with self.assertRaises(AttestationError):
+                attest_preconditions(
+                    root,
+                    {"kind": "feature", "pre_commands": [failing]},
+                    timeout=5,
+                    injected={},
+                )
+
     def test_timeout_always_kills_the_owned_group_after_grace(self) -> None:
         process = mock.Mock()
         process.pid = 4321
