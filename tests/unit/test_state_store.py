@@ -38,8 +38,12 @@ class StateStoreTests(unittest.TestCase):
         store = RunStore.create(context, mode="solo", run_id="run-test")
         if claim:
             store.claim_controller(
-                "controller-test", host_id="host-test", boot_id="boot-test", pid=100,
-                process_start_time="one", ttl_seconds=60,
+                "controller-test",
+                host_id="host-test",
+                boot_id="boot-test",
+                pid=100,
+                process_start_time="one",
+                ttl_seconds=60,
             )
         return store
 
@@ -49,13 +53,17 @@ class StateStoreTests(unittest.TestCase):
             init_project(project)
             store = self.make_store(project)
             first = store.transition(
-                0, {"status": "RUNNING"}, event_type="run_started",
+                0,
+                {"status": "RUNNING"},
+                event_type="run_started",
                 controller_id="controller-test",
             )
             self.assertEqual(first["state_revision"], 1)
             with self.assertRaises(RevisionConflict):
                 store.transition(
-                    0, {"status": "FAILED"}, event_type="stale",
+                    0,
+                    {"status": "FAILED"},
+                    event_type="stale",
                     controller_id="controller-test",
                 )
             self.assertEqual(store.read_run()["status"], "RUNNING")
@@ -67,13 +75,21 @@ class StateStoreTests(unittest.TestCase):
             init_project(project)
             store = self.make_store(project, claim=False)
             store.claim_controller(
-                "controller-a", host_id="host-a", boot_id="boot-a", pid=100,
-                process_start_time="one", ttl_seconds=60,
+                "controller-a",
+                host_id="host-a",
+                boot_id="boot-a",
+                pid=100,
+                process_start_time="one",
+                ttl_seconds=60,
             )
             with self.assertRaises(LeaseConflict):
                 store.claim_controller(
-                    "controller-b", host_id="host-a", boot_id="boot-a", pid=101,
-                    process_start_time="two", ttl_seconds=60,
+                    "controller-b",
+                    host_id="host-a",
+                    boot_id="boot-a",
+                    pid=101,
+                    process_start_time="two",
+                    ttl_seconds=60,
                 )
 
     def test_expired_cross_host_lease_is_ambiguous_not_stolen(self) -> None:
@@ -82,13 +98,21 @@ class StateStoreTests(unittest.TestCase):
             init_project(project)
             store = self.make_store(project, claim=False)
             store.claim_controller(
-                "controller-a", host_id="host-a", boot_id="boot-a", pid=100,
-                process_start_time="one", ttl_seconds=-1,
+                "controller-a",
+                host_id="host-a",
+                boot_id="boot-a",
+                pid=100,
+                process_start_time="one",
+                ttl_seconds=-1,
             )
             with self.assertRaises(AmbiguousLease):
                 store.claim_controller(
-                    "controller-b", host_id="host-b", boot_id="boot-b", pid=101,
-                    process_start_time="two", ttl_seconds=60,
+                    "controller-b",
+                    host_id="host-b",
+                    boot_id="boot-b",
+                    pid=101,
+                    process_start_time="two",
+                    ttl_seconds=60,
                 )
 
     def test_snapshot_event_recovery_is_deterministic_and_idempotent(self) -> None:
@@ -97,7 +121,9 @@ class StateStoreTests(unittest.TestCase):
             init_project(project)
             store = self.make_store(project)
             intent = store.prepare_transition(
-                0, {"status": "RUNNING"}, event_type="run_started",
+                0,
+                {"status": "RUNNING"},
+                event_type="run_started",
                 controller_id="controller-test",
             )
             store.apply_prepared_snapshot(intent, append_event=False)
@@ -116,7 +142,9 @@ class StateStoreTests(unittest.TestCase):
             init_project(project)
             store = self.make_store(project)
             store.transition(
-                0, {"status": "RUNNING"}, event_type="run_started",
+                0,
+                {"status": "RUNNING"},
+                event_type="run_started",
                 controller_id="controller-test",
             )
             events = store.read_events()
@@ -131,7 +159,8 @@ class StateStoreTests(unittest.TestCase):
             store = self.make_store(project)
             before = store.read_run()
             result_path = store.write_inbox_result(
-                task_id="T0001", agent_id="worker-1",
+                task_id="T0001",
+                agent_id="worker-1",
                 result={
                     "project_id": before["project_id"],
                     "checkout_id": before["checkout_id"],
@@ -151,25 +180,39 @@ class StateStoreTests(unittest.TestCase):
             with self.assertRaises(LeaseConflict):
                 store.transition(0, {"status": "RUNNING"}, event_type="run_started")
 
-    def test_two_projects_run_and_stop_without_crossing_state_or_process_lease(self) -> None:
+    def test_two_projects_run_and_stop_without_crossing_state_or_process_lease(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             first_root, second_root = base / "first", base / "second"
             init_project(first_root)
             init_project(second_root)
             first = RunStore.create(
-                resolve_project(explicit_root=first_root), mode="solo", run_id="same-run-name"
+                resolve_project(explicit_root=first_root),
+                mode="solo",
+                run_id="same-run-name",
             )
             second = RunStore.create(
-                resolve_project(explicit_root=second_root), mode="solo", run_id="same-run-name"
+                resolve_project(explicit_root=second_root),
+                mode="solo",
+                run_id="same-run-name",
             )
             first.claim_controller(
-                "controller-first", host_id="host", boot_id="boot", pid=100,
-                process_start_time="first", ttl_seconds=60,
+                "controller-first",
+                host_id="host",
+                boot_id="boot",
+                pid=100,
+                process_start_time="first",
+                ttl_seconds=60,
             )
             second.claim_controller(
-                "controller-second", host_id="host", boot_id="boot", pid=101,
-                process_start_time="second", ttl_seconds=60,
+                "controller-second",
+                host_id="host",
+                boot_id="boot",
+                pid=101,
+                process_start_time="second",
+                ttl_seconds=60,
             )
             self.assertNotEqual(first.path, second.path)
             self.assertNotEqual(first.runtime, second.runtime)
@@ -178,7 +221,9 @@ class StateStoreTests(unittest.TestCase):
             self.assertTrue(second.lease_file.exists())
             self.assertEqual(second.read_run()["run_id"], "same-run-name")
 
-    def test_corrupt_snapshot_repairs_from_checksum_chained_events_with_backup(self) -> None:
+    def test_corrupt_snapshot_repairs_from_checksum_chained_events_with_backup(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             init_project(project)
@@ -211,7 +256,9 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(first["to_version"], 1)
             self.assertEqual(second["status"], "current")
 
-    def test_version_zero_snapshots_migrate_transactionally_to_current_schema(self) -> None:
+    def test_version_zero_snapshots_migrate_transactionally_to_current_schema(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             init_project(project)

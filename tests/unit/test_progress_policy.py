@@ -71,7 +71,9 @@ class ProgressPolicyTests(unittest.TestCase):
             open_acceptance_ids={"AC-1", "AC-2"}, tasks=[enabler, blocked, lateral]
         )
         self.assertEqual(policy.next_task().id, "D2")
-        policy.accept("E1", closed_acceptance_ids=set(), evidence={"completion_proof": True})
+        policy.accept(
+            "E1", closed_acceptance_ids=set(), evidence={"completion_proof": True}
+        )
         self.assertEqual(policy.report()["progress_debt"], "D1")
         self.assertEqual(policy.next_task().id, "D1")
 
@@ -94,15 +96,21 @@ class ProgressPolicyTests(unittest.TestCase):
         first = task("H1", ValueClass.HOUSEKEEPING)
         second = task("H2", ValueClass.HOUSEKEEPING)
         policy = ProgressPolicy(open_acceptance_ids={"AC-1"}, tasks=[first, second])
-        policy.accept("H1", closed_acceptance_ids=set(), evidence={"changed_files": ["README.md"]})
+        policy.accept(
+            "H1", closed_acceptance_ids=set(), evidence={"changed_files": ["README.md"]}
+        )
         outcome = policy.accept(
-            "H2", closed_acceptance_ids=set(), evidence={"changed_files": ["docs/note.md"]}
+            "H2",
+            closed_acceptance_ids=set(),
+            evidence={"changed_files": ["docs/note.md"]},
         )
         self.assertEqual(outcome, "REPLAN_REQUIRED")
         with self.assertRaises(ProgressBlocked):
             policy.complete_replan(ready_acceptance_task=False)
 
-    def test_report_is_deterministic_and_milestone_requires_fresh_evidence(self) -> None:
+    def test_report_is_deterministic_and_milestone_requires_fresh_evidence(
+        self,
+    ) -> None:
         delivery = task("D1", ValueClass.DELIVERY, acceptance_ids=("AC-1",))
         policy = ProgressPolicy(open_acceptance_ids={"AC-1"}, tasks=[delivery])
         report = policy.report()

@@ -47,19 +47,25 @@ class ProjectLifecycleTests(unittest.TestCase):
             self.assertIn(".agents/skills/tdd-solo/SKILL.md", lock["managed_files"])
             self.assertTrue(installer.verify()["ok"])
 
-    def test_verify_detects_drift_and_uninstall_preserves_modified_managed_file(self) -> None:
+    def test_verify_detects_drift_and_uninstall_preserves_modified_managed_file(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             init_git(project)
             installer = ProjectInstaller(project, distribution_root=ROOT)
             installer.init("solo")
             skill = project / ".agents" / "skills" / "tdd-solo" / "SKILL.md"
-            skill.write_text(skill.read_text() + "\nuser-owned note\n", encoding="utf-8")
+            skill.write_text(
+                skill.read_text() + "\nuser-owned note\n", encoding="utf-8"
+            )
             status = installer.verify()
             self.assertFalse(status["ok"])
             self.assertIn(".agents/skills/tdd-solo/SKILL.md", status["modified"])
             result = installer.uninstall()
-            self.assertIn(".agents/skills/tdd-solo/SKILL.md", result["preserved_modified"])
+            self.assertIn(
+                ".agents/skills/tdd-solo/SKILL.md", result["preserved_modified"]
+            )
             self.assertTrue(skill.is_file())
             self.assertFalse((project / ".aiflow" / "quality.toml").exists())
 

@@ -26,8 +26,12 @@ class SkillManagementTests(unittest.TestCase):
             target = Path(tmp) / ".agents" / "skills"
             imported = import_seed(SEED, target, expected_sha256=SEED_SHA)
             self.assertEqual(imported, ("grill-me-nr", "handoff-nr", "tdd-nr"))
-            self.assertTrue((target / "tdd-nr" / "references" / "GOAL_TEMPLATE.md").is_file())
-            self.assertTrue((target / "handoff-nr" / "scripts" / "state_probe.py").is_file())
+            self.assertTrue(
+                (target / "tdd-nr" / "references" / "GOAL_TEMPLATE.md").is_file()
+            )
+            self.assertTrue(
+                (target / "handoff-nr" / "scripts" / "state_probe.py").is_file()
+            )
 
     def test_seed_rejects_traversal_and_symlink_members(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -47,13 +51,16 @@ class SkillManagementTests(unittest.TestCase):
             with self.assertRaises(SeedImportError):
                 import_seed(link_archive, Path(tmp) / "out2", expected_sha256=digest)
 
-    def test_validate_requires_matching_folder_frontmatter_and_safe_resources(self) -> None:
+    def test_validate_requires_matching_folder_frontmatter_and_safe_resources(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "skills"
             skill = root / "example"
             skill.mkdir(parents=True)
             (skill / "SKILL.md").write_text(
-                "---\nname: wrong\ndescription: useful\n---\n\n# Example\n", encoding="utf-8"
+                "---\nname: wrong\ndescription: useful\n---\n\n# Example\n",
+                encoding="utf-8",
             )
             with self.assertRaises(SkillValidationError):
                 SkillManager(repository=root).validate()
@@ -85,10 +92,14 @@ class SkillManagementTests(unittest.TestCase):
             target_skill.mkdir(parents=True)
             body = "---\nname: example\ndescription: useful skill\n---\n\n# Example\n"
             (source_skill / "SKILL.md").write_text(body, encoding="utf-8")
-            (target_skill / "SKILL.md").write_text(body + "user edit\n", encoding="utf-8")
+            (target_skill / "SKILL.md").write_text(
+                body + "user edit\n", encoding="utf-8"
+            )
             manager = SkillManager(repository=target)
             with self.assertRaises(SkillValidationError):
-                manager.sync(source, expected_hashes={"example": "not-the-current-hash"})
+                manager.sync(
+                    source, expected_hashes={"example": "not-the-current-hash"}
+                )
 
 
 if __name__ == "__main__":

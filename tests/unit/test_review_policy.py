@@ -12,7 +12,9 @@ from aiflow.agents.review import Finding, ReviewTracker, reviewers_for_risk  # n
 
 
 class ReviewPolicyTests(unittest.TestCase):
-    def test_risk_policy_has_cold_solo_one_normal_and_two_high_risk_reviewers(self) -> None:
+    def test_risk_policy_has_cold_solo_one_normal_and_two_high_risk_reviewers(
+        self,
+    ) -> None:
         self.assertEqual(reviewers_for_risk("solo"), ("cold-self-review",))
         self.assertEqual(reviewers_for_risk("normal"), ("engineering-reviewer",))
         self.assertEqual(
@@ -20,7 +22,9 @@ class ReviewPolicyTests(unittest.TestCase):
             ("scientific-reviewer", "engineering-reviewer"),
         )
 
-    def test_same_blocking_finding_gets_two_revisions_one_root_cause_then_blocks(self) -> None:
+    def test_same_blocking_finding_gets_two_revisions_one_root_cause_then_blocks(
+        self,
+    ) -> None:
         finding = Finding(
             id="SCI-001",
             severity="high",

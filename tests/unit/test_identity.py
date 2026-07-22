@@ -25,8 +25,12 @@ from aiflow.security.environment import scrub_environment  # noqa: E402
 
 def git(*args: str, cwd: Path) -> str:
     result = subprocess.run(
-        ["git", *args], cwd=cwd, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, check=True,
+        ["git", *args],
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
     )
     return result.stdout.strip()
 
@@ -55,7 +59,10 @@ class IdentityIsolationTests(unittest.TestCase):
             init_project(project_b, "project-b")
             context = resolve_project(
                 cwd=project_b,
-                env={"AIFLOW_PROJECT_ROOT": str(project_a), "PATH": os.environ.get("PATH", "")},
+                env={
+                    "AIFLOW_PROJECT_ROOT": str(project_a),
+                    "PATH": os.environ.get("PATH", ""),
+                },
             )
             self.assertEqual(context.root, project_b.resolve())
             self.assertEqual(context.project_id, "project-b")
@@ -71,7 +78,9 @@ class IdentityIsolationTests(unittest.TestCase):
             self.assertEqual(first.project_id, second.project_id)
             self.assertNotEqual(first.checkout_id, second.checkout_id)
 
-    def test_linked_worktrees_share_checkout_and_have_distinct_worktree_ids(self) -> None:
+    def test_linked_worktrees_share_checkout_and_have_distinct_worktree_ids(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             main, linked = base / "main", base / "linked"
@@ -87,9 +96,15 @@ class IdentityIsolationTests(unittest.TestCase):
             project = Path(tmp) / "project"
             init_project(project)
             context = resolve_project(explicit_root=project)
-            runtime = runtime_path(context, "run-123", env={"XDG_RUNTIME_DIR": str(Path(tmp) / "run")})
-            cache = cache_path(context, env={"XDG_CACHE_HOME": str(Path(tmp) / "cache")})
-            self.assertEqual(runtime.parts[-3:], ("aiflow", context.checkout_id, "run-123"))
+            runtime = runtime_path(
+                context, "run-123", env={"XDG_RUNTIME_DIR": str(Path(tmp) / "run")}
+            )
+            cache = cache_path(
+                context, env={"XDG_CACHE_HOME": str(Path(tmp) / "cache")}
+            )
+            self.assertEqual(
+                runtime.parts[-3:], ("aiflow", context.checkout_id, "run-123")
+            )
             self.assertEqual(cache.parts[-2:], ("aiflow", context.checkout_id))
 
     def test_duplicate_checkout_id_at_two_live_roots_fails_closed(self) -> None:
@@ -114,8 +129,11 @@ class IdentityIsolationTests(unittest.TestCase):
         }
         with self.assertRaises(ThreadIdentityMismatch):
             validate_thread_identity(
-                record, checkout_id="checkout-b", run_id="run-a",
-                cwd=Path("/project/a"), worktree_id="worktree-a",
+                record,
+                checkout_id="checkout-b",
+                run_id="run-a",
+                cwd=Path("/project/a"),
+                worktree_id="worktree-a",
             )
 
     def test_environment_scrubbing_removes_inherited_context(self) -> None:

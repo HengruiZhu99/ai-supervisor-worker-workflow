@@ -23,7 +23,9 @@ class QualityCheckerTests(unittest.TestCase):
             root = Path(tmp)
             init(root)
             source = root / "legacy.py"
-            source.write_text("\n".join(f"x_{i} = {i}" for i in range(451)), encoding="utf-8")
+            source.write_text(
+                "\n".join(f"x_{i} = {i}" for i in range(451)), encoding="utf-8"
+            )
             checker = QualityChecker(root)
             baseline = checker.baseline()
             self.assertEqual(baseline["files"]["legacy.py"]["logical_lines"], 451)
@@ -33,17 +35,21 @@ class QualityCheckerTests(unittest.TestCase):
             self.assertFalse(result["ok"])
             self.assertIn("no-growth", " ".join(result["errors"]))
 
-    def test_function_complexity_and_tiny_forwarder_are_not_line_limit_loopholes(self) -> None:
+    def test_function_complexity_and_tiny_forwarder_are_not_line_limit_loopholes(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             init(root)
             (root / "branchy.py").write_text(
-                "def branchy(x):\n" + "\n".join(
-                    f"    if x == {i}: x += 1" for i in range(13)
-                ) + "\n    return x\n",
+                "def branchy(x):\n"
+                + "\n".join(f"    if x == {i}: x += 1" for i in range(13))
+                + "\n    return x\n",
                 encoding="utf-8",
             )
-            (root / "forwarder.py").write_text("from branchy import branchy\n", encoding="utf-8")
+            (root / "forwarder.py").write_text(
+                "from branchy import branchy\n", encoding="utf-8"
+            )
             result = QualityChecker(root).check()
             joined = "\n".join(result["errors"])
             self.assertIn("complexity hard limit", joined)
