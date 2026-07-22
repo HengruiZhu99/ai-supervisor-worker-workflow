@@ -485,19 +485,21 @@ def remove_stale_loop_lock(name: str) -> None:
 def default_loop_env(name: str) -> dict[str, str]:
     if name == "worker_loop":
         return {
-            "CURSOR_MODEL": os.environ.get("CURSOR_MODEL", "claude-fable-5-thinking-high"),
-            "WORKER_TIMEOUT": os.environ.get("WORKER_TIMEOUT", os.environ.get("WORKER_AGENT_TIMEOUT", "0")),
+            "WORKER_AGENT_WRAPPER": os.environ.get("WORKER_AGENT_WRAPPER", "codex"),
+            "CURSOR_MODEL": os.environ.get("CURSOR_MODEL", "gpt-5.6-sol"),
+            "WORKER_MODEL": os.environ.get("WORKER_MODEL", "gpt-5.6-sol"),
+            "WORKER_TIMEOUT": os.environ.get("WORKER_TIMEOUT", os.environ.get("WORKER_AGENT_TIMEOUT", "3600")),
             "CURSOR_REVIEWERS_ENABLED": os.environ.get("CURSOR_REVIEWERS_ENABLED", "1"),
             "CURSOR_REVIEW_TIMEOUT": os.environ.get("CURSOR_REVIEW_TIMEOUT", "2400"),
-            "CURSOR_REVIEWER_A_MODEL": os.environ.get("CURSOR_REVIEWER_A_MODEL", "claude-opus-4-7-thinking-high"),
-            "CURSOR_REVIEWER_B_MODEL": os.environ.get("CURSOR_REVIEWER_B_MODEL", "gpt-5.3-codex-high"),
+            "CURSOR_REVIEWER_A_MODEL": os.environ.get("CURSOR_REVIEWER_A_MODEL", "gpt-5.6-sol"),
+            "CURSOR_REVIEWER_B_MODEL": os.environ.get("CURSOR_REVIEWER_B_MODEL", "gpt-5.6-terra"),
             "WORKER_AUTO_RELAUNCH_FAILURE": "1",
         }
     if name == "modulator_loop":
-        modulator_wrapper = os.environ.get("MODULATOR_AGENT_WRAPPER", "cursor-agent")
+        modulator_wrapper = os.environ.get("MODULATOR_AGENT_WRAPPER", "codex")
         modulator_model = os.environ.get(
             "MODULATOR_MODEL",
-            "gpt-5.5" if modulator_wrapper == "codex" else "gpt-5.5-high",
+            "gpt-5.6-sol",
         )
         return {
             "MODULATOR_AGENT_WRAPPER": modulator_wrapper,
@@ -505,9 +507,9 @@ def default_loop_env(name: str) -> dict[str, str]:
             "MODULATOR_POLL_SECONDS": os.environ.get("MODULATOR_POLL_SECONDS", "30"),
         }
     return {
-        "SUPERVISOR_AGENT_WRAPPER": os.environ.get("SUPERVISOR_AGENT_WRAPPER", "cursor-agent"),
+        "SUPERVISOR_AGENT_WRAPPER": os.environ.get("SUPERVISOR_AGENT_WRAPPER", "codex"),
         "SUPERVISOR_MODEL": os.environ.get(
-            "SUPERVISOR_MODEL", os.environ.get("CODEX_MODEL", "gpt-5.5-high")
+            "SUPERVISOR_MODEL", os.environ.get("CODEX_MODEL", "gpt-5.6-sol")
         ),
         "SUPERVISOR_POLL_SECONDS": os.environ.get("SUPERVISOR_POLL_SECONDS", "10"),
         "SUPERVISOR_VERBOSE": os.environ.get("SUPERVISOR_VERBOSE", "1"),

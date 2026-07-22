@@ -1379,24 +1379,24 @@ def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
     extra_args = str(payload.get("extra_args", ""))
     if payload.get("force") and "--force" not in extra_args:
         extra_args = (extra_args + " --force").strip()
-    worker_model = str(payload.get("model", "claude-fable-5-thinking-high"))
+    worker_model = str(payload.get("model", "gpt-5.6-sol"))
     return {
-        "WORKER_AGENT_WRAPPER": str(payload.get("wrapper", "cursor-agent")),
+        "WORKER_AGENT_WRAPPER": str(payload.get("wrapper", "codex")),
         "WORKER_MODEL": worker_model,
         "CURSOR_MODEL": worker_model,
-        "WORKER_TIMEOUT": str(payload.get("timeout", "0")),
+        "WORKER_TIMEOUT": str(payload.get("timeout", "3600")),
         "WORKER_AGENT_EXTRA_ARGS": extra_args,
         "CURSOR_AGENT_EXTRA_ARGS": extra_args,
         "CURSOR_REVIEWERS_ENABLED": "1" if payload.get("reviewers_enabled", True) else "0",
         "CURSOR_REVIEW_TIMEOUT": str(payload.get("review_timeout", "2400")),
-        "REVIEWER_A_AGENT_WRAPPER": str(payload.get("reviewer_a_wrapper", "cursor-agent")),
-        "REVIEWER_B_AGENT_WRAPPER": str(payload.get("reviewer_b_wrapper", "cursor-agent")),
-        "REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "claude-opus-4-7-thinking-high")),
-        "REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.3-codex-high")),
-        "CURSOR_REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "claude-opus-4-7-thinking-high")),
-        "CURSOR_REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.3-codex-high")),
+        "REVIEWER_A_AGENT_WRAPPER": str(payload.get("reviewer_a_wrapper", "codex")),
+        "REVIEWER_B_AGENT_WRAPPER": str(payload.get("reviewer_b_wrapper", "codex")),
+        "REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "gpt-5.6-sol")),
+        "REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.6-terra")),
+        "CURSOR_REVIEWER_A_MODEL": str(payload.get("reviewer_a_model", "gpt-5.6-sol")),
+        "CURSOR_REVIEWER_B_MODEL": str(payload.get("reviewer_b_model", "gpt-5.6-terra")),
         "CURSOR_REVIEWER_MAX_RELAUNCHES": str(payload.get("reviewer_max_relaunches", "1")),
-        "REVIEWER_CONSENSUS_ENABLED": "1" if payload.get("reviewer_consensus_enabled", True) else "0",
+        "REVIEWER_CONSENSUS_ENABLED": "1" if payload.get("reviewer_consensus_enabled", False) else "0",
         "REVIEWER_CONSENSUS_PANEL": str(payload.get("reviewer_consensus_panel", "reviewer")),
         "REVIEWER_CONSENSUS_MODELS": str(payload.get("reviewer_consensus_models", "")),
         "REVIEWER_CONSENSUS_MAX_ROUNDS": str(payload.get("reviewer_consensus_max_rounds", "3")),
@@ -1410,9 +1410,9 @@ def worker_loop_env(payload: dict | None = None) -> dict[str, str]:
 
 def supervisor_loop_env(payload: dict | None = None) -> dict[str, str]:
     payload = payload or {}
-    supervisor_model = str(payload.get("model", "gpt-5.5-high"))
+    supervisor_model = str(payload.get("model", "gpt-5.6-sol"))
     return {
-        "SUPERVISOR_AGENT_WRAPPER": str(payload.get("wrapper", "cursor-agent")),
+        "SUPERVISOR_AGENT_WRAPPER": str(payload.get("wrapper", "codex")),
         "SUPERVISOR_MODEL": supervisor_model,
         "CODEX_MODEL": supervisor_model,
         "SUPERVISOR_REASONING_EFFORT": str(payload.get("reasoning", "")),
@@ -1421,7 +1421,7 @@ def supervisor_loop_env(payload: dict | None = None) -> dict[str, str]:
         "SUPERVISOR_EXTRA_ARGS": str(payload.get("extra_args", "--force")),
         "SUPERVISOR_AUTO_RELAUNCH_FAILURE": "1",
         "SUPERVISOR_MAX_FAILURE_RELAUNCHES": str(payload.get("max_failure_relaunches", "1")),
-        "SUPERVISOR_CONSENSUS_ENABLED": "1" if payload.get("supervisor_consensus_enabled", True) else "0",
+        "SUPERVISOR_CONSENSUS_ENABLED": "1" if payload.get("supervisor_consensus_enabled", False) else "0",
         "SUPERVISOR_CONSENSUS_PANEL": str(payload.get("supervisor_consensus_panel", "supervisor")),
         "SUPERVISOR_CONSENSUS_MODELS": str(payload.get("supervisor_consensus_models", "")),
         "SUPERVISOR_CONSENSUS_MAX_ROUNDS": str(payload.get("supervisor_consensus_max_rounds", "3")),
@@ -1432,7 +1432,7 @@ def supervisor_loop_env(payload: dict | None = None) -> dict[str, str]:
 def modulator_loop_env(payload: dict | None = None) -> dict[str, str]:
     payload = payload or {}
     wrapper = str(payload.get("wrapper", os.environ.get("MODULATOR_AGENT_WRAPPER", "codex")))
-    default_model = "gpt-5.5" if wrapper == "codex" else "gpt-5.5-high"
+    default_model = "gpt-5.6-sol"
     modulator_model = str(payload.get("model", os.environ.get("MODULATOR_MODEL", default_model)))
     default_extra_args = "" if wrapper == "codex" else "--force"
     return {
@@ -1451,13 +1451,13 @@ def running_modulator_agent(root: Path) -> tuple[str, str]:
     wrapper = os.environ.get("MODULATOR_AGENT_WRAPPER", "codex")
     model = os.environ.get(
         "MODULATOR_MODEL",
-        "gpt-5.5" if wrapper == "codex" else "gpt-5.5-high",
+        "gpt-5.6-sol",
     )
     launch_env = latest_loop_launch_env(root, "modulator_loop")
     wrapper = launch_env.get("modulator_agent_wrapper", wrapper) or wrapper
     model = launch_env.get("modulator_model", model) or model
     if model == "claude-fable-5-thinking-xhigh" and wrapper == "codex" and "MODULATOR_MODEL" not in os.environ:
-        model = "gpt-5.5"
+        model = "gpt-5.6-sol"
     return wrapper, model
 
 
@@ -1813,8 +1813,8 @@ def supervisor_chat(root: Path, message: str, history: object, draft_review: obj
     message = message.strip()
     if not message:
         return {"ok": False, "message": "Enter a question for the supervisor."}
-    if not shutil.which("cursor-agent"):
-        return {"ok": False, "message": "cursor-agent executable was not found in PATH."}
+    if not shutil.which("codex"):
+        return {"ok": False, "message": "codex executable was not found in PATH."}
 
     code, jobs_summary, jobs_err = run(["python3", "scripts/summarize_jobs.py"], root)
     if code != 0:
@@ -1869,28 +1869,30 @@ Hard constraints:
         os.environ.get("AI_WORKFLOW_CHAT_MODEL")
         or os.environ.get("SUPERVISOR_MODEL")
         or os.environ.get("CODEX_MODEL")
-        or "gpt-5.5-high"
+        or "gpt-5.6-terra"
     )
     effort = os.environ.get("AI_WORKFLOW_CHAT_REASONING_EFFORT") or "model-default"
     timeout_seconds = max(30, env_int("AI_WORKFLOW_CHAT_TIMEOUT", 300))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = runs_dir(root) / f"human_review_chat_{stamp}.log"
     args = [
-        "cursor-agent",
-        "-p",
-        "--trust",
-        "--mode",
-        "ask",
-        "--workspace",
+        "codex",
+        "--ask-for-approval",
+        "never",
+        "--sandbox",
+        "read-only",
+        "exec",
+        "-C",
         str(root),
-        "--model",
+        "-m",
         model,
-        prompt,
+        "-",
     ]
     try:
         result = subprocess.run(
             args,
             cwd=str(root),
+            input=prompt,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -2324,8 +2326,8 @@ def start_architect_job(root: Path, message: str, model: str = "", wrapper: str 
             import architect
             runner = architect.make_default_runner(
                 workspace=str(root),
-                wrapper=wrapper or "cursor-agent",
-                model=model or "gpt-5.5-high",
+                wrapper=wrapper or "codex",
+                model=model or "gpt-5.6-sol",
             )
             turn = architect.interview_turn(root, message, runner=runner)
             result = {

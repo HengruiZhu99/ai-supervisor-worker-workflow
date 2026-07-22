@@ -55,13 +55,14 @@ PACKAGE_ROOT = SCRIPT_DIR.parent
 PANELS_DIR = PACKAGE_ROOT / "agent_wrappers" / "panels"
 
 PEER_EXCERPT_CHARS = 1800
+DEFAULT_PANELIST_MODEL = "gpt-5.6-terra"
 
 
 @dataclass
 class Panelist:
     id: str
-    wrapper: str = "cursor-agent"
-    model: str = ""
+    wrapper: str = "codex"
+    model: str = DEFAULT_PANELIST_MODEL
     reasoning_effort: str = ""
     focus: str = ""
 
@@ -88,7 +89,7 @@ class OrchestratorConfig:
     output_format: str = "stream-json"
     read_only: bool = True
     extra_args: str = ""
-    timeout: int = 0
+    timeout: int = 1800
     job_id: str = ""
     attempt: int | None = None
     metrics_role: str = ""
@@ -139,7 +140,7 @@ def build_panel(spec: dict, args: argparse.Namespace) -> list[Panelist]:
     panelists = [
         Panelist(
             id=str(item.get("id") or f"panelist-{index + 1}"),
-            wrapper=str(item.get("wrapper") or "cursor-agent"),
+            wrapper=str(item.get("wrapper") or "codex"),
             model=str(item.get("model") or ""),
             reasoning_effort=str(item.get("reasoning_effort") or ""),
             focus=str(item.get("focus") or ""),

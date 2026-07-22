@@ -8,20 +8,20 @@
   "panelists": [
     {
       "id": "supervisor-1",
-      "wrapper": "cursor-agent",
-      "model": "gpt-5.5-high",
+      "wrapper": "codex",
+      "model": "gpt-5.6-sol",
       "focus": "roadmap progress, milestone/boundary gating, and whether the next dispatched job advances the design target"
     },
     {
       "id": "supervisor-2",
-      "wrapper": "cursor-agent",
-      "model": "claude-opus-4-8-thinking-high",
+      "wrapper": "codex",
+      "model": "gpt-5.6-sol",
       "focus": "review rigor: reviewer coverage, attempt consistency, diff quality, and whether acceptance is actually justified by evidence"
     },
     {
       "id": "supervisor-3",
-      "wrapper": "cursor-agent",
-      "model": "gpt-5.3-codex-high",
+      "wrapper": "codex",
+      "model": "gpt-5.6-terra",
       "focus": "process and safety: integration correctness, workflow-state hygiene, and avoiding metadata-only job streaks"
     }
   ]

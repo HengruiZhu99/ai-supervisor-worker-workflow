@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #========================================================================================
-# BBHK spectral numerical relativity code
+# AIFLOW workflow compatibility entry point
 # Copyright(C) 2026 Hengrui Zhu
 #========================================================================================
 
@@ -35,13 +35,11 @@ import architect_core as ac
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 
-def git_root() -> Path:
-    # Standalone tool: AIFLOW_PROJECT_ROOT selects the target repo so the tool can
-    # run from its own install location against any project. Falls back to the
-    # current git repo, then cwd.
-    env_root = os.environ.get("AIFLOW_PROJECT_ROOT")
-    if env_root:
-        return Path(env_root).resolve()
+def git_root(explicit_root: str = "") -> Path:
+    # Inherited AIFLOW_* variables are never implicit project selectors. The
+    # launcher passes an explicit path; otherwise resolve the current Git repo.
+    if explicit_root:
+        return Path(explicit_root).resolve()
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
@@ -100,7 +98,7 @@ def _run(script: str, extra: list[str], root: Path) -> int:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    root = git_root()
+    root = git_root(args.project_root)
     ready = run_interview(root, args.wrapper, args.model, args.timeout)
     if not ready and not args.force:
         print("\nInterview not finalized; run `aiflow spec` to continue or `aiflow gate` to check.")
@@ -123,13 +121,13 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_spec(args: argparse.Namespace) -> int:
-    root = git_root()
+    root = git_root(args.project_root)
     run_interview(root, args.wrapper, args.model, args.timeout)
     return 0
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
-    root = git_root()
+    root = git_root(args.project_root)
     extra = []
     if args.no_consensus:
         extra.append("--no-consensus")
@@ -139,7 +137,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
 
 
 def cmd_compile(args: argparse.Namespace) -> int:
-    root = git_root()
+    root = git_root(args.project_root)
     extra = []
     if args.overwrite:
         extra.append("--overwrite")
@@ -151,7 +149,7 @@ def cmd_compile(args: argparse.Namespace) -> int:
 
 
 def cmd_start(args: argparse.Namespace) -> int:
-    root = git_root()
+    root = git_root(args.project_root)
     try:
         import human_milestone_review as hmr
     except Exception as exc:
@@ -163,19 +161,20 @@ def cmd_start(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    root = git_root()
+    root = git_root(args.project_root)
     _print_state(root)
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--project-root", default="")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_interview_args(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--wrapper", default="cursor-agent")
-        p.add_argument("--model", default="gpt-5.5-high")
-        p.add_argument("--timeout", type=int, default=0)
+        p.add_argument("--wrapper", default="codex")
+        p.add_argument("--model", default="gpt-5.6-sol")
+        p.add_argument("--timeout", type=int, default=1800)
 
     init = sub.add_parser("init", help="interview -> gate -> compile")
     add_interview_args(init)

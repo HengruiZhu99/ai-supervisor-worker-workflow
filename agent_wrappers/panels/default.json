@@ -6,8 +6,8 @@
   "quorum": "unanimous",
   "description": "Generic fallback consensus panel for any role that does not have a dedicated panel file.",
   "panelists": [
-    {"id": "panelist-1", "wrapper": "cursor-agent", "model": "gpt-5.5-high"},
-    {"id": "panelist-2", "wrapper": "cursor-agent", "model": "claude-opus-4-8-thinking-high"},
-    {"id": "panelist-3", "wrapper": "cursor-agent", "model": "gpt-5.3-codex-high"}
+    {"id": "panelist-1", "wrapper": "codex", "model": "gpt-5.6-sol"},
+    {"id": "panelist-2", "wrapper": "codex", "model": "gpt-5.6-terra"},
+    {"id": "panelist-3", "wrapper": "codex", "model": "gpt-5.6-luna"}
   ]
 }

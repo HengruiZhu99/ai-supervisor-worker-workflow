@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -41,6 +42,30 @@ class BackendDefaultRegressionTests(unittest.TestCase):
                     failures.append(f"{path.name}:{member.get('id')}:wrapper")
                 if not str(member.get("model", "")).startswith("gpt-5.6-"):
                     failures.append(f"{path.name}:{member.get('id')}:model")
+        self.assertEqual(failures, [])
+
+    def test_active_launch_surfaces_do_not_default_to_cursor(self) -> None:
+        paths = [
+            ROOT / "scripts" / "worker_loop.sh",
+            ROOT / "scripts" / "supervisor_loop.sh",
+            ROOT / "scripts" / "modulator_loop.sh",
+            ROOT / "scripts" / "architect.py",
+            ROOT / "scripts" / "orchestrator.py",
+            ROOT / "scripts" / "human_milestone_review.py",
+            ROOT / "scripts" / "workflow_gui.py",
+            ROOT / "project.yaml.example",
+        ]
+        default_cursor = re.compile(
+            r":-cursor-agent|default=[\"']cursor-agent|or [\"']cursor-agent|"
+            r"get\([^\n]+[\"']cursor-agent[\"']"
+        )
+        failures: list[str] = []
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            if default_cursor.search(text):
+                failures.append(f"{path.relative_to(ROOT)} still defaults to Cursor")
+            if "gpt-5.6-" not in text:
+                failures.append(f"{path.relative_to(ROOT)} has no current role model default")
         self.assertEqual(failures, [])
 
 

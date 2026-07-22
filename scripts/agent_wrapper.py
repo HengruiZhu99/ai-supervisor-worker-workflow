@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #========================================================================================
-# BBHK spectral numerical relativity code
+# AIFLOW workflow compatibility entry point
 # Copyright(C) 2026 Hengrui Zhu
 #========================================================================================
 
@@ -86,6 +86,57 @@ def split_extra_args(value: str) -> list[str]:
     return shlex.split(value) if value.strip() else []
 
 
+ROLE_SANDBOX = {
+    "worker": "workspace-write",
+    "reviewer": "read-only",
+    "supervisor": "workspace-write",
+    "modulator": "read-only",
+    "chat": "read-only",
+}
+UNRESTRICTED_FLAGS = {
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--yolo",
+}
+
+
+def validate_parent_permissions(sandbox_mode: str, bypass: bool = False) -> None:
+    """Fail closed when live parent permissions invalidate child role boundaries."""
+    normalized = sandbox_mode.strip().lower()
+    if bypass or normalized in {"danger-full-access", "full-access", "unrestricted"}:
+        raise SystemExit(
+            "orchestrated mode refuses an unrestricted parent permission profile"
+        )
+
+
+def codex_permissions(args: argparse.Namespace) -> tuple[str, str]:
+    sandbox = "read-only" if getattr(args, "read_only", False) else ROLE_SANDBOX[args.role]
+    return "never", sandbox
+
+
+def build_codex_command(args: argparse.Namespace) -> list[str]:
+    approval, sandbox = codex_permissions(args)
+    extra = split_extra_args(args.extra_args)
+    if UNRESTRICTED_FLAGS.intersection(extra) or "danger-full-access" in extra:
+        raise SystemExit("refusing unrestricted Codex permissions in wrapper extra arguments")
+    command = [
+        "codex",
+        "--ask-for-approval",
+        approval,
+        "--sandbox",
+        sandbox,
+        "exec",
+        "-C",
+        args.workspace,
+    ]
+    if args.model:
+        command.extend(["-m", args.model])
+    if args.reasoning_effort:
+        command.extend(["-c", f'model_reasoning_effort="{args.reasoning_effort}"'])
+    command.extend(extra)
+    command.append("-")
+    return command
+
+
 def run_cursor_agent(args: argparse.Namespace) -> int:
     model = normalize_cursor_model(args.model)
     command = [
@@ -110,22 +161,7 @@ def run_cursor_agent(args: argparse.Namespace) -> int:
 
 
 def run_codex(args: argparse.Namespace) -> int:
-    command = [
-        "codex",
-        "--ask-for-approval",
-        "never",
-        "--sandbox",
-        "danger-full-access",
-        "exec",
-        "-C",
-        args.workspace,
-    ]
-    if args.model:
-        command.extend(["-m", args.model])
-    if args.reasoning_effort:
-        command.extend(["-c", f'model_reasoning_effort="{args.reasoning_effort}"'])
-    command.extend(split_extra_args(args.extra_args))
-    command.append("-")
+    command = build_codex_command(args)
     with Path(args.prompt_file).open("rb") as prompt:
         return subprocess.call(command, stdin=prompt)
 

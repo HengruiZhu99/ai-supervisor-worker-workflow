@@ -1,20 +1,21 @@
 {
   "id": "codex",
   "label": "Codex CLI",
-  "description": "Codex CLI wrapper. The workflow defaults to cursor-agent where configured, but codex exec can be selected explicitly for long-running workflow roles.",
+  "description": "Default Codex CLI wrapper for all workflow roles with explicit role-bounded permissions.",
   "roles": ["worker", "reviewer", "supervisor", "modulator", "chat"],
-  "recommended_roles": [],
+  "recommended_roles": ["worker", "reviewer", "supervisor", "modulator", "chat"],
   "executable": "codex",
   "default_models": {
-    "worker": "gpt-5.5",
-    "reviewer": "gpt-5.5",
-    "supervisor": "gpt-5.5",
-    "modulator": "gpt-5.5",
-    "chat": "gpt-5.5"
+    "worker": "gpt-5.6-sol",
+    "reviewer": "gpt-5.6-sol",
+    "supervisor": "gpt-5.6-sol",
+    "modulator": "gpt-5.6-sol",
+    "chat": "gpt-5.6-terra"
   },
   "models": [
-    "gpt-5.5",
-    "gpt-5.3-codex"
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna"
   ],
   "supports_reasoning_effort": true
 }

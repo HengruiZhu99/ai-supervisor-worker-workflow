@@ -354,8 +354,8 @@ def default_project_yaml(spec: dict | None = None) -> dict:
             "format_check": runtime.get("format_check", ""),
         },
         "agents": {
-            "worker_wrapper": "cursor-agent",
-            "worker_model": "claude-fable-5-thinking-high",
+            "worker_wrapper": "codex",
+            "worker_model": "gpt-5.6-sol",
             "reviewer_panel": "reviewer",
             "supervisor_panel": "supervisor",
         },

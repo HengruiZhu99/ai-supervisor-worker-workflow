@@ -1,9 +1,9 @@
 {
   "id": "cursor-agent",
   "label": "Cursor Agent",
-  "description": "Use cursor-agent for worker, reviewer, supervisor, modulator, or workflow-chat roles.",
+  "description": "Legacy opt-in Cursor Agent compatibility wrapper.",
   "roles": ["worker", "reviewer", "supervisor", "modulator", "chat"],
-  "recommended_roles": ["worker", "reviewer", "supervisor", "modulator", "chat"],
+  "recommended_roles": [],
   "executable": "cursor-agent",
   "default_models": {
     "worker": "claude-fable-5-thinking-high",

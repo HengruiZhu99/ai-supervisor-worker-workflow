@@ -40,7 +40,6 @@ if [[ -z "$PROJECT_ROOT" ]]; then
 fi
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" 2>/dev/null && pwd || echo "$PROJECT_ROOT")"
 
-export AIFLOW_PROJECT_ROOT="$PROJECT_ROOT"
 export AI_WORKFLOW_PACKAGE_ROOT="$TOOL_HOME"
 
 cmd="${args[0]:-help}"
@@ -68,7 +67,7 @@ require_vendored() {
 case "$cmd" in
   init|spec|gate|compile|status)
     require_git_repo
-    exec python3 "$SCRIPTS/aiflow.py" "$cmd" ${rest[@]+"${rest[@]}"}
+    exec python3 "$SCRIPTS/aiflow.py" --project-root "$PROJECT_ROOT" "$cmd" ${rest[@]+"${rest[@]}"}
     ;;
   panels)
     exec python3 "$SCRIPTS/orchestrator.py" list-panels

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #========================================================================================
-# BBHK spectral numerical relativity code
+# AIFLOW workflow compatibility entry point
 # Copyright(C) 2026 Hengrui Zhu
 #========================================================================================
 
@@ -17,19 +17,18 @@ cd "$ROOT"
 # legacy CURSOR_TIMEOUT environment variable may still be exported by existing
 # launchers, so worker wall-clock limits are opt-in through WORKER_TIMEOUT or
 # WORKER_AGENT_TIMEOUT instead.
-WORKER_TIMEOUT="${WORKER_TIMEOUT:-${WORKER_AGENT_TIMEOUT:-0}}"
-WORKER_AGENT_WRAPPER="${WORKER_AGENT_WRAPPER:-${CURSOR_AGENT_WRAPPER:-cursor-agent}}"
-# Default worker model: Fable 1M high through the Cursor agent CLI.
-WORKER_MODEL="${WORKER_MODEL:-${CURSOR_MODEL:-claude-fable-5-thinking-high}}"
+WORKER_TIMEOUT="${WORKER_TIMEOUT:-${WORKER_AGENT_TIMEOUT:-3600}}"
+WORKER_AGENT_WRAPPER="${WORKER_AGENT_WRAPPER:-${CURSOR_AGENT_WRAPPER:-codex}}"
+WORKER_MODEL="${WORKER_MODEL:-${CURSOR_MODEL:-gpt-5.6-sol}}"
 WORKER_AGENT_EXTRA_ARGS="${WORKER_AGENT_EXTRA_ARGS:-${CURSOR_AGENT_EXTRA_ARGS:-}}"
 CURSOR_OUTPUT_FORMAT="${CURSOR_OUTPUT_FORMAT:-stream-json}"
 CURSOR_STREAM_PARTIAL_OUTPUT="${CURSOR_STREAM_PARTIAL_OUTPUT:-1}"
 CURSOR_REVIEWERS_ENABLED="${CURSOR_REVIEWERS_ENABLED:-1}"
 CURSOR_REVIEW_TIMEOUT="${CURSOR_REVIEW_TIMEOUT:-2400}"
-REVIEWER_A_AGENT_WRAPPER="${REVIEWER_A_AGENT_WRAPPER:-${CURSOR_REVIEWER_A_WRAPPER:-cursor-agent}}"
-REVIEWER_B_AGENT_WRAPPER="${REVIEWER_B_AGENT_WRAPPER:-${CURSOR_REVIEWER_B_WRAPPER:-cursor-agent}}"
-REVIEWER_A_MODEL="${REVIEWER_A_MODEL:-${CURSOR_REVIEWER_A_MODEL:-claude-opus-4-7-thinking-high}}"
-REVIEWER_B_MODEL="${REVIEWER_B_MODEL:-${CURSOR_REVIEWER_B_MODEL:-gpt-5.3-codex-high}}"
+REVIEWER_A_AGENT_WRAPPER="${REVIEWER_A_AGENT_WRAPPER:-${CURSOR_REVIEWER_A_WRAPPER:-codex}}"
+REVIEWER_B_AGENT_WRAPPER="${REVIEWER_B_AGENT_WRAPPER:-${CURSOR_REVIEWER_B_WRAPPER:-codex}}"
+REVIEWER_A_MODEL="${REVIEWER_A_MODEL:-${CURSOR_REVIEWER_A_MODEL:-gpt-5.6-sol}}"
+REVIEWER_B_MODEL="${REVIEWER_B_MODEL:-${CURSOR_REVIEWER_B_MODEL:-gpt-5.6-terra}}"
 REVIEWER_AGENT_EXTRA_ARGS="${REVIEWER_AGENT_EXTRA_ARGS:-${CURSOR_REVIEWER_EXTRA_ARGS:-}}"
 CURSOR_REVIEWER_MAX_RELAUNCHES="${CURSOR_REVIEWER_MAX_RELAUNCHES:-1}"
 # Multi-model consensus review panel (scripts/orchestrator.py). When enabled
@@ -37,13 +36,13 @@ CURSOR_REVIEWER_MAX_RELAUNCHES="${CURSOR_REVIEWER_MAX_RELAUNCHES:-1}"
 # single panel of models that review the full diff, compare notes across rounds,
 # and only let the job advance once they broadly agree. Set
 # REVIEWER_CONSENSUS_ENABLED=0 to fall back to the legacy two-reviewer path.
-REVIEWER_CONSENSUS_ENABLED="${REVIEWER_CONSENSUS_ENABLED:-1}"
+REVIEWER_CONSENSUS_ENABLED="${REVIEWER_CONSENSUS_ENABLED:-0}"
 REVIEWER_CONSENSUS_PANEL="${REVIEWER_CONSENSUS_PANEL:-reviewer}"
 REVIEWER_CONSENSUS_MODELS="${REVIEWER_CONSENSUS_MODELS:-}"
 REVIEWER_CONSENSUS_WRAPPERS="${REVIEWER_CONSENSUS_WRAPPERS:-}"
 REVIEWER_CONSENSUS_MAX_ROUNDS="${REVIEWER_CONSENSUS_MAX_ROUNDS:-3}"
 REVIEWER_CONSENSUS_QUORUM="${REVIEWER_CONSENSUS_QUORUM:-unanimous}"
-TEST_TIMEOUT="${TEST_TIMEOUT:-0}"
+TEST_TIMEOUT="${TEST_TIMEOUT:-1800}"
 WORKER_AUTO_RESUME_TIMEOUT="${WORKER_AUTO_RESUME_TIMEOUT:-1}"
 WORKER_MAX_TIMEOUT_RESUMES="${WORKER_MAX_TIMEOUT_RESUMES:-2}"
 WORKER_AUTO_RELAUNCH_FAILURE="${WORKER_AUTO_RELAUNCH_FAILURE:-1}"
@@ -1371,115 +1370,6 @@ process_job() {
   if [[ -n "$test_command" ]]; then
     local test_script="$job/test_command.attempt-$attempt.sh"
     mkdir -p "$(dirname "$test_script")"
-    cat >"$test_script" <<'TEST_PREAMBLE'
-__bbhk_oneapi_setvars="/home/hzhu/intel/oneapi/setvars.sh"
-__bbhk_oneapi_loaded=0
-__bbhk_sycl_preset="sycl-intel-b580"
-__bbhk_sycl_build_dir="build/${__bbhk_sycl_preset}"
-__bbhk_icpx_path=""
-
-__bbhk_source_oneapi_for_sycl() {
-  if [[ "$__bbhk_oneapi_loaded" == "1" ]]; then
-    return 0
-  fi
-  if [[ ! -f "$__bbhk_oneapi_setvars" ]]; then
-    return 0
-  fi
-
-  echo "[worker_loop] sourcing oneAPI for sycl-intel-b580: $__bbhk_oneapi_setvars"
-  local __bbhk_had_nounset=0
-  case "$-" in
-    *u*) __bbhk_had_nounset=1 ;;
-  esac
-  set +u
-  # shellcheck disable=SC1090
-  local __bbhk_source_status=0
-  source "$__bbhk_oneapi_setvars" --force || __bbhk_source_status=$?
-  if [[ "$__bbhk_had_nounset" == "1" ]]; then
-    set -u
-  fi
-  if [[ "$__bbhk_source_status" -ne 0 ]]; then
-    return "$__bbhk_source_status"
-  fi
-  __bbhk_oneapi_loaded=1
-}
-
-__bbhk_resolve_icpx_for_sycl() {
-  __bbhk_source_oneapi_for_sycl || return $?
-  if [[ -z "$__bbhk_icpx_path" ]]; then
-    __bbhk_icpx_path="$(command -v icpx 2>/dev/null || true)"
-    if [[ -z "$__bbhk_icpx_path" ]]; then
-      echo "[worker_loop] icpx unavailable after sourcing oneAPI" >&2
-      return 127
-    fi
-  fi
-  export CXX="$__bbhk_icpx_path"
-}
-
-__bbhk_command_needs_sycl_env() {
-  local __bbhk_arg
-  for __bbhk_arg in "$@"; do
-    if [[ "$__bbhk_arg" == *"$__bbhk_sycl_preset"* || "$__bbhk_arg" == *sycl-ls* ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-__bbhk_is_sycl_cmake_configure() {
-  local __bbhk_seen_build=0
-  local __bbhk_seen_preset=0
-  local __bbhk_arg
-  for __bbhk_arg in "$@"; do
-    if [[ "$__bbhk_arg" == "--build" ]]; then
-      __bbhk_seen_build=1
-    fi
-    if [[ "$__bbhk_arg" == "$__bbhk_sycl_preset" ]]; then
-      __bbhk_seen_preset=1
-    fi
-  done
-  [[ "$__bbhk_seen_build" == "0" && "$__bbhk_seen_preset" == "1" ]]
-}
-
-__bbhk_prepare_sycl_cmake_configure() {
-  __bbhk_resolve_icpx_for_sycl || return $?
-  if [[ -f "$__bbhk_sycl_build_dir/CMakeCache.txt" ]]; then
-    local __bbhk_cached_compiler=""
-    __bbhk_cached_compiler="$(
-      sed -n 's/^CMAKE_CXX_COMPILER:[^=]*=//p' \
-        "$__bbhk_sycl_build_dir/CMakeCache.txt" | head -n 1
-    )"
-    if [[ "$__bbhk_cached_compiler" != "$__bbhk_icpx_path" ]]; then
-      echo "[worker_loop] removing stale $__bbhk_sycl_preset cache with CMAKE_CXX_COMPILER=${__bbhk_cached_compiler:-unset}; expected $__bbhk_icpx_path"
-      rm -rf "$__bbhk_sycl_build_dir"
-    fi
-  fi
-}
-
-cmake() {
-  if __bbhk_command_needs_sycl_env "$@"; then
-    if __bbhk_is_sycl_cmake_configure "$@"; then
-      __bbhk_prepare_sycl_cmake_configure || return $?
-      command cmake "$@" -DCMAKE_CXX_COMPILER="$__bbhk_icpx_path"
-      return $?
-    fi
-    __bbhk_resolve_icpx_for_sycl || return $?
-  fi
-  command cmake "$@"
-}
-
-ctest() {
-  if __bbhk_command_needs_sycl_env "$@"; then
-    __bbhk_source_oneapi_for_sycl || return $?
-  fi
-  command ctest "$@"
-}
-
-sycl-ls() {
-  __bbhk_source_oneapi_for_sycl || return $?
-  command sycl-ls "$@"
-}
-TEST_PREAMBLE
     {
       printf 'export JOB_ID=%q\n' "$id"
       printf 'export JOB_ATTEMPT=%q\n' "$attempt"

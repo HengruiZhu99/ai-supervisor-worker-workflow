@@ -113,11 +113,11 @@ def _stream_to_text(raw_stdout: str) -> str:
 def make_default_runner(
     *,
     workspace: str,
-    wrapper: str = "cursor-agent",
-    model: str = "gpt-5.5-high",
-    output_format: str = "stream-json",
-    extra_args: str = "--force",
-    timeout: int = 0,
+    wrapper: str = "codex",
+    model: str = "gpt-5.6-sol",
+    output_format: str = "",
+    extra_args: str = "",
+    timeout: int = 1800,
 ):
     """Build a runner that invokes an agent read-only and returns its text output."""
 
@@ -266,9 +266,9 @@ def main() -> int:
 
     msg = sub.add_parser("message", help="send one interview message")
     msg.add_argument("message")
-    msg.add_argument("--wrapper", default="cursor-agent")
-    msg.add_argument("--model", default="gpt-5.5-high")
-    msg.add_argument("--timeout", type=int, default=0)
+    msg.add_argument("--wrapper", default="codex")
+    msg.add_argument("--model", default="gpt-5.6-sol")
+    msg.add_argument("--timeout", type=int, default=1800)
     msg.set_defaults(func=cmd_message)
 
     state = sub.add_parser("state", help="print interview completeness state")
