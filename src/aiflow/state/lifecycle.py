@@ -8,7 +8,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
+from aiflow.controller.execution import AgentBackend, TaskExecutionEngine
 from aiflow.controller.runner import Budgets, ControllerRunner
+from aiflow.controller.watchdog import DeterministicWatchdog
 from aiflow.identity.context import ProjectContext
 from aiflow.state.store import RunStore
 from aiflow.state.handoff import create_handoff
@@ -21,10 +23,19 @@ def _safe(value: str) -> str:
 
 class RunLifecycle:
     def __init__(
-        self, context: ProjectContext, *, runtime_env: Mapping[str, str] | None = None
+        self,
+        context: ProjectContext,
+        *,
+        runtime_env: Mapping[str, str] | None = None,
+        agent_backend: AgentBackend | None = None,
+        agent_id: str = "codex-worker",
+        watchdog: DeterministicWatchdog | None = None,
     ) -> None:
         self.context = context
         self.runtime_env = runtime_env
+        self.agent_backend = agent_backend
+        self.agent_id = agent_id
+        self.watchdog = watchdog
 
     def store(self, run_id: str) -> RunStore:
         return RunStore(self.context, run_id, runtime_env=self.runtime_env)
@@ -47,6 +58,8 @@ class RunLifecycle:
         mode: str,
         objective: str,
         acceptance_ids: tuple[str, ...] = (),
+        task_kind: str = "feature",
+        task_specs: tuple[Mapping[str, Any], ...] = (),
     ) -> dict[str, Any]:
         if mode not in {"solo", "orchestrated"}:
             raise ValueError(f"unknown run mode: {mode}")
@@ -54,28 +67,44 @@ class RunLifecycle:
             raise ValueError("run objective is required")
         store = RunStore.create(self.context, mode=mode, runtime_env=self.runtime_env)
         controller = self._claim(store)
-        task = {
-            "id": "T0001",
-            "objective": objective.strip(),
-            "value_class": "delivery",
-            "acceptance_ids": list(acceptance_ids),
-            "dependencies": [],
-            "unblocks_task_id": "",
-            "allowed_scope": [],
-            "worktree": self.context.worktree_id,
-            "commands": [],
-            "evidence": [],
-            "expected_diff_budget": 0,
-            "status": "READY",
-            "attempts": 0,
-            "failure_signature": "",
-        }
+        specs = task_specs or (
+            {
+                "id": "T0001",
+                "objective": objective.strip(),
+                "kind": task_kind,
+                "acceptance_ids": list(
+                    acceptance_ids or (f"AC-RUN-{store.run_id[:8].upper()}",)
+                ),
+            },
+        )
+        tasks = []
+        for index, spec in enumerate(specs, start=1):
+            task = {
+                "id": str(spec.get("id", f"T{index:04d}")),
+                "objective": str(spec.get("objective", "")).strip(),
+                "kind": str(spec.get("kind", "feature")),
+                "value_class": str(spec.get("value_class", "delivery")),
+                "acceptance_ids": [str(value) for value in spec.get("acceptance_ids", [])],
+                "dependencies": [str(value) for value in spec.get("dependencies", [])],
+                "unblocks_task_id": str(spec.get("unblocks_task_id", "")),
+                "allowed_scope": [str(value) for value in spec.get("allowed_scope", [])],
+                "worktree": self.context.worktree_id,
+                "commands": [list(command) for command in spec.get("commands", [])],
+                "evidence": [],
+                "expected_diff_budget": int(spec.get("expected_diff_budget", 0)),
+                "status": "READY",
+                "attempts": 0,
+                "failure_signature": "",
+            }
+            if not task["objective"]:
+                raise ValueError("every executable task needs an objective")
+            tasks.append(task)
         try:
             run = store.transition(
                 0,
                 {"status": "PAUSED", "objective": objective.strip()},
                 event_type="run_initialized",
-                task_updates={"tasks": [task]},
+                task_updates={"tasks": tasks},
                 controller_id=controller,
             )
         finally:
@@ -110,10 +139,31 @@ class RunLifecycle:
                 revision, {"status": "RUNNING"},
                 event_type="run_resumed", controller_id=controller,
             )
-            outcome = ControllerRunner(budgets=budgets).run(lambda: "idle")
+            selected = budgets or Budgets()
+            if self.agent_backend is None:
+                outcome = ControllerRunner(budgets=selected).run(lambda: "idle")
+                closed: tuple[str, ...] = ()
+            else:
+                execution = TaskExecutionEngine(
+                    store,
+                    controller_id=controller,
+                    backend=self.agent_backend,
+                    agent_id=self.agent_id,
+                    budgets=selected,
+                    watchdog=self.watchdog,
+                ).run()
+                outcome = execution.outcome
+                closed = execution.acceptance_ids_closed
+            status = "SUCCEEDED" if outcome.value == "SUCCEEDED" else "PAUSED"
+            if outcome.value in {"BLOCKED", "FAILED", "BUDGET_EXHAUSTED"}:
+                status = outcome.value
             final = store.transition(
-                int(running["state_revision"]),
-                {"status": "PAUSED", "terminal_reason": outcome.value},
+                int(store.read_run()["state_revision"]),
+                {
+                    "status": status,
+                    "terminal_reason": outcome.value,
+                    "acceptance_ids_closed": list(closed),
+                },
                 event_type="controller_exit",
                 controller_id=controller,
             )

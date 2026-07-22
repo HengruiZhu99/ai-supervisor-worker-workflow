@@ -100,7 +100,17 @@ class LifecycleCliTests(unittest.TestCase):
             )
             self.assertEqual(started.returncode, 0, started.stderr)
             run_id = json.loads(started.stdout)["run_id"]
-            resumed = run_cli(project, "run", "resume", "--run-id", run_id, "--max-idle", "1")
+            resumed = run_cli(
+                project,
+                "run",
+                "resume",
+                "--run-id",
+                run_id,
+                "--max-idle",
+                "1",
+                "--backend",
+                "none",
+            )
             self.assertEqual(json.loads(resumed.stdout)["outcome"], "IDLE_EXIT")
             stopped = run_cli(project, "run", "stop", "--run-id", run_id)
             self.assertEqual(json.loads(stopped.stdout)["status"], "STOPPED")

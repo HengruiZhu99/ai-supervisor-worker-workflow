@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from aiflow import __version__
+from aiflow.agents.codex import CodexAgentBackend
 from aiflow.controller.runner import Budgets, ControllerOutcome
 from aiflow.identity.context import resolve_project
 from aiflow.integration.transaction import GateCommands, IntegrationTransaction
@@ -104,9 +105,17 @@ def quality_command(args: argparse.Namespace) -> int:
     return 0 if result["ok"] else 4
 
 
-def _lifecycle(args: argparse.Namespace) -> RunLifecycle:
+def _lifecycle(args: argparse.Namespace, *, with_backend: bool = False) -> RunLifecycle:
     context = resolve_project(explicit_root=_root(args.project_root))
-    return RunLifecycle(context)
+    backend = None
+    if with_backend and getattr(args, "backend", "codex") == "codex":
+        backend = CodexAgentBackend(
+            context.root,
+            model=getattr(args, "model", "gpt-5.6-sol"),
+            reasoning_effort=getattr(args, "reasoning_effort", "high"),
+            timeout=getattr(args, "max_wall_time", 14_400),
+        ).run
+    return RunLifecycle(context, agent_backend=backend)
 
 
 def _budgets(args: argparse.Namespace) -> Budgets:
@@ -138,7 +147,7 @@ def _permission_preflight(mode: str, parent_sandbox: str) -> None:
 
 
 def run_command(args: argparse.Namespace) -> int:
-    lifecycle = _lifecycle(args)
+    lifecycle = _lifecycle(args, with_backend=args.run_action == "resume")
     result: Any
     if args.run_action == "start":
         _permission_preflight(args.mode, args.parent_sandbox)
@@ -146,6 +155,7 @@ def run_command(args: argparse.Namespace) -> int:
             mode=args.mode,
             objective=args.objective,
             acceptance_ids=tuple(args.acceptance_id),
+            task_kind=args.task_kind,
         )
     elif args.run_action == "list":
         result = lifecycle.list()
@@ -175,7 +185,7 @@ def run_command(args: argparse.Namespace) -> int:
 
 def controller_command(args: argparse.Namespace) -> int:
     _permission_preflight(args.mode, args.parent_sandbox)
-    lifecycle = _lifecycle(args)
+    lifecycle = _lifecycle(args, with_backend=True)
     if args.compat_role:
         print(
             f"warning: legacy {args.compat_role} loop is deprecated; "
@@ -276,6 +286,59 @@ def _add_handoff_actions(actions: argparse._SubParsersAction) -> None:
     verify.add_argument("path")
 
 
+def _add_run_commands(commands: argparse._SubParsersAction) -> None:
+    runs = commands.add_parser("run", help="create and control durable project runs")
+    actions = runs.add_subparsers(dest="run_action", required=True)
+    start = actions.add_parser("start")
+    start.add_argument("--mode", choices=("solo", "orchestrated"), default="solo")
+    start.add_argument("--objective", required=True)
+    start.add_argument("--acceptance-id", action="append", default=[])
+    start.add_argument(
+        "--task-kind",
+        choices=("feature", "bug", "refactor", "test", "numerical", "performance", "portability"),
+        default="feature",
+    )
+    start.add_argument(
+        "--parent-sandbox", choices=("read-only", "workspace-write", "danger-full-access"),
+        default="",
+    )
+    actions.add_parser("list")
+    status = actions.add_parser("status")
+    status.add_argument("--run-id", default="")
+    resume = actions.add_parser("resume")
+    resume.add_argument("--run-id", default="")
+    resume.add_argument(
+        "--parent-sandbox", choices=("read-only", "workspace-write", "danger-full-access"),
+        default="",
+    )
+    _add_budgets(resume)
+    resume.add_argument("--backend", choices=("codex", "none"), default="codex")
+    resume.add_argument("--model", default="gpt-5.6-sol")
+    resume.add_argument("--reasoning-effort", default="high")
+    stop = actions.add_parser("stop")
+    stop.add_argument("--run-id", default="")
+    _add_handoff_actions(actions)
+    runs.set_defaults(func=run_command)
+
+
+def _add_controller_command(commands: argparse._SubParsersAction) -> None:
+    controller = commands.add_parser("controller", help="run the finite deterministic controller")
+    actions = controller.add_subparsers(dest="controller_action", required=True)
+    run = actions.add_parser("run")
+    run.add_argument("--run-id", default="")
+    run.add_argument("--mode", choices=("solo", "orchestrated"), default="solo")
+    run.add_argument("--compat-role", default="")
+    run.add_argument(
+        "--parent-sandbox", choices=("read-only", "workspace-write", "danger-full-access"),
+        default="",
+    )
+    _add_budgets(run)
+    run.add_argument("--backend", choices=("codex", "none"), default="codex")
+    run.add_argument("--model", default="gpt-5.6-sol")
+    run.add_argument("--reasoning-effort", default="high")
+    controller.set_defaults(func=controller_command)
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="aiflow")
     result.add_argument("--version", action="version", version=__version__)
@@ -319,43 +382,8 @@ def parser() -> argparse.ArgumentParser:
     quality_actions.add_parser("check")
     quality.set_defaults(func=quality_command)
 
-    runs = commands.add_parser("run", help="create and control durable project runs")
-    run_actions = runs.add_subparsers(dest="run_action", required=True)
-    start = run_actions.add_parser("start")
-    start.add_argument("--mode", choices=("solo", "orchestrated"), default="solo")
-    start.add_argument("--objective", required=True)
-    start.add_argument("--acceptance-id", action="append", default=[])
-    start.add_argument(
-        "--parent-sandbox", choices=("read-only", "workspace-write", "danger-full-access"),
-        default="",
-    )
-    run_actions.add_parser("list")
-    status = run_actions.add_parser("status")
-    status.add_argument("--run-id", default="")
-    resume = run_actions.add_parser("resume")
-    resume.add_argument("--run-id", default="")
-    resume.add_argument(
-        "--parent-sandbox", choices=("read-only", "workspace-write", "danger-full-access"),
-        default="",
-    )
-    _add_budgets(resume)
-    stop = run_actions.add_parser("stop")
-    stop.add_argument("--run-id", default="")
-    _add_handoff_actions(run_actions)
-    runs.set_defaults(func=run_command)
-
-    controller = commands.add_parser("controller", help="run the finite deterministic controller")
-    controller_actions = controller.add_subparsers(dest="controller_action", required=True)
-    controller_run = controller_actions.add_parser("run")
-    controller_run.add_argument("--run-id", default="")
-    controller_run.add_argument("--mode", choices=("solo", "orchestrated"), default="solo")
-    controller_run.add_argument("--compat-role", default="")
-    controller_run.add_argument(
-        "--parent-sandbox", choices=("read-only", "workspace-write", "danger-full-access"),
-        default="",
-    )
-    _add_budgets(controller_run)
-    controller.set_defaults(func=controller_command)
+    _add_run_commands(commands)
+    _add_controller_command(commands)
 
     state = commands.add_parser("state", help="verify, repair, or migrate canonical state")
     state_actions = state.add_subparsers(dest="state_action", required=True)

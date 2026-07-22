@@ -50,17 +50,36 @@ def evidence(kind: str) -> dict:
     additions = {
         "feature": {"observable": "new behavior"},
         "bug": {"reproduction": "old failure"},
-        "refactor": {"characterization": "golden result", "behavior_equivalent": True},
+        "refactor": {
+            "characterization": {"exit_code": 0, "discriminating": True},
+            "behavior_equivalent": True,
+        },
         "numerical": {
-            "reference": "analytic", "units": "dimensionless", "dimensions": 3,
-            "shapes": [[3]], "tolerance": {"absolute": 1e-12, "relative": 1e-10},
-            "convergence": {"observed_order": 2.0, "minimum_order": 1.9},
+            "reference": "analytic", "oracle_provenance": "independent analytic oracle",
+            "units": "dimensionless", "dimensions": 3,
+            "shapes": [[3]],
+            "tolerance": {
+                "absolute": 1e-12, "relative": 1e-10,
+                "justification": "roundoff-scaled analytic comparison",
+            },
+            "convergence": {"levels": 3, "observed_order": 2.0, "minimum_order": 1.9},
+            "deterministic_seed": 0,
         },
         "performance": {
             "baseline_metric": 10.0, "candidate_metric": 10.1, "max_regression": .05,
-            "metric": "milliseconds", "samples": 5,
+            "metric": "milliseconds", "direction": "lower-is-better", "samples": 5,
+            "warmups": 1, "comparability": "same work and resources",
+            "equivalent_work": True, "output_equivalent": True,
         },
-        "portability": {"backends": {"serial": "pass", "openmp": "pass"}},
+        "portability": {
+            "backends": {
+                name: {
+                    "status": "pass", "dtype": "float64", "layout": "contiguous",
+                    "provenance": f"fixture:{name}",
+                }
+                for name in ("serial", "openmp")
+            }
+        },
     }
     return {**base, **additions[kind]}
 
