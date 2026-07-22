@@ -241,6 +241,57 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
                 )
             self.assertEqual(observed, [True])
 
+    def test_orchestrated_integration_has_three_distinct_gate_tiers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            init_project(root, commit=True)
+            command = artifact_command("T0001.txt")
+            regression = [sys.executable, "-c", "raise SystemExit(0)"]
+            config = root / ".aiflow" / "project.toml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    "test_regression = []",
+                    f"test_regression = {json.dumps(regression)}",
+                ),
+                encoding="utf-8",
+            )
+            context = context_for(root, tmp)
+            lifecycle = RunLifecycle(context, runtime_env=runtime(tmp))
+            started = lifecycle.start(
+                mode="orchestrated",
+                objective="prove integration gate tiers",
+                task_specs=(
+                    {
+                        "id": "T0001",
+                        "objective": "prove integration gate tiers",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-1"],
+                        "allowed_scope": ["T0001.txt"],
+                        "pre_commands": [command],
+                        "commands": [command],
+                    },
+                ),
+            )
+            with mock.patch(
+                "aiflow.controller.orchestration.IntegrationTransaction"
+            ) as transaction:
+                transaction.return_value.apply.return_value = IntegrationResult(
+                    False, "fixture stop", "", ""
+                )
+                RunLifecycle(
+                    context,
+                    runtime_env=runtime(tmp),
+                    agent_backend=OrchestratedBackend(root, command),
+                ).resume(
+                    started["run_id"],
+                    budgets=Budgets(max_attempts=1, max_idle=1),
+                )
+            gates = transaction.call_args.kwargs["gates"]
+            self.assertEqual(gates.focused, (tuple(command),))
+            self.assertEqual(gates.regression, (tuple(regression),))
+            self.assertTrue(gates.quality)
+            self.assertIn("quality", gates.quality[0])
+
     def test_target_ref_update_is_an_atomic_compare_and_swap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"
