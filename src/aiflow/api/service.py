@@ -5,7 +5,7 @@ from typing import Any
 
 from aiflow.api.sse import EventBuffer
 from aiflow.identity.context import ProjectContext
-from aiflow.state.lifecycle import RunLifecycle
+from aiflow.controller.lifecycle import RunLifecycle
 from aiflow.state.store import RevisionConflict, StateError
 from aiflow.security.permissions import validate_orchestrated_parent
 

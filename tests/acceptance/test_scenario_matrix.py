@@ -20,7 +20,7 @@ from aiflow.identity.context import cache_path, resolve_project, runtime_path  #
 from aiflow.integration.transaction import GateCommands, IntegrationTransaction  # noqa: E402
 from aiflow.skills.installer import ProjectInstaller  # noqa: E402
 from aiflow.state.handoff import HandoffError, verify_handoff  # noqa: E402
-from aiflow.state.lifecycle import RunLifecycle  # noqa: E402
+from aiflow.controller.lifecycle import RunLifecycle  # noqa: E402
 
 
 def git(root: Path, *args: str) -> str:
@@ -174,11 +174,13 @@ class ScenarioMatrixAcceptanceTests(unittest.TestCase):
             git(root, "config", "user.email", "acceptance@example.invalid")
             git(root, "config", "user.name", "Acceptance Tests")
             (root / "base.txt").write_text("base\n")
-            git(root, "add", "."); git(root, "commit", "-qm", "base")
+            git(root, "add", ".")
+            git(root, "commit", "-qm", "base")
             base = git(root, "rev-parse", "HEAD")
             git(root, "switch", "-qc", "candidate")
             (root / "candidate.txt").write_text("candidate\n")
-            git(root, "add", "."); git(root, "commit", "-qm", "candidate")
+            git(root, "add", ".")
+            git(root, "commit", "-qm", "candidate")
             candidate = git(root, "rev-parse", "HEAD")
             git(root, "switch", "-q", "main")
             passing = ((sys.executable, "-c", "raise SystemExit(0)"),)
@@ -193,7 +195,8 @@ class ScenarioMatrixAcceptanceTests(unittest.TestCase):
     def test_14_cross_project_contamination_is_resisted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             first, second = Path(tmp) / "first", Path(tmp) / "second"
-            project(first); project(second)
+            project(first)
+            project(second)
             one = resolve_project(explicit_root=first, env={"AIFLOW_PROJECT_ROOT": str(second)})
             two = resolve_project(explicit_root=second)
             environment = {"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime"), "XDG_CACHE_HOME": str(Path(tmp) / "cache")}

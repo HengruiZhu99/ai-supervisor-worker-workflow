@@ -8,7 +8,7 @@ from pathlib import Path
 from aiflow.identity.context import resolve_project
 from aiflow.skills.installer import ProjectInstaller
 from aiflow.state.handoff import HandoffError, verify_handoff
-from aiflow.state.lifecycle import RunLifecycle
+from aiflow.controller.lifecycle import RunLifecycle
 
 
 ROOT = Path(__file__).resolve().parents[2]

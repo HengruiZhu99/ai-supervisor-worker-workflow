@@ -16,7 +16,7 @@ from aiflow.quality.checker import QualityChecker
 from aiflow.security.permissions import validate_orchestrated_parent
 from aiflow.skills.installer import InstallError, ProjectInstaller
 from aiflow.skills.manager import SkillCollision, SkillManager, SkillValidationError
-from aiflow.state.lifecycle import RunLifecycle
+from aiflow.controller.lifecycle import RunLifecycle
 from aiflow.state.store import StateError
 from aiflow.state.handoff import verify_handoff
 from aiflow.cli.web import gui_command, hub_command

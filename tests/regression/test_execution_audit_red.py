@@ -14,7 +14,7 @@ from aiflow.agents.fake import FakeAgentBackend  # noqa: E402
 from aiflow.controller.runner import Budgets  # noqa: E402
 from aiflow.domain.evidence import EvidenceError, validate_cycle  # noqa: E402
 from aiflow.identity.context import resolve_project  # noqa: E402
-from aiflow.state.lifecycle import RunLifecycle  # noqa: E402
+from aiflow.controller.lifecycle import RunLifecycle  # noqa: E402
 
 
 def init_project(path: Path) -> None:
