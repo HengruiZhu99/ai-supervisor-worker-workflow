@@ -204,6 +204,24 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             self.assertEqual(git(root, "rev-parse", "HEAD").stdout.strip(), base)
             self.assertFalse((root / "candidate.txt").exists())
 
+    def test_target_symbolic_ref_is_bound_before_candidate_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            base, candidate = repository(root)
+            git(root, "branch", "other")
+
+            def switch_branch() -> None:
+                git(root, "switch", "-q", "other")
+
+            result = IntegrationTransaction(root, before_apply=switch_branch).apply(
+                candidate,
+                method="merge",
+                base_sha=base,
+            )
+            self.assertFalse(result.ok)
+            self.assertEqual(git(root, "rev-parse", "main").stdout.strip(), base)
+            self.assertEqual(git(root, "rev-parse", "other").stdout.strip(), base)
+
     def test_post_cas_interruption_recovers_from_durable_pending_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
