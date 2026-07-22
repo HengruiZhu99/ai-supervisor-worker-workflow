@@ -23,4 +23,6 @@ class ProjectHub:
 
     def mutate(self, action: str, payload: dict[str, Any]) -> None:
         del action, payload
-        raise ReadOnlyHubError("multi-project hub is read-only; use the selected project server")
+        raise ReadOnlyHubError(
+            "multi-project hub is read-only; use the selected project server"
+        )

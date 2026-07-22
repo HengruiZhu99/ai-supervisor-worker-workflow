@@ -114,11 +114,15 @@ class CodexAgentBackend:
             )
             if completed.returncode != 0:
                 detail = completed.stderr.strip()[-2000:] or "no stderr"
-                raise RuntimeError(f"Codex worker exited {completed.returncode}: {detail}")
+                raise RuntimeError(
+                    f"Codex worker exited {completed.returncode}: {detail}"
+                )
             try:
                 result = json.loads(output.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                raise RuntimeError(f"Codex worker returned invalid structured output: {exc}") from exc
+                raise RuntimeError(
+                    f"Codex worker returned invalid structured output: {exc}"
+                ) from exc
             if not isinstance(result, dict):
                 raise RuntimeError("Codex worker result must be a JSON object")
             return result

@@ -18,9 +18,7 @@ def endpoint_metadata_path(context: ProjectContext) -> Path:
     return runtime_path(context, "gui") / "ENDPOINT.json"
 
 
-def _write_endpoint_metadata(
-    context: ProjectContext, *, url: str, token: str
-) -> Path:
+def _write_endpoint_metadata(context: ProjectContext, *, url: str, token: str) -> Path:
     path = endpoint_metadata_path(context)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(path.parent, 0o700)
@@ -42,7 +40,9 @@ def _url(host: str, port: int) -> str:
     return f"http://{format_authority(host, port)}/"
 
 
-def _serve(server, *, url: str, open_browser: bool, endpoint: Path | None = None) -> int:
+def _serve(
+    server, *, url: str, open_browser: bool, endpoint: Path | None = None
+) -> int:
     print(json.dumps({"url": url, "status": "SERVING"}, sort_keys=True), flush=True)
     if open_browser:
         webbrowser.open(url)
@@ -61,7 +61,16 @@ def gui_command(args) -> int:
     context = resolve_project(explicit_root=Path(args.project_root or ".").resolve())
     if args.check:
         assets = sorted(path.name for path in STATIC_ROOT.iterdir() if path.is_file())
-        print(json.dumps({"ok": {"index.html", "app.js", "app.css"} <= set(assets), "assets": assets, "project": context.identity_fields()}, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "ok": {"index.html", "app.js", "app.css"} <= set(assets),
+                    "assets": assets,
+                    "project": context.identity_fields(),
+                },
+                sort_keys=True,
+            )
+        )
         return 0
     token = secrets.token_urlsafe(32)
     server = create_server(

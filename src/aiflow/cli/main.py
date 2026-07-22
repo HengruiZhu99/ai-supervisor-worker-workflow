@@ -21,6 +21,7 @@ from aiflow.state.store import StateError
 from aiflow.state.handoff import verify_handoff
 from aiflow.cli.web import gui_command, hub_command
 from aiflow.cli.release import package_command
+from aiflow.cli.options import add_budgets, add_handoff_actions
 
 
 DISTRIBUTION_ROOT_OVERRIDE: Path | None = None
@@ -41,7 +42,9 @@ def _print(payload: Any) -> None:
 
 
 def _installer(args: argparse.Namespace) -> ProjectInstaller:
-    return ProjectInstaller(_root(args.project_root), distribution_root=distribution_root())
+    return ProjectInstaller(
+        _root(args.project_root), distribution_root=distribution_root()
+    )
 
 
 def project_command(args: argparse.Namespace) -> int:
@@ -159,7 +162,9 @@ def run_command(args: argparse.Namespace) -> int:
     elif args.run_action == "list":
         result = lifecycle.list()
     elif args.run_action == "verify-handoff":
-        result = verify_handoff(Path(args.path).expanduser().resolve(), lifecycle.context)
+        result = verify_handoff(
+            Path(args.path).expanduser().resolve(), lifecycle.context
+        )
     else:
         run_id = _run_id(lifecycle, args.run_id)
         if args.run_action == "status":
@@ -227,7 +232,15 @@ def _integration_gates(root: Path) -> GateCommands:
         value = commands.get(name, []) if isinstance(commands, dict) else []
         return (tuple(str(part) for part in value),) if value else ()
 
-    quality = ((str(distribution_root() / "bin" / "aiflow"), "--project-root", ".", "quality", "check"),)
+    quality = (
+        (
+            str(distribution_root() / "bin" / "aiflow"),
+            "--project-root",
+            ".",
+            "quality",
+            "check",
+        ),
+    )
     return GateCommands(
         focused=selected("test_focused"),
         regression=selected("test_regression"),
@@ -244,17 +257,13 @@ def integrate_command(args: argparse.Namespace) -> int:
     return 0 if result.ok else 5
 
 
-def _add_budgets(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--max-wall-time", type=int, default=14_400)
-    parser.add_argument("--max-tasks", type=int, default=25)
-    parser.add_argument("--max-attempts", type=int, default=3)
-    parser.add_argument("--max-idle", type=int, default=900)
-    parser.add_argument("--max-agent-calls", type=int, default=50)
-
-
 def _add_web_commands(commands: argparse._SubParsersAction) -> None:
     for name, command in (("gui", gui_command), ("hub", hub_command)):
-        help_text = "serve the project UI" if name == "gui" else "serve the read-only project hub"
+        help_text = (
+            "serve the project UI"
+            if name == "gui"
+            else "serve the read-only project hub"
+        )
         web = commands.add_parser(name, help=help_text)
         web.add_argument("--host", default="127.0.0.1")
         web.add_argument("--port", type=int, default=0)
@@ -277,14 +286,6 @@ def _add_package_commands(commands: argparse._SubParsersAction) -> None:
     package.set_defaults(func=package_command)
 
 
-def _add_handoff_actions(actions: argparse._SubParsersAction) -> None:
-    for name in ("pause", "handoff"):
-        action = actions.add_parser(name)
-        action.add_argument("--run-id", default="")
-    verify = actions.add_parser("verify-handoff")
-    verify.add_argument("path")
-
-
 def _add_run_commands(commands: argparse._SubParsersAction) -> None:
     runs = commands.add_parser("run", help="create and control durable project runs")
     actions = runs.add_subparsers(dest="run_action", required=True)
@@ -294,11 +295,20 @@ def _add_run_commands(commands: argparse._SubParsersAction) -> None:
     start.add_argument("--acceptance-id", action="append", default=[])
     start.add_argument(
         "--task-kind",
-        choices=("feature", "bug", "refactor", "test", "numerical", "performance", "portability"),
+        choices=(
+            "feature",
+            "bug",
+            "refactor",
+            "test",
+            "numerical",
+            "performance",
+            "portability",
+        ),
         default="feature",
     )
     start.add_argument(
-        "--parent-sandbox", choices=("read-only", "workspace-write", "danger-full-access"),
+        "--parent-sandbox",
+        choices=("read-only", "workspace-write", "danger-full-access"),
         default="",
     )
     actions.add_parser("list")
@@ -307,31 +317,35 @@ def _add_run_commands(commands: argparse._SubParsersAction) -> None:
     resume = actions.add_parser("resume")
     resume.add_argument("--run-id", default="")
     resume.add_argument(
-        "--parent-sandbox", choices=("read-only", "workspace-write", "danger-full-access"),
+        "--parent-sandbox",
+        choices=("read-only", "workspace-write", "danger-full-access"),
         default="",
     )
-    _add_budgets(resume)
+    add_budgets(resume)
     resume.add_argument("--backend", choices=("codex", "none"), default="codex")
     resume.add_argument("--model", default="gpt-5.6-sol")
     resume.add_argument("--reasoning-effort", default="high")
     stop = actions.add_parser("stop")
     stop.add_argument("--run-id", default="")
-    _add_handoff_actions(actions)
+    add_handoff_actions(actions)
     runs.set_defaults(func=run_command)
 
 
 def _add_controller_command(commands: argparse._SubParsersAction) -> None:
-    controller = commands.add_parser("controller", help="run the finite deterministic controller")
+    controller = commands.add_parser(
+        "controller", help="run the finite deterministic controller"
+    )
     actions = controller.add_subparsers(dest="controller_action", required=True)
     run = actions.add_parser("run")
     run.add_argument("--run-id", default="")
     run.add_argument("--mode", choices=("solo", "orchestrated"), default="solo")
     run.add_argument("--compat-role", default="")
     run.add_argument(
-        "--parent-sandbox", choices=("read-only", "workspace-write", "danger-full-access"),
+        "--parent-sandbox",
+        choices=("read-only", "workspace-write", "danger-full-access"),
         default="",
     )
-    _add_budgets(run)
+    add_budgets(run)
     run.add_argument("--backend", choices=("codex", "none"), default="codex")
     run.add_argument("--model", default="gpt-5.6-sol")
     run.add_argument("--reasoning-effort", default="high")
@@ -348,20 +362,26 @@ def parser() -> argparse.ArgumentParser:
     )
     commands = result.add_subparsers(dest="command", required=True)
 
-    project = commands.add_parser("project", help="manage a project-scoped installation")
+    project = commands.add_parser(
+        "project", help="manage a project-scoped installation"
+    )
     project_actions = project.add_subparsers(dest="project_action", required=True)
     initialize = project_actions.add_parser("init")
     initialize.add_argument(
-        "--profile", choices=("solo", "science", "hpc", "orchestrated", "full"),
+        "--profile",
+        choices=("solo", "science", "hpc", "orchestrated", "full"),
         default="solo",
     )
-    initialize.add_argument("--installation-mode", choices=("vendor", "link"), default="vendor")
+    initialize.add_argument(
+        "--installation-mode", choices=("vendor", "link"), default="vendor"
+    )
     initialize.add_argument("--source-version", default="")
     project_actions.add_parser("status")
     project_actions.add_parser("verify")
     upgrade = project_actions.add_parser("upgrade")
     upgrade.add_argument(
-        "--profile", choices=("solo", "science", "hpc", "orchestrated", "full"),
+        "--profile",
+        choices=("solo", "science", "hpc", "orchestrated", "full"),
         required=True,
     )
     rollback = project_actions.add_parser("rollback")
@@ -369,13 +389,17 @@ def parser() -> argparse.ArgumentParser:
     project_actions.add_parser("uninstall")
     project.set_defaults(func=project_command)
 
-    skills = commands.add_parser("skills", help="inspect and synchronize project skills")
+    skills = commands.add_parser(
+        "skills", help="inspect and synchronize project skills"
+    )
     skill_actions = skills.add_subparsers(dest="skill_action", required=True)
     for action in ("list", "validate", "doctor", "sync"):
         skill_actions.add_parser(action)
     skills.set_defaults(func=skill_command)
 
-    quality = commands.add_parser("quality", help="run deterministic architecture gates")
+    quality = commands.add_parser(
+        "quality", help="run deterministic architecture gates"
+    )
     quality_actions = quality.add_subparsers(dest="quality_action", required=True)
     quality_actions.add_parser("baseline")
     quality_actions.add_parser("check")
@@ -384,17 +408,23 @@ def parser() -> argparse.ArgumentParser:
     _add_run_commands(commands)
     _add_controller_command(commands)
 
-    state = commands.add_parser("state", help="verify, repair, or migrate canonical state")
+    state = commands.add_parser(
+        "state", help="verify, repair, or migrate canonical state"
+    )
     state_actions = state.add_subparsers(dest="state_action", required=True)
     for action in ("verify", "repair", "migrate"):
         state_parser = state_actions.add_parser(action)
         state_parser.add_argument("--run-id", default="")
     state.set_defaults(func=state_command)
 
-    integrate = commands.add_parser("integrate", help="validate and atomically apply a candidate")
+    integrate = commands.add_parser(
+        "integrate", help="validate and atomically apply a candidate"
+    )
     integrate.add_argument("--candidate", required=True)
     integrate.add_argument("--base-sha", default="")
-    integrate.add_argument("--method", choices=("merge", "cherry-pick"), default="merge")
+    integrate.add_argument(
+        "--method", choices=("merge", "cherry-pick"), default="merge"
+    )
     integrate.set_defaults(func=integrate_command)
 
     _add_web_commands(commands)
@@ -407,6 +437,14 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser().parse_args(argv)
     try:
         return int(arguments.func(arguments))
-    except (InstallError, SkillCollision, SkillValidationError, StateError, ValueError) as exc:
-        print(json.dumps({"error": str(exc), "type": type(exc).__name__}), file=sys.stderr)
+    except (
+        InstallError,
+        SkillCollision,
+        SkillValidationError,
+        StateError,
+        ValueError,
+    ) as exc:
+        print(
+            json.dumps({"error": str(exc), "type": type(exc).__name__}), file=sys.stderr
+        )
         return 2

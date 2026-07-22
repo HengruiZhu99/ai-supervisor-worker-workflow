@@ -81,12 +81,19 @@ class ApiService:
 
     def snapshot(self) -> dict[str, Any]:
         runs = self.lifecycle.list()
-        effective = os.environ.get("CODEX_PERMISSION_PROFILE", "").strip().lower().removeprefix(":")
+        effective = (
+            os.environ.get("CODEX_PERMISSION_PROFILE", "")
+            .strip()
+            .lower()
+            .removeprefix(":")
+        )
         return {
             "schema_version": 1,
             "project": self.project(),
             "default_mode": "solo",
-            "parent_sandbox": effective if effective in {"read-only", "workspace-write"} else "",
+            "parent_sandbox": effective
+            if effective in {"read-only", "workspace-write"}
+            else "",
             "runs": runs,
             "event_cursor": self.events.replay("").events[-1].event_id
             if self.events.replay("").events
@@ -96,9 +103,13 @@ class ApiService:
     def _identity(self, payload: dict[str, Any], *, required: bool = True) -> None:
         checkout_id = str(payload.get("checkout_id", ""))
         if required and not checkout_id:
-            raise RevisionConflict("checkout_id is required for an existing-run mutation")
+            raise RevisionConflict(
+                "checkout_id is required for an existing-run mutation"
+            )
         if checkout_id and checkout_id != self.context.checkout_id:
-            raise RevisionConflict("mutation checkout identity does not match this server")
+            raise RevisionConflict(
+                "mutation checkout identity does not match this server"
+            )
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._identity(payload, required=True)
@@ -107,12 +118,16 @@ class ApiService:
         result = self.lifecycle.start(
             mode=mode,
             objective=str(payload.get("objective", "")),
-            acceptance_ids=tuple(str(value) for value in payload.get("acceptance_ids", [])),
+            acceptance_ids=tuple(
+                str(value) for value in payload.get("acceptance_ids", [])
+            ),
         )
         self._publish_run("start", result)
         return result
 
-    def mutate(self, run_id: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def mutate(
+        self, run_id: str, action: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         self._identity(payload)
         try:
             expected = int(payload["expected_revision"])

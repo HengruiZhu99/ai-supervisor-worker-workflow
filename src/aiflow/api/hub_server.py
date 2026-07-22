@@ -37,14 +37,20 @@ class HubRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+        self.send_header(
+            "Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'"
+        )
         self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
         self.wfile.write(body)
 
     def do_GET(self) -> None:
         if self.headers.get("Host", "") != self.server.authority:
-            self._send(HTTPStatus.FORBIDDEN, "application/json", b'{"error":"wrong hub host"}\n')
+            self._send(
+                HTTPStatus.FORBIDDEN,
+                "application/json",
+                b'{"error":"wrong hub host"}\n',
+            )
             return
         path = urlsplit(self.path).path
         payload = self.server.hub.snapshot()
@@ -66,14 +72,24 @@ class HubRequestHandler(BaseHTTPRequestHandler):
                 "<title>AIFLOW project hub</title><style>body{font:16px system-ui;max-width:52rem;"
                 "margin:4rem auto;padding:0 1rem}li{margin:1rem 0;padding:1rem;border:1px solid #bbb;"
                 "border-radius:.75rem}code{overflow-wrap:anywhere}</style><h1>AIFLOW projects</h1>"
-                "<p>Read-only registry. Open a project server to make changes.</p><ul>" + items + "</ul>"
+                "<p>Read-only registry. Open a project server to make changes.</p><ul>"
+                + items
+                + "</ul>"
             ).encode()
             self._send(HTTPStatus.OK, "text/html; charset=utf-8", body)
         else:
-            self._send(HTTPStatus.NOT_FOUND, "application/json", b'{"error":"route not found"}\n')
+            self._send(
+                HTTPStatus.NOT_FOUND,
+                "application/json",
+                b'{"error":"route not found"}\n',
+            )
 
     def do_POST(self) -> None:
-        self._send(HTTPStatus.METHOD_NOT_ALLOWED, "application/json", b'{"error":"hub is read-only"}\n')
+        self._send(
+            HTTPStatus.METHOD_NOT_ALLOWED,
+            "application/json",
+            b'{"error":"hub is read-only"}\n',
+        )
 
     def log_message(self, format: str, *args: object) -> None:
         del format, args

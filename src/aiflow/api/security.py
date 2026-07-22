@@ -20,7 +20,9 @@ def validate_bind(host: str, *, allow_remote: bool = False) -> str:
     except ValueError:
         loopback = False
     if not loopback:
-        raise SecurityError("AIFLOW web servers are loopback-only; use SSH local forwarding")
+        raise SecurityError(
+            "AIFLOW web servers are loopback-only; use SSH local forwarding"
+        )
     return host
 
 
@@ -35,7 +37,9 @@ def _header(headers: Mapping[str, str], name: str) -> str:
     if direct is not None:
         return str(direct)
     lowered = name.lower()
-    return next((str(value) for key, value in headers.items() if key.lower() == lowered), "")
+    return next(
+        (str(value) for key, value in headers.items() if key.lower() == lowered), ""
+    )
 
 
 @dataclass(frozen=True)
@@ -64,7 +68,10 @@ class RequestSecurity:
         supplied = _header(headers, "X-AIFLOW-Token")
         if not supplied or not hmac.compare_digest(supplied, self.token):
             raise SecurityError("invalid project mutation token")
-        if _header(headers, "Content-Type").split(";", 1)[0].strip() != "application/json":
+        if (
+            _header(headers, "Content-Type").split(";", 1)[0].strip()
+            != "application/json"
+        ):
             raise SecurityError("mutations require application/json")
         raw_length = _header(headers, "Content-Length")
         try:

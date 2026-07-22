@@ -72,7 +72,10 @@ class ProjectRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(length))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'",
+        )
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
@@ -98,7 +101,9 @@ class ProjectRequestHandler(BaseHTTPRequestHandler):
 
     def _payload(self) -> dict[str, Any] | None:
         try:
-            self.server.security.authorize_mutation(cast(Mapping[str, str], self.headers))
+            self.server.security.authorize_mutation(
+                cast(Mapping[str, str], self.headers)
+            )
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
@@ -116,11 +121,15 @@ class ProjectRequestHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path in {"/", "/index.html"}:
             content = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
-            body = content.replace("__AIFLOW_TOKEN__", self.server.session_token).encode()
+            body = content.replace(
+                "__AIFLOW_TOKEN__", self.server.session_token
+            ).encode()
             self._bytes(HTTPStatus.OK, "text/html; charset=utf-8", body)
         elif path in STATIC_FILES:
             filename, content_type = STATIC_FILES[path]
-            self._bytes(HTTPStatus.OK, content_type, (STATIC_ROOT / filename).read_bytes())
+            self._bytes(
+                HTTPStatus.OK, content_type, (STATIC_ROOT / filename).read_bytes()
+            )
         elif path == "/api/v1/snapshot":
             self._json(HTTPStatus.OK, self.server.service.snapshot())
         elif path == "/api/v1/events":
@@ -130,11 +139,15 @@ class ProjectRequestHandler(BaseHTTPRequestHandler):
 
     def _events(self) -> None:
         query = parse_qs(urlsplit(self.path).query)
-        last_id = self.headers.get("Last-Event-ID", "") or query.get("last_event_id", [""])[0]
+        last_id = (
+            self.headers.get("Last-Event-ID", "") or query.get("last_event_id", [""])[0]
+        )
         self.server.service.sync_events()
         replay = self.server.service.events.replay(last_id)
         if replay.reset:
-            payload = json.dumps(self.server.service.snapshot(), separators=(",", ":"), sort_keys=True)
+            payload = json.dumps(
+                self.server.service.snapshot(), separators=(",", ":"), sort_keys=True
+            )
             body = f"event: reset\ndata: {payload}\n\n".encode()
             self.close_connection = True
             self._bytes(HTTPStatus.OK, "text/event-stream; charset=utf-8", body)
@@ -153,7 +166,9 @@ class ProjectRequestHandler(BaseHTTPRequestHandler):
                 pending = self.server.service.events.wait_after(cursor, timeout=1.0)
                 if pending.reset:
                     payload = json.dumps(
-                        self.server.service.snapshot(), separators=(",", ":"), sort_keys=True
+                        self.server.service.snapshot(),
+                        separators=(",", ":"),
+                        sort_keys=True,
                     )
                     self.wfile.write(f"event: reset\ndata: {payload}\n\n".encode())
                     self.wfile.flush()
