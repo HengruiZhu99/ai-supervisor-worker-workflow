@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -36,7 +37,7 @@ class CodexPermissionRegressionTests(unittest.TestCase):
                 extra_args="",
                 read_only=read_only,
             )
-            completed = module.subprocess.CompletedProcess([], 0, "", "")
+            completed = subprocess.CompletedProcess([], 0, "", "")
             with mock.patch.object(
                 module, "run_owned_process", return_value=completed
             ) as call:

@@ -66,6 +66,9 @@ class EventBuffer:
             cursor = int(last_event_id)
         except ValueError:
             return Replay((), reset=True)
+        latest = retained[-1].event_id if retained else 0
+        if cursor > latest:
+            return Replay((), reset=True)
         if retained and cursor < retained[0].event_id - 1:
             return Replay((), reset=True)
         return Replay(tuple(event for event in retained if event.event_id > cursor))

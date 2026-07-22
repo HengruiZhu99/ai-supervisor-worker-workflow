@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Iterator
@@ -14,6 +15,7 @@ from aiflow.state.errors import (
     StateError,
 )
 from aiflow.state.identifiers import SAFE_ID
+from aiflow.state.locks import owned_directory_lock
 
 if TYPE_CHECKING:
     from aiflow.state.store import RunStore
@@ -46,14 +48,15 @@ def guard(store: "RunStore") -> Iterator[None]:
         raise LeaseConflict("runtime directory cannot be a symlink")
     store.runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(store.runtime, 0o700)
+    manager = owned_directory_lock(store.lease_lock, timeout=0.25)
     try:
-        store.lease_lock.mkdir()
-    except FileExistsError as exc:
-        raise LeaseConflict("controller lease claim is already in progress") from exc
+        manager.__enter__()
+    except StateError as exc:
+        raise LeaseConflict(str(exc)) from exc
     try:
         yield
     finally:
-        store.lease_lock.rmdir()
+        manager.__exit__(None, None, None)
 
 
 def claim_controller(
@@ -64,7 +67,7 @@ def claim_controller(
     boot_id: str,
     pid: int,
     process_start_time: str,
-    ttl_seconds: int,
+    ttl_seconds: float,
 ) -> dict[str, Any]:
     if not all(SAFE_ID.fullmatch(value) for value in (controller_id, host_id, boot_id)):
         raise StateError("invalid controller, host, or boot identity")
@@ -119,7 +122,7 @@ def _clear_expired(store: "RunStore", *, host_id: str, boot_id: str) -> None:
 
 
 def heartbeat_controller(
-    store: "RunStore", controller_id: str, *, ttl_seconds: int
+    store: "RunStore", controller_id: str, *, ttl_seconds: float
 ) -> dict[str, Any]:
     if ttl_seconds <= 0:
         raise StateError("controller heartbeat TTL must be positive")
@@ -147,3 +150,39 @@ def release_controller(store: "RunStore", controller_id: str) -> None:
         if current.get("controller_id") != controller_id:
             raise LeaseConflict("only the owning controller may release the lease")
         store.lease_file.unlink()
+
+
+@contextmanager
+def maintain_controller(
+    store: "RunStore",
+    controller_id: str,
+    *,
+    ttl_seconds: float,
+    interval_seconds: float,
+) -> Iterator[None]:
+    if interval_seconds <= 0 or interval_seconds >= ttl_seconds:
+        raise StateError("controller heartbeat interval must be positive and below TTL")
+    stopped = threading.Event()
+    errors: list[BaseException] = []
+
+    def maintain() -> None:
+        while not stopped.wait(interval_seconds):
+            try:
+                heartbeat_controller(store, controller_id, ttl_seconds=ttl_seconds)
+            except BaseException as exc:  # retain and surface on the controller thread
+                errors.append(exc)
+                stopped.set()
+
+    thread = threading.Thread(
+        target=maintain,
+        name=f"aiflow-heartbeat-{store.run_id}",
+        daemon=True,
+    )
+    thread.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        thread.join(timeout=max(1.0, interval_seconds * 2))
+    if errors:
+        raise LeaseConflict(f"controller heartbeat failed: {errors[0]}")

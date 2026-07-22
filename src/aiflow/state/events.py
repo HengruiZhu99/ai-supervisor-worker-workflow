@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -71,3 +72,41 @@ def append_event(path: Path, event: Mapping[str, Any]) -> None:
         handle.write(json.dumps(dict(event), sort_keys=True) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
+
+
+def recover_partial_tail(path: Path, evidence_dir: Path) -> Path | None:
+    """Preserve and remove only an unterminated invalid final event fragment."""
+    try:
+        payload = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    if not payload or payload.endswith(b"\n"):
+        return None
+    boundary = payload.rfind(b"\n") + 1
+    prefix, tail = payload[:boundary], payload[boundary:]
+    if not tail:
+        return None
+    try:
+        json.loads(tail.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        pass
+    else:
+        return None
+    temporary = path.with_name(f".{path.name}.recovery")
+    temporary.write_bytes(prefix)
+    try:
+        read_events(temporary)
+    finally:
+        temporary.unlink(missing_ok=True)
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    backup = evidence_dir / f"EVENTS.partial.{time.time_ns()}"
+    descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(tail)
+        handle.flush()
+        os.fsync(handle.fileno())
+    with path.open("r+b") as handle:
+        handle.truncate(boundary)
+        handle.flush()
+        os.fsync(handle.fileno())
+    return backup

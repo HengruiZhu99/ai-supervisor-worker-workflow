@@ -87,6 +87,7 @@ def _backup(store: "RunStore") -> Path:
         store.tasks_file,
         store.intent_file,
         store.committed_file,
+        store.events_file,
     ):
         if path.is_file():
             shutil.copy2(path, backup / path.name)

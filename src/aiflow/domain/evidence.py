@@ -64,7 +64,17 @@ def _numerical(evidence: Mapping[str, Any]) -> None:
         raise EvidenceError("numerical dimensions must be a positive integer")
     _numerical_shapes(evidence.get("shapes"))
     _numerical_tolerance(evidence.get("tolerance", {}))
-    _numerical_convergence(evidence.get("convergence", {}))
+    oracle_kind = str(evidence.get("oracle_kind", "convergence"))
+    if oracle_kind not in {
+        "analytic",
+        "manufactured",
+        "invariant",
+        "limiting-case",
+        "convergence",
+    }:
+        raise EvidenceError("numerical oracle kind is unsupported")
+    if oracle_kind == "convergence":
+        _numerical_convergence(evidence.get("convergence", {}))
     if not isinstance(evidence.get("deterministic_seed"), int):
         raise EvidenceError("numerical evidence requires a deterministic seed")
 
@@ -160,6 +170,10 @@ def _portability(evidence: Mapping[str, Any]) -> None:
             )
         if result.get("status") != "pass":
             raise EvidenceError("every declared portability backend must pass")
+        if any(
+            not str(result.get(field, "")).strip() for field in required - {"status"}
+        ):
+            raise EvidenceError(f"portability backend {name} has empty provenance")
 
 
 def _kind_baseline(kind: str, evidence: Mapping[str, Any]) -> None:

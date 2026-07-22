@@ -8,7 +8,12 @@ from typing import Any, Iterator, Mapping
 
 from aiflow.identity.context import ProjectContext, new_run_id, runtime_path
 from aiflow.state.atomic import atomic_write_json, read_json, signed, verify_signed
-from aiflow.state.events import append_event, make_event, read_events
+from aiflow.state.events import (
+    append_event,
+    make_event,
+    read_events,
+    recover_partial_tail,
+)
 from aiflow.state import ownership
 from aiflow.state import leases
 from aiflow.state.errors import (
@@ -367,6 +372,7 @@ class RunStore:
             return self.read_run()
 
     def _recover_locked(self) -> str:
+        recover_partial_tail(self.events_file, self.path / "evidence")
         if not self.intent_file.exists():
             return "clean"
         intent = read_json(self.intent_file)
@@ -432,7 +438,7 @@ class RunStore:
         boot_id: str,
         pid: int,
         process_start_time: str,
-        ttl_seconds: int,
+        ttl_seconds: float,
     ) -> dict[str, Any]:
         return leases.claim_controller(
             self,
@@ -445,7 +451,7 @@ class RunStore:
         )
 
     def heartbeat_controller(
-        self, controller_id: str, *, ttl_seconds: int
+        self, controller_id: str, *, ttl_seconds: float
     ) -> dict[str, Any]:
         return leases.heartbeat_controller(self, controller_id, ttl_seconds=ttl_seconds)
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-#========================================================================================
+# ========================================================================================
 # AIFLOW workflow compatibility entry point
 # Copyright(C) 2026 Hengrui Zhu
-#========================================================================================
+# ========================================================================================
 
 """List and run pluggable AI agent wrappers.
 
@@ -20,10 +20,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shlex
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -63,7 +61,9 @@ def load_wrappers() -> list[dict]:
         data.setdefault("label", data["id"])
         data.setdefault("roles", [])
         data["config_path"] = str(config_path)
-        data["available"] = bool(data.get("executable") and shutil.which(str(data["executable"])))
+        data["available"] = bool(
+            data.get("executable") and shutil.which(str(data["executable"]))
+        )
         wrappers.append(data)
     return wrappers
 
@@ -128,13 +128,25 @@ def run_owned_process(command, *, cwd, env=None, timeout=14_400, input_text=None
 
 def _reject_permission_overrides(extra: list[str]) -> None:
     for index, token in enumerate(extra):
-        option = token.split("=", 1)[0]
+        option, separator, inline_value = token.partition("=")
         if option in PERMISSION_FLAGS or option in UNRESTRICTED_FLAGS:
-            raise SystemExit("refusing permission/sandbox override in wrapper extra arguments")
-        if option in {"-c", "--config"} and index + 1 < len(extra):
-            key = extra[index + 1].split("=", 1)[0].strip().lower()
-            if any(word in key for word in ("sandbox", "approval", "permission", "shell_environment")):
-                raise SystemExit("refusing security configuration override in wrapper extra arguments")
+            raise SystemExit(
+                "refusing permission/sandbox override in wrapper extra arguments"
+            )
+        if option in {"-c", "--config"}:
+            value = (
+                inline_value
+                if separator
+                else (extra[index + 1] if index + 1 < len(extra) else "")
+            )
+            key = value.split("=", 1)[0].strip().lower()
+            if any(
+                word in key
+                for word in ("sandbox", "approval", "permission", "shell_environment")
+            ):
+                raise SystemExit(
+                    "refusing security configuration override in wrapper extra arguments"
+                )
 
 
 def validate_parent_permissions(sandbox_mode: str, bypass: bool = False) -> None:
@@ -147,7 +159,9 @@ def validate_parent_permissions(sandbox_mode: str, bypass: bool = False) -> None
 
 
 def codex_permissions(args: argparse.Namespace) -> tuple[str, str]:
-    sandbox = "read-only" if getattr(args, "read_only", False) else ROLE_SANDBOX[args.role]
+    sandbox = (
+        "read-only" if getattr(args, "read_only", False) else ROLE_SANDBOX[args.role]
+    )
     return "never", sandbox
 
 
@@ -217,7 +231,9 @@ def run_codex(args: argparse.Namespace) -> int:
 def expand_custom_command(wrapper: dict, args: argparse.Namespace) -> list[str]:
     template = wrapper.get("command")
     if not isinstance(template, list) or not template:
-        raise SystemExit(f"wrapper {wrapper.get('id')} has no built-in runner or command template")
+        raise SystemExit(
+            f"wrapper {wrapper.get('id')} has no built-in runner or command template"
+        )
     mapping = {
         "role": args.role,
         "workspace": args.workspace,
@@ -242,7 +258,9 @@ def run_custom(wrapper: dict, args: argparse.Namespace) -> int:
 def cmd_list(args: argparse.Namespace) -> int:
     wrappers = load_wrappers()
     if args.role:
-        wrappers = [wrapper for wrapper in wrappers if args.role in wrapper.get("roles", [])]
+        wrappers = [
+            wrapper for wrapper in wrappers if args.role in wrapper.get("roles", [])
+        ]
     if args.json:
         print(json.dumps({"wrappers": wrappers}, indent=2, sort_keys=True))
         return 0
@@ -250,7 +268,9 @@ def cmd_list(args: argparse.Namespace) -> int:
         roles = ",".join(wrapper.get("roles", []))
         models = ",".join(wrapper.get("models", []))
         available = "yes" if wrapper.get("available") else "no"
-        print(f"{wrapper.get('id')}\t{wrapper.get('label')}\troles={roles}\tavailable={available}\tmodels={models}")
+        print(
+            f"{wrapper.get('id')}\t{wrapper.get('label')}\troles={roles}\tavailable={available}\tmodels={models}"
+        )
     return 0
 
 
@@ -261,7 +281,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         raise SystemExit(f"wrapper {args.wrapper} does not support role {args.role}")
     executable = wrapper.get("executable")
     if executable and not shutil.which(str(executable)):
-        raise SystemExit(f"required executable for wrapper {args.wrapper} not found in PATH: {executable}")
+        raise SystemExit(
+            f"required executable for wrapper {args.wrapper} not found in PATH: {executable}"
+        )
     if args.wrapper == "cursor-agent":
         return run_cursor_agent(args)
     if args.wrapper == "codex":
