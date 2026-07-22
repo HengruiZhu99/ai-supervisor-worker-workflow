@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+import re
 import shutil
 import tempfile
 import tomllib
@@ -13,62 +15,26 @@ from typing import Any
 from aiflow import __version__
 from aiflow.quality.config import DEFAULT_DEPRECATIONS_TOML, DEFAULT_QUALITY_TOML
 from aiflow.skills.manager import file_hash
+from aiflow.skills.profiles import PROFILE_ADDITIONS, ProfileError, profile_skills as _profile_skills
 
 
 class InstallError(RuntimeError):
     """A project installation cannot proceed without risking user files."""
 
 
-PROFILE_ADDITIONS: dict[str, tuple[str, ...]] = {
-    "solo": (
-        "tdd-solo",
-        "systematic-debugging",
-        "verification-before-completion",
-    ),
-    "science": (
-        "numerical-test-design",
-        "scientific-code-review",
-        "paper-equation-implementation",
-        "experiment-provenance",
-        "performance-portability-review",
-    ),
-    "hpc": (
-        "hpc-job-monitor",
-        "hpc-job-triage",
-        "cluster-portability",
-    ),
-    "orchestrated": (
-        "grill-me-nr",
-        "tdd-nr",
-        "handoff-nr",
-        "aiflow-autonomous",
-    ),
-    "full": (
-        "experiment-sweep",
-        "gui-ux-audit",
-        "release-readiness",
-    ),
-}
-
-
 def profile_skills(profile: str) -> tuple[str, ...]:
-    if profile not in PROFILE_ADDITIONS:
-        raise InstallError(f"unknown project profile: {profile}")
-    parents = {
-        "solo": (),
-        "science": ("solo",),
-        "hpc": ("science",),
-        "orchestrated": ("science",),
-        "full": ("hpc", "orchestrated"),
-    }
-    result: list[str] = []
-    for parent in parents[profile]:
-        result.extend(profile_skills(parent))
-    result.extend(PROFILE_ADDITIONS[profile])
-    return tuple(dict.fromkeys(result))
+    try:
+        return _profile_skills(profile)
+    except ProfileError as exc:
+        raise InstallError(str(exc)) from exc
 
 
-def _atomic_bytes(path: Path, content: bytes) -> None:
+SAFE_TRANSACTION = re.compile(r"^[0-9]{8}T[0-9]{6}\.[0-9]{6}Z$")
+SAFE_CHECKSUM = re.compile(r"^[a-f0-9]{64}$")
+MUTABLE_CONFIG = ".aiflow/project.toml"
+
+
+def _write_atomic(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
@@ -80,6 +46,11 @@ def _atomic_bytes(path: Path, content: bytes) -> None:
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def _atomic_bytes(path: Path, content: bytes) -> None:
+    """Patchable write seam; transaction rollback deliberately uses _write_atomic."""
+    _write_atomic(path, content)
 
 
 def _json_bytes(payload: object) -> bytes:
@@ -94,9 +65,57 @@ class ProjectInstaller:
         self.lock_file = self.config_dir / "project.lock"
         self.skill_source = self.distribution_root / ".agents" / "skills"
 
+    def _relative(self, value: str) -> str:
+        path = Path(value)
+        if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+            raise InstallError(f"unsafe managed path in project lock: {value!r}")
+        normalized = path.as_posix()
+        target = self.root / path
+        current = self.root
+        for part in path.parts:
+            current = current / part
+            if current.is_symlink():
+                raise InstallError(f"managed path crosses a symlink: {normalized}")
+        if self.root not in target.resolve(strict=False).parents:
+            raise InstallError(f"managed path escapes project root: {normalized}")
+        return normalized
+
+    def _path(self, relative: str) -> Path:
+        return self.root / self._relative(relative)
+
+    def _validate_lock(self, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict) or int(payload.get("schema_version", 0)) != 1:
+            raise InstallError("project lock must be a schema-version 1 object")
+        lock = dict(payload)
+        for field in ("profile", "workflow_version", "installation_mode"):
+            if not isinstance(lock.get(field), str) or not lock[field]:
+                raise InstallError(f"project lock lacks {field}")
+        managed = lock.get("managed_files", {})
+        mutable = lock.get("mutable_files", {})
+        if not isinstance(managed, dict) or not isinstance(mutable, dict):
+            raise InstallError("project lock file ownership maps must be objects")
+        clean_managed = self._validated_hashes(managed)
+        clean_mutable = self._validated_hashes(mutable)
+        if MUTABLE_CONFIG in clean_managed:
+            clean_mutable.setdefault(MUTABLE_CONFIG, clean_managed.pop(MUTABLE_CONFIG))
+        if set(clean_managed) & set(clean_mutable):
+            raise InstallError("project lock has duplicate managed/mutable ownership")
+        lock["managed_files"] = clean_managed
+        lock["mutable_files"] = clean_mutable
+        return lock
+
+    def _validated_hashes(self, values: dict[Any, Any]) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for relative, checksum in values.items():
+            normalized = self._relative(str(relative))
+            if not SAFE_CHECKSUM.fullmatch(str(checksum)):
+                raise InstallError(f"invalid managed checksum for {normalized}")
+            result[normalized] = str(checksum)
+        return result
+
     def _read_lock(self) -> dict[str, Any]:
         try:
-            return json.loads(self.lock_file.read_text(encoding="utf-8"))
+            return self._validate_lock(json.loads(self.lock_file.read_text(encoding="utf-8")))
         except FileNotFoundError as exc:
             raise InstallError(f"project is not initialized: {self.root}") from exc
         except (OSError, json.JSONDecodeError) as exc:
@@ -112,27 +131,42 @@ class ProjectInstaller:
         except (FileNotFoundError, OSError, KeyError, ValueError, tomllib.TOMLDecodeError):
             return str(uuid.uuid4())
 
+    def _project_config(self, profile: str, project_id: str) -> bytes:
+        path = self.config_dir / "project.toml"
+        if path.exists():
+            try:
+                text = path.read_text(encoding="utf-8")
+                payload = tomllib.loads(text)
+            except (OSError, tomllib.TOMLDecodeError) as exc:
+                raise InstallError(f"invalid existing project config: {exc}") from exc
+            if str(payload.get("project_id", "")) != project_id:
+                raise InstallError("existing project config changed project identity")
+            pattern = re.compile(r'^profile\s*=\s*"[^"]*"\s*$', re.MULTILINE)
+            updated, count = pattern.subn(f'profile = "{profile}"', text, count=1)
+            return (updated if count else updated + f'\nprofile = "{profile}"\n').encode()
+        return (
+            "schema_version = 1\n"
+            f'project_id = "{project_id}"\n'
+            f'name = "{self.root.name}"\n'
+            f'profile = "{profile}"\n\n'
+            "[commands]\n"
+            "build = []\n"
+            "test_focused = []\n"
+            "test_regression = []\n\n"
+            "[execution]\n"
+            "allow_parallel_mutating_runs = false\n"
+            'default_mode = "solo"\n'
+            "max_wall_time_seconds = 14400\n"
+            "max_idle_seconds = 900\n"
+            "max_attempts_per_task = 3\n\n"
+            "[gui]\n"
+            'bind = "127.0.0.1"\n'
+        ).encode()
+
     def _desired(self, profile: str, project_id: str) -> dict[str, bytes]:
         desired: dict[str, bytes] = {
             ".aiflow/handoffs/.gitkeep": b"",
-            ".aiflow/project.toml": (
-                "schema_version = 1\n"
-                f'project_id = "{project_id}"\n'
-                f'name = "{self.root.name}"\n'
-                f'profile = "{profile}"\n\n'
-                "[commands]\n"
-                "build = []\n"
-                "test_focused = []\n"
-                "test_regression = []\n\n"
-                "[execution]\n"
-                "allow_parallel_mutating_runs = false\n"
-                'default_mode = "solo"\n'
-                "max_wall_time_seconds = 14400\n"
-                "max_idle_seconds = 900\n"
-                "max_attempts_per_task = 3\n\n"
-                "[gui]\n"
-                'bind = "127.0.0.1"\n'
-            ).encode(),
+            MUTABLE_CONFIG: self._project_config(profile, project_id),
         }
         desired[".aiflow/quality.toml"] = DEFAULT_QUALITY_TOML.encode()
         deprecations = (
@@ -178,13 +212,14 @@ class ProjectInstaller:
         source_version: str,
     ) -> dict[str, Any]:
         managed = {
-            relative: __import__("hashlib").sha256(content).hexdigest()
+            relative: hashlib.sha256(content).hexdigest()
             for relative, content in sorted(desired.items())
+            if relative != MUTABLE_CONFIG
         }
         skill_hashes: dict[str, str] = {}
         for name in profile_skills(profile):
             prefix = f".agents/skills/{name}/"
-            digest = __import__("hashlib").sha256()
+            digest = hashlib.sha256()
             for relative, checksum in managed.items():
                 if relative.startswith(prefix):
                     digest.update(relative.removeprefix(prefix).encode())
@@ -206,7 +241,86 @@ class ProjectInstaller:
             "skill_hashes": skill_hashes,
             "custom_agent_hashes": agent_hashes,
             "managed_files": managed,
+            "mutable_files": {
+                MUTABLE_CONFIG: hashlib.sha256(desired[MUTABLE_CONFIG]).hexdigest()
+            },
         }
+
+    @staticmethod
+    def _owned(lock: dict[str, Any]) -> dict[str, str]:
+        return {**lock.get("managed_files", {}), **lock.get("mutable_files", {})}
+
+    def _preflight(self, desired: dict[str, bytes], previous: dict[str, Any] | None) -> None:
+        old_owned = self._owned(previous or {})
+        for relative in desired:
+            target = self._path(relative)
+            if target.exists() and relative not in old_owned and relative != MUTABLE_CONFIG:
+                raise InstallError(f"refusing to overwrite unowned pre-existing file: {relative}")
+        if previous:
+            verification = self.verify()
+            if verification["missing"] or verification["modified"]:
+                raise InstallError("managed files have drift; refusing transactional overwrite")
+
+    def _snapshots(self, paths: set[str]) -> dict[str, bytes | None]:
+        snapshots: dict[str, bytes | None] = {}
+        for relative in paths:
+            target = self._path(relative)
+            snapshots[relative] = target.read_bytes() if target.is_file() else None
+        return snapshots
+
+    def _restore(self, snapshots: dict[str, bytes | None]) -> None:
+        for relative, content in snapshots.items():
+            target = self._path(relative)
+            if content is None:
+                if target.is_file():
+                    target.unlink()
+            else:
+                _write_atomic(target, content)
+        self._prune_empty_dirs()
+
+    def _prune_empty_dirs(self) -> None:
+        roots = (self.root / ".agents", self.root / ".codex", self.config_dir)
+        for base in roots:
+            directories = sorted(
+                (path for path in base.rglob("*") if path.is_dir()),
+                reverse=True,
+            ) if base.exists() else []
+            for directory in directories:
+                try:
+                    directory.rmdir()
+                except OSError:
+                    pass
+
+    def _apply(
+        self,
+        desired: dict[str, bytes],
+        lock: dict[str, Any],
+        previous: dict[str, Any] | None,
+    ) -> None:
+        self._preflight(desired, previous)
+        old_owned = self._owned(previous or {})
+        affected = set(desired) | set(old_owned) | {".aiflow/project.lock"}
+        snapshots = self._snapshots(affected)
+        with tempfile.TemporaryDirectory(prefix=".aiflow-install-stage-", dir=self.root) as temporary:
+            stage = Path(temporary)
+            for relative, content in desired.items():
+                _write_atomic(stage / relative, content)
+            try:
+                for relative, content in desired.items():
+                    _atomic_bytes(self._path(relative), content)
+                for relative, checksum in old_owned.items():
+                    if relative in desired:
+                        continue
+                    target = self._path(relative)
+                    if target.is_file() and file_hash(target) == checksum:
+                        target.unlink()
+                    elif target.exists():
+                        raise InstallError(f"obsolete managed file changed during upgrade: {relative}")
+                _atomic_bytes(self.lock_file, _json_bytes(lock))
+            except Exception:
+                self._restore(snapshots)
+                raise
+        self._prune_empty_dirs()
 
     def _install(
         self,
@@ -214,6 +328,7 @@ class ProjectInstaller:
         *,
         installation_mode: str,
         source_version: str,
+        previous: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if installation_mode not in {"vendor", "link"}:
             raise InstallError(f"unknown installation mode: {installation_mode}")
@@ -228,10 +343,7 @@ class ProjectInstaller:
             desired=desired,
             source_version=source_version or __version__,
         )
-        for relative, content in desired.items():
-            _atomic_bytes(self.root / relative, content)
-        (self.config_dir / "handoffs").mkdir(parents=True, exist_ok=True)
-        _atomic_bytes(self.lock_file, _json_bytes(lock))
+        self._apply(desired, lock, previous)
         return self.status()
 
     def init(
@@ -249,9 +361,7 @@ class ProjectInstaller:
                     raise InstallError("existing managed files have drift; refusing idempotent overwrite")
                 return self.status()
             raise InstallError("project already initialized with a different profile; use upgrade")
-        return self._install(
-            profile, installation_mode=installation_mode, source_version=source_version
-        )
+        return self._install(profile, installation_mode=installation_mode, source_version=source_version)
 
     def status(self) -> dict[str, Any]:
         lock = self._read_lock()
@@ -268,12 +378,15 @@ class ProjectInstaller:
         lock = self._read_lock()
         missing: list[str] = []
         modified: list[str] = []
-        for relative, expected in lock.get("managed_files", {}).items():
-            path = self.root / relative
+        for relative, expected in lock["managed_files"].items():
+            path = self._path(relative)
             if not path.is_file():
                 missing.append(relative)
             elif file_hash(path) != expected:
                 modified.append(relative)
+        for relative in lock["mutable_files"]:
+            if not self._path(relative).is_file():
+                missing.append(relative)
         return {"ok": not missing and not modified, "missing": missing, "modified": modified}
 
     def _backup(self, transaction_id: str) -> Path:
@@ -281,9 +394,9 @@ class ProjectInstaller:
         backup = self.config_dir / "backups" / transaction_id
         if backup.exists():
             raise InstallError(f"backup transaction already exists: {transaction_id}")
-        files = sorted(lock["managed_files"])
+        files = sorted(self._owned(lock))
         for relative in files:
-            source = self.root / relative
+            source = self._path(relative)
             if source.is_file():
                 destination = backup / "files" / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -294,6 +407,7 @@ class ProjectInstaller:
         return backup
 
     def upgrade(self, profile: str) -> dict[str, Any]:
+        current = self._read_lock()
         verification = self.verify()
         self_hosted_distribution = self.root == self.distribution_root
         if not verification["ok"] and not self_hosted_distribution:
@@ -302,39 +416,49 @@ class ProjectInstaller:
         backup = self._backup(transaction_id)
         try:
             status = self._install(
-                profile, installation_mode="vendor", source_version=__version__
+                profile,
+                installation_mode="vendor",
+                source_version=__version__,
+                previous=current,
             )
         except Exception:
-            self.rollback(transaction_id)
             raise
         return {**status, "transaction_id": transaction_id, "backup": str(backup)}
 
     def rollback(self, transaction_id: str) -> dict[str, Any]:
+        if not SAFE_TRANSACTION.fullmatch(transaction_id):
+            raise InstallError(f"invalid rollback transaction ID: {transaction_id!r}")
         backup = self.config_dir / "backups" / transaction_id
         try:
-            previous_lock = json.loads((backup / "project.lock").read_text(encoding="utf-8"))
+            previous_lock = self._validate_lock(
+                json.loads((backup / "project.lock").read_text(encoding="utf-8"))
+            )
         except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
             raise InstallError(f"invalid rollback transaction {transaction_id}: {exc}") from exc
         current = self._read_lock()
-        previous_files = set(previous_lock["managed_files"])
-        for relative in current["managed_files"]:
-            if relative not in previous_files:
-                path = self.root / relative
-                if path.is_file() and file_hash(path) == current["managed_files"][relative]:
-                    path.unlink()
+        verification = self.verify()
+        mutable_drift = [
+            relative
+            for relative, checksum in current["mutable_files"].items()
+            if self._path(relative).is_file() and file_hash(self._path(relative)) != checksum
+        ]
+        if verification["missing"] or verification["modified"] or mutable_drift:
+            raise InstallError("post-upgrade drift prevents safe rollback")
+        previous_files = set(self._owned(previous_lock))
+        desired = {}
         for relative in previous_files:
             source = backup / "files" / relative
             if source.is_file():
-                _atomic_bytes(self.root / relative, source.read_bytes())
-        _atomic_bytes(self.lock_file, _json_bytes(previous_lock))
+                desired[relative] = source.read_bytes()
+        self._apply(desired, previous_lock, current)
         return self.status()
 
     def uninstall(self) -> dict[str, Any]:
         lock = self._read_lock()
         removed: list[str] = []
         preserved: list[str] = []
-        for relative, expected in sorted(lock["managed_files"].items(), reverse=True):
-            path = self.root / relative
+        for relative, expected in sorted(self._owned(lock).items(), reverse=True):
+            path = self._path(relative)
             if not path.exists():
                 continue
             if path.is_file() and file_hash(path) == expected:
@@ -343,10 +467,5 @@ class ProjectInstaller:
             else:
                 preserved.append(relative)
         self.lock_file.unlink(missing_ok=True)
-        for root in (self.root / ".agents" / "skills", self.config_dir / "handoffs"):
-            for directory in sorted((path for path in root.rglob("*") if path.is_dir()), reverse=True) if root.exists() else []:
-                try:
-                    directory.rmdir()
-                except OSError:
-                    pass
+        self._prune_empty_dirs()
         return {"removed": sorted(removed), "preserved_modified": sorted(preserved)}

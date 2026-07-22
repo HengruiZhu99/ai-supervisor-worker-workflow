@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
+import stat
 import tempfile
 import zipapp
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from aiflow import __version__
+from aiflow.security.scan import PATTERNS
 
 
 FORBIDDEN_PARTS = {".git", ".worktrees", "node_modules", "backups", "runtime", "cache"}
@@ -19,6 +20,10 @@ REQUIRED = {
     "aiflow/__init__.py",
     "aiflow/api/static/index.html",
     ".agents/skills/tdd-solo/SKILL.md",
+}
+FORBIDDEN_STATE_NAMES = {
+    "RUN.json", "TASKS.json", "EVENTS.jsonl", "TRANSACTION.json",
+    "CONTROLLER_LEASE.json", "MUTATING_RUN.json", "project.lock",
 }
 BOOTSTRAP = '''from __future__ import annotations
 import sys
@@ -54,7 +59,22 @@ def _ignored(_: str, names: list[str]) -> set[str]:
     return {name for name in names if name == "__pycache__" or name.endswith((".pyc", ".pyo"))}
 
 
+def _validate_source_tree(root: Path) -> None:
+    for relative in (Path("src/aiflow"), Path(".agents"), Path(".codex")):
+        source = root / relative
+        if not source.exists():
+            if relative == Path(".codex"):
+                continue
+            raise ValueError(f"missing artifact source tree: {relative}")
+        for path in (source, *source.rglob("*")):
+            if path.is_symlink():
+                raise ValueError(f"artifact source contains symlink: {path.relative_to(root)}")
+            if path.exists() and not (path.is_file() or path.is_dir()):
+                raise ValueError(f"artifact source contains special file: {path.relative_to(root)}")
+
+
 def _stage(distribution_root: Path, stage: Path) -> dict[str, str]:
+    _validate_source_tree(distribution_root)
     shutil.copytree(distribution_root / "src" / "aiflow", stage / "aiflow", ignore=_ignored)
     shutil.copytree(distribution_root / ".agents", stage / ".agents", ignore=_ignored)
     codex = distribution_root / ".codex"
@@ -129,20 +149,100 @@ def verify_artifact(artifact: Path) -> dict[str, Any]:
     actual = _digest(path) if path.is_file() else ""
     if expected and actual != expected:
         errors.append("artifact checksum mismatch")
-    try:
-        with zipfile.ZipFile(path) as archive:
-            names = set(archive.namelist())
-            manifest = json.loads(archive.read("ARTIFACT_MANIFEST.json"))["files"]
-            for name, digest in manifest.items():
-                if hashlib.sha256(archive.read(name)).hexdigest() != digest:
-                    errors.append(f"payload checksum mismatch: {name}")
-            for name in names:
-                if FORBIDDEN_PARTS.intersection(Path(name).parts):
-                    errors.append(f"forbidden archive path: {name}")
-    except (OSError, KeyError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
-        errors.append(f"invalid zipapp: {exc}")
-        names = set()
+    archive_errors, names, manifest = _inspect_archive(path)
+    errors.extend(archive_errors)
     missing = sorted(REQUIRED - names)
     if missing:
         errors.append("missing required payload: " + ", ".join(missing))
-    return {"ok": not errors, "errors": errors, "sha256": actual, "files": len(names)}
+    errors.extend(_external_manifest_errors(path, actual, manifest))
+    return {"ok": not errors, "errors": sorted(set(errors)), "sha256": actual, "files": len(names)}
+
+
+def _inspect_archive(path: Path) -> tuple[list[str], set[str], dict[str, str]]:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            return _inspect_open_archive(archive)
+    except (OSError, KeyError, ValueError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+        return [f"invalid zipapp: {exc}"], set(), {}
+
+
+def _inspect_open_archive(
+    archive: zipfile.ZipFile,
+) -> tuple[list[str], set[str], dict[str, str]]:
+    errors: list[str] = []
+    infos = archive.infolist()
+    listed = [info.filename for info in infos]
+    names = set(listed)
+    if len(listed) != len(names):
+        errors.append("archive contains duplicate member names")
+    for info in infos:
+        errors.extend(_member_errors(info))
+    internal = json.loads(archive.read("ARTIFACT_MANIFEST.json"))
+    manifest = internal["files"]
+    if not isinstance(manifest, dict):
+        raise ValueError("internal artifact manifest files must be an object")
+    files = {info.filename for info in infos if not info.is_dir()}
+    errors.extend(_manifest_set_errors(files, set(manifest)))
+    for name, digest in manifest.items():
+        if name in files and hashlib.sha256(archive.read(name)).hexdigest() != digest:
+            errors.append(f"payload checksum mismatch: {name}")
+        if name in files:
+            errors.extend(_payload_errors(name, archive.read(name)))
+    return errors, names, {str(key): str(value) for key, value in manifest.items()}
+
+
+def _manifest_set_errors(files: set[str], declared: set[str]) -> list[str]:
+    extras = sorted(files - declared - {"ARTIFACT_MANIFEST.json"})
+    missing = sorted(declared - files)
+    return [
+        *(f"unmanifested archive file: {name}" for name in extras),
+        *(f"manifested file missing from archive: {name}" for name in missing),
+    ]
+
+
+def _member_errors(info: zipfile.ZipInfo) -> list[str]:
+    name = info.filename
+    path = PurePosixPath(name)
+    errors: list[str] = []
+    unsafe = (
+        not name
+        or "\\" in name
+        or path.is_absolute()
+        or any(part in {"", ".", ".."} for part in path.parts)
+    )
+    if unsafe:
+        errors.append(f"unsafe archive path: {name}")
+    if FORBIDDEN_PARTS.intersection(path.parts):
+        errors.append(f"forbidden archive path: {name}")
+    mode = (info.external_attr >> 16) & 0o170000
+    if mode and not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        errors.append(f"unsafe archive special member: {name}")
+    return errors
+
+
+def _payload_errors(name: str, content: bytes) -> list[str]:
+    errors: list[str] = []
+    if PurePosixPath(name).name in FORBIDDEN_STATE_NAMES:
+        errors.append(f"forbidden state file in artifact: {name}")
+    if b"\x00" not in content and len(content) <= 1_000_000:
+        text = content.decode("utf-8", errors="replace")
+        for label, pattern in PATTERNS.items():
+            if pattern.search(text):
+                errors.append(f"secret pattern {label} in artifact member: {name}")
+    return errors
+
+
+def _external_manifest_errors(path: Path, checksum: str, manifest: dict[str, str]) -> list[str]:
+    external_path = path.with_suffix(path.suffix + ".manifest.json")
+    try:
+        external = json.loads(external_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"missing or invalid external manifest: {exc}"]
+    errors: list[str] = []
+    if external.get("artifact") != path.name:
+        errors.append("external manifest artifact name mismatch")
+    if external.get("sha256") != checksum:
+        errors.append("external manifest checksum mismatch")
+    if external.get("files") != manifest:
+        errors.append("external and internal payload manifests differ")
+    return errors

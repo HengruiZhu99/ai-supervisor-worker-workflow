@@ -43,7 +43,7 @@ class ProjectLifecycleTests(unittest.TestCase):
             lock = json.loads((project / ".aiflow" / "project.lock").read_text())
             self.assertEqual(lock["profile"], "solo")
             self.assertEqual(lock["installation_mode"], "vendor")
-            self.assertIn(".aiflow/project.toml", lock["managed_files"])
+            self.assertIn(".aiflow/project.toml", lock["mutable_files"])
             self.assertIn(".agents/skills/tdd-solo/SKILL.md", lock["managed_files"])
             self.assertTrue(installer.verify()["ok"])
 
