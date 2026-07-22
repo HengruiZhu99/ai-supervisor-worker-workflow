@@ -12,9 +12,11 @@ the enforcement boundary.
 
 ## Local API
 
-- loopback binding is default; remote bind needs explicit opt-in;
+- loopback binding is mandatory; the legacy `--allow-remote` flag is inert;
 - exact Host and Origin are required;
 - each project server has a random session mutation token;
+- the token is stored only in a checkout-scoped `0600` endpoint file that is removed on
+  normal server exit, and is not printed to the terminal;
 - mutation bodies are JSON and size bounded;
 - checkout identity and expected state revision are mandatory for existing-run changes;
 - routes are named actions only;

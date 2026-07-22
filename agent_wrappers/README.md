@@ -17,10 +17,11 @@ python3 scripts/agent_wrapper.py list --json
 
 Built-in wrappers:
 
-- `cursor-agent`: available for worker, reviewer, supervisor, modulator, and
-  chat roles; recommended for workers and reviewers.
 - `codex`: available for worker, reviewer, supervisor, modulator, and chat
-  roles; recommended for supervisors and chat.
+  roles; recommended for every role. Sol is the default for implementation,
+  review, supervision, and modulation; Terra is the default for chat.
+- `cursor-agent`: legacy compatibility wrapper available only by explicit
+  opt-in. It is not recommended for any role.
 
 To add another wrapper, such as Claude Code:
 
@@ -62,9 +63,11 @@ Each panel lists `panelists` (id, wrapper, model, optional focus), a
 python3 scripts/orchestrator.py list-panels
 ```
 
-The built-in `reviewer` and `supervisor` panels use `gpt-5.5-high`,
-`claude-opus-4-8-thinking-high`, and `gpt-5.3-codex-high`. Override models per
-run without editing the file via `--models "m1,m2,m3"` (or the
+The built-in panels use Codex throughout. Reviewer and supervisor panels put
+GPT-5.6 Sol on the hardest correctness and decision work, with GPT-5.6 Terra on
+read-heavy process checks. The specification panel adds GPT-5.6 Luna for narrow
+consistency and testability classification. Override models per run without
+editing the file via `--models "m1,m2,m3"` (or the
 `REVIEWER_CONSENSUS_MODELS` / `SUPERVISOR_CONSENSUS_MODELS` environment
 variables). Panelists always run read-only; prefer read-only-capable wrappers
-(such as `cursor-agent`) for panel members.
+(the Codex wrapper enforces the reviewer permission profile) for panel members.

@@ -18,8 +18,8 @@ This document describes a reusable AI-assisted coding workflow for scientific
 software projects.  A milestone-gated supervisor decomposes large goals into
 small jobs, one or more implementation workers execute those jobs, and optional
 read-only reviewers inspect each worker attempt before acceptance.  The default
-deployment uses Codex CLI for the supervisor and Cursor Agent for workers and
-reviewers, but those command-line wrappers are configurable per role.  All
+deployment uses Codex CLI for every role; Cursor Agent remains an explicit
+compatibility option.  All
 coordination happens through durable files in the project repository, which
 makes state auditable, restartable, and independent of direct agent-to-agent
 process control.
@@ -64,7 +64,7 @@ main goals are:
 
 The supervisor owns planning, dispatch, review, acceptance, rejection, and ledger
 maintenance.  In the default configuration it is launched through Codex CLI, but
-the dashboard can also launch it through Cursor Agent or any future compatible
+the dashboard can also launch it through an explicit compatibility wrapper or future
 wrapper.  The supervisor reads the project design and current state, creates one
 small job at a time, reviews the worker report, tests, diff, commit docs, and
 reviewer reports, then integrates or rejects the job.  Supervisor-owned planning
@@ -74,8 +74,8 @@ workers may suggest changes to those files but should not own them.
 \subsection{Worker}
 
 The worker implements exactly one assigned job in an isolated worktree.  In the
-default configuration it is launched through Cursor Agent, but Codex CLI can also
-be selected as the worker wrapper.  The worker runs the requested validation,
+default configuration it is launched through Codex CLI.  Cursor Agent can still be
+selected explicitly as a compatibility wrapper.  The worker runs the requested validation,
 keeps changes in meaningful commits where possible, and writes a concise report.
 Each report includes workflow friction and skill suggestions so repeated
 procedural failures can be converted into templates, scripts, protocols, or
@@ -101,13 +101,12 @@ are role-neutral:
 \begin{longtable}{p{0.20\linewidth}p{0.34\linewidth}p{0.36\linewidth}}
 \textbf{Wrapper} & \textbf{Recommended roles} & \textbf{Default model behavior}\\
 \hline
-\path{codex} & Supervisor and workflow chat & Uses Codex model IDs such as \path{gpt-5.5} with a separate reasoning-effort control.\\
-\path{cursor-agent} & Worker and reviewers & Uses Cursor model IDs such as \path{gpt-5.5-high}, \path{gpt-5.3-codex-high}, and \path{claude-opus-4-7-thinking-high}.\\
+\path{codex} & Every role & GPT-5.6 Sol for implementation, review, supervision, and modulation; GPT-5.6 Terra for chat.  Narrow routing and classification agents use GPT-5.6 Luna.\\
+\path{cursor-agent} & Compatibility only & Retains legacy Cursor model IDs for explicit opt-in; it is not an active default.\\
 \end{longtable}
 
-The same wrappers can be selected for non-recommended roles when desired.  For
-example, the dashboard can launch a Codex CLI worker or a Cursor Agent
-supervisor.  Model dropdowns are populated from the selected wrapper metadata,
+Compatibility wrappers can still be selected explicitly when desired.  Model dropdowns
+are populated from the selected wrapper metadata,
 which avoids mixing Codex model names with Cursor model names unless a wrapper
 explicitly advertises them.
 
@@ -131,11 +130,11 @@ The local dashboard is served by \path{scripts/workflow\_gui.py}.  It provides:
   \item workflow-aware chat panels for asking questions before submitting human review.
 \end{itemize}
 
-The dashboard stores a project-local port record in
-\path{.ai/runtime/workflow\_gui\_port.json}.  If no explicit \path{--port} is
-given, a project reuses its stored port; a new project chooses the first
-available port at or above 8765 and stores it.  This lets multiple project
-dashboards run at the same time without manual port bookkeeping.
+The AIFLOW V2 GUI asks the operating system for a free loopback port when no explicit
+\path{--port} is given.  It writes the URL and mutation token to a private,
+checkout-scoped \path{ENDPOINT.json}; the token is not printed and the file is removed
+when the server exits.  This lets multiple project dashboards run at the same time
+without manual port bookkeeping.
 
 When a human gate exists, the worker loop pauses and the supervisor loop exits
 with \path{HUMAN\_REVIEW\_REQUIRED}.  This is intentional: the dashboard remains
@@ -200,7 +199,7 @@ Terminal jobs are not retried by the worker loop.
 
 \section{Worker Attempt Protocol}
 
-The worker loop performs deterministic steps before and after invoking Cursor:
+The worker loop performs deterministic steps before and after invoking the selected agent:
 
 \begin{enumerate}
   \item Acquire a loop-level singleton lock and a job lock with owner PID.
@@ -212,7 +211,7 @@ The worker loop performs deterministic steps before and after invoking Cursor:
         validation command, and report contract.
   \item Invoke the selected worker wrapper with configurable model, timeout, and
         extra local flags.
-  \item Commit remaining changes if Cursor did not create commits.
+  \item Commit remaining changes if the selected agent did not create commits.
   \item Run the job validation command, optionally bounded by \path{TEST\_TIMEOUT}.
   \item Record raw and filtered post-test dirty status.  Allowed generated files
         may be declared in \path{allowed\_artifacts.txt}; undeclared dirty files
@@ -324,16 +323,16 @@ outcomes.
 \begin{verbatim}
 python3 scripts/workflow_gui.py --host 127.0.0.1 --project-root .
 
-WORKER_AGENT_WRAPPER=cursor-agent \
-WORKER_MODEL=gpt-5.5-high \
-REVIEWER_A_AGENT_WRAPPER=cursor-agent \
-CURSOR_REVIEWER_A_MODEL=claude-opus-4-7-thinking-high \
-REVIEWER_B_AGENT_WRAPPER=cursor-agent \
-CURSOR_REVIEWER_B_MODEL=gpt-5.3-codex-high \
+WORKER_AGENT_WRAPPER=codex \
+WORKER_MODEL=gpt-5.6-sol \
+REVIEWER_A_AGENT_WRAPPER=codex \
+REVIEWER_A_MODEL=gpt-5.6-sol \
+REVIEWER_B_AGENT_WRAPPER=codex \
+REVIEWER_B_MODEL=gpt-5.6-sol \
 ./scripts/worker_loop.sh
 
 SUPERVISOR_AGENT_WRAPPER=codex \
-CODEX_MODEL=gpt-5.5 \
+CODEX_MODEL=gpt-5.6-sol \
 CODEX_REASONING_EFFORT=high \
 ./scripts/supervisor_loop.sh
 

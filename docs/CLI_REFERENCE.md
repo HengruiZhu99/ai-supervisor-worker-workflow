@@ -88,12 +88,14 @@ integrate --candidate COMMIT [--base-sha SHA] [--method merge|cherry-pick]
 ## GUI and hub
 
 ```text
-gui [--host 127.0.0.1] [--port 8765] [--no-open]
-hub --project PATH [--project PATH ...] [--host 127.0.0.1] [--port 8766]
+gui [--host 127.0.0.1] [--port 0] [--no-open]
+hub --project PATH [--project PATH ...] [--host 127.0.0.1] [--port 0]
 ```
 
-Non-loopback binding is rejected unless `--allow-remote` is explicit. The hub is always
-read-only.
+Port `0` asks the operating system for an unused port. Both servers are loopback-only;
+the deprecated `--allow-remote` compatibility flag cannot relax that boundary. The GUI
+writes its URL and mutation token to a private checkout-scoped `ENDPOINT.json` for its
+lifetime. The hub is always read-only.
 
 ## Offline package
 

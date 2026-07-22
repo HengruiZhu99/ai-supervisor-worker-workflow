@@ -89,10 +89,11 @@ the style gate because that gate deliberately makes zero model calls.
 aiflow gui
 ```
 
-The server binds loopback by default and prints its project-specific endpoint and
-mutation token. It enforces Host, Origin, token, body-size, checkout identity, and state
-revision. The browser receives a snapshot plus retained SSE replay. There is no arbitrary
-file or shell endpoint.
+The server is loopback-only, asks the OS for a free port by default, and prints its URL
+plus the path to checkout-scoped endpoint metadata. The mutation token is written only to
+that private `0600` runtime file and is removed when the server exits. It enforces Host,
+Origin, token, body-size, checkout identity, and state revision. The browser receives a
+snapshot plus retained SSE replay. There is no arbitrary file or shell endpoint.
 
 For read-only discovery across explicit projects:
 

@@ -7,8 +7,8 @@ The mandatory offline workflow is complete without these optional live integrati
   modernization;
 - the read-only multi-project hub lists explicitly selected projects but does not merge
   tokens or event streams;
-- non-loopback GUI binding is supported only through explicit opt-in; SSH forwarding is
-  the recommended remote access path;
+- GUI and hub servers are deliberately loopback-only; remote use requires SSH local
+  forwarding;
 - the local artifact is not published because the repository has no declared
   distributable license;
 - generally reusable skills were validated locally; no marketplace/plugin publication was

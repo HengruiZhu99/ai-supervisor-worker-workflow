@@ -37,9 +37,11 @@ command. Any stale or cross-project value blocks verification.
 
 ## GUI
 
-Run one server per checkout. Keep the endpoint/token printed by that invocation together;
-tokens are never shared through the hub. Use SSH local forwarding for a remote project
-instead of exposing a non-loopback listener.
+Run one server per checkout. The command prints the server URL and private endpoint-file
+path, never the mutation token. That token lives in the checkout-scoped `ENDPOINT.json`
+with `0600` permissions and the file is removed when the server exits. Tokens are never
+shared through the hub. Use SSH local forwarding for a remote project; the server will
+not bind a non-loopback listener.
 
 ## HPC
 
@@ -48,6 +50,6 @@ environment setup script, modules, and storage roots there. Monitoring accepts o
 `squeue` or `qstat` query arrays, caches within the minimum interval, and exposes no
 cancel/submit/requeue operation.
 
-No cleanup command removes another checkout's state/runtime/cache. Candidate branches and
-failed integration worktrees remain recoverable until explicit retention policy permits
-pruning.
+No cleanup command removes another checkout's state/runtime/cache. Integration gate
+worktrees are temporary. If a post-apply rollback encounters untracked files, it preserves
+them under `.git/aiflow/recovery/` and reports the exact recovery path.
