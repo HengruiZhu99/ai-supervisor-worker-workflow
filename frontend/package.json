@@ -8,17 +8,20 @@
     "check": "tsc --noEmit",
     "lint": "tsc --noEmit --noUnusedLocals --noUnusedParameters",
     "test": "node --test tests/contracts.test.mjs",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "format": "prettier --write src tests playwright.config.ts",
+    "format:check": "prettier --check src tests playwright.config.ts"
   },
   "dependencies": {
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@types/react": "19.2.10",
     "@types/react-dom": "19.2.3",
-    "@playwright/test": "1.61.1",
     "esbuild": "0.28.1",
+    "prettier": "3.9.6",
     "typescript": "7.0.2"
   }
 }

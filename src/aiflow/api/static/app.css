@@ -16,6 +16,7 @@ button { cursor:pointer; }
 .identity-copy span { color:var(--muted); font-size:.75rem; font-family:ui-monospace,SFMono-Regular,monospace; }
 .status-pill { display:flex; align-items:center; gap:.5rem; border:1px solid var(--line); border-radius:99px; padding:.4rem .7rem; font-size:.78rem; }
 .status-pill > span:first-child { width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 4px var(--accent-2); }
+.status-pill small { display:block; color:var(--muted); font-size:.62rem; margin-top:.08rem; }
 .icon-button,#refresh,.run-card button { border:1px solid var(--line); background:transparent; color:var(--ink); border-radius:9px; padding:.55rem .75rem; }
 main { width:min(820px,calc(100% - 2rem)); margin:0 auto; padding:clamp(3rem,8vw,6.5rem) 0 5rem; }
 .hero { max-width:680px; margin-bottom:2rem; }
@@ -52,6 +53,7 @@ h2 { font-family:Georgia,"Times New Roman",serif; font-weight:500; font-size:2re
 .run-card h3 { font-size:.95rem; }
 .run-card p { color:var(--muted); font-size:.75rem; }
 .run-actions { grid-row:1/3; grid-column:2; display:flex; align-items:center; gap:.4rem; }
+.load-more { width:100%; margin-top:.75rem; border:1px solid var(--line); border-radius:9px; padding:.7rem; background:transparent; color:var(--ink); }
 footer { border-top:1px solid var(--line); color:var(--muted); padding:1.25rem; text-align:center; font-size:.72rem; }
-@media (max-width:640px) { .identity-bar { grid-template-columns:auto minmax(0,1fr) auto; }.status-pill { display:none; }.brand > span:last-child { display:none; }.contract { flex-direction:column; }.contract strong { text-align:left; }.mode-card { grid-template-columns:auto 1fr; }.recommended { grid-column:2; }.run-card { grid-template-columns:1fr; }.run-actions { grid-area:auto; flex-wrap:wrap; } }
+@media (max-width:640px) { .identity-bar { grid-template-columns:auto minmax(0,1fr) auto; gap:.55rem; }.status-pill { grid-column:1/-1; justify-self:stretch; border-radius:9px; }.brand > span:last-child { display:none; }.contract { flex-direction:column; }.contract strong { text-align:left; }.mode-card { grid-template-columns:auto 1fr; }.recommended { grid-column:2; }.run-card { grid-template-columns:1fr; }.run-actions { grid-area:auto; flex-wrap:wrap; } }
 @media (prefers-reduced-motion:no-preference) { .task-card,.run-card { animation:rise .35s ease-out both; } @keyframes rise { from { opacity:0; transform:translateY(8px); } } }
