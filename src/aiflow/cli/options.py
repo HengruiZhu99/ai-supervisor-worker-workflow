@@ -6,6 +6,40 @@ from pathlib import Path
 from typing import Any
 
 
+def _command_matrix(value: object) -> list[list[str]] | None:
+    if not isinstance(value, list) or not value:
+        return None
+    if not all(
+        isinstance(command, list)
+        and command
+        and all(isinstance(part, str) and part for part in command)
+        for command in value
+    ):
+        return None
+    return [[str(part) for part in command] for command in value]
+
+
+def _validate_task_contract(task: dict[str, Any], index: int) -> None:
+    label = str(task.get("id", f"entry {index}"))
+    scopes = task.get("allowed_scope")
+    if (
+        not isinstance(scopes, list)
+        or not scopes
+        or not all(isinstance(scope, str) and scope for scope in scopes)
+    ):
+        raise ValueError(f"task {label} requires a non-empty allowed_scope")
+    pre_commands = _command_matrix(task.get("pre_commands"))
+    commands = _command_matrix(task.get("commands"))
+    if pre_commands is None:
+        raise ValueError(f"task {label} requires non-empty pre_commands")
+    if commands is None:
+        raise ValueError(f"task {label} requires non-empty commands")
+    if not any(command in commands for command in pre_commands):
+        raise ValueError(
+            f"task {label} must rerun a pre-change causal command after the change"
+        )
+
+
 def load_task_specs(value: str) -> tuple[dict[str, Any], ...]:
     if not value:
         return ()
@@ -21,6 +55,8 @@ def load_task_specs(value: str) -> tuple[dict[str, Any], ...]:
         raise ValueError("task DAG requires between 1 and 100 task objects")
     if any(not isinstance(task, dict) for task in tasks):
         raise ValueError("every task DAG entry must be an object")
+    for index, task in enumerate(tasks, start=1):
+        _validate_task_contract(task, index)
     return tuple(dict(task) for task in tasks)
 
 
