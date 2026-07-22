@@ -17,7 +17,8 @@ class FiniteExecutionRegressionTests(unittest.TestCase):
             if re.search(r"\bwhile\s+true\b", text):
                 findings.append(f"{name}: permanent while true")
             logical = [
-                line for line in text.splitlines()
+                line
+                for line in text.splitlines()
                 if line.strip() and not line.lstrip().startswith("#")
             ]
             if len(logical) > 160:

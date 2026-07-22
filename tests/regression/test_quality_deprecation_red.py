@@ -21,16 +21,26 @@ class QualityDeprecationRegressionTests(unittest.TestCase):
         )
 
     def test_legacy_worker_loop_is_now_a_thin_shim(self) -> None:
-        lines = (ROOT / "scripts" / "worker_loop.sh").read_text(encoding="utf-8").splitlines()
-        logical = [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
-        self.assertLessEqual(len(logical), 160, "oversized legacy worker loop still owns core logic")
+        lines = (
+            (ROOT / "scripts" / "worker_loop.sh")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
+        logical = [
+            line for line in lines if line.strip() and not line.lstrip().startswith("#")
+        ]
+        self.assertLessEqual(
+            len(logical), 160, "oversized legacy worker loop still owns core logic"
+        )
 
     def test_new_oversized_file_fails_with_specific_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
             subprocess.run(["git", "init", "-q"], cwd=project, check=True)
             source = project / "oversized.py"
-            source.write_text("\n".join(f"value_{i} = {i}" for i in range(451)), encoding="utf-8")
+            source.write_text(
+                "\n".join(f"value_{i} = {i}" for i in range(451)), encoding="utf-8"
+            )
             result = self.run_quality(project)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("hard limit", (result.stdout + result.stderr).lower())
@@ -59,7 +69,9 @@ remaining_call_sites = 0
             )
             result = self.run_quality(project)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("expired deprecation", (result.stdout + result.stderr).lower())
+            self.assertIn(
+                "expired deprecation", (result.stdout + result.stderr).lower()
+            )
 
     def test_new_core_import_of_compat_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,7 +82,9 @@ remaining_call_sites = 0
             source.write_text("from aiflow.compat import legacy\n", encoding="utf-8")
             result = self.run_quality(project)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("core import of compat", (result.stdout + result.stderr).lower())
+            self.assertIn(
+                "core import of compat", (result.stdout + result.stderr).lower()
+            )
 
 
 if __name__ == "__main__":

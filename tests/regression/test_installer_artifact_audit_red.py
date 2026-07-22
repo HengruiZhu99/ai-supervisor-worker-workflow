@@ -51,7 +51,9 @@ class InstallerArtifactAuditRegressionTests(unittest.TestCase):
                     raise OSError("injected write failure")
                 original(path, content)
 
-            with mock.patch.object(installer_module, "_atomic_bytes", side_effect=fail_third):
+            with mock.patch.object(
+                installer_module, "_atomic_bytes", side_effect=fail_third
+            ):
                 with self.assertRaises(OSError):
                     installer.init("solo")
             self.assertFalse((root / ".aiflow" / "project.lock").exists())
@@ -67,7 +69,9 @@ class InstallerArtifactAuditRegressionTests(unittest.TestCase):
             self.assertTrue(old_only.exists())
             installer.upgrade("solo")
             self.assertFalse(old_only.exists())
-            self.assertTrue((root / ".agents" / "skills" / "tdd-solo" / "SKILL.md").exists())
+            self.assertTrue(
+                (root / ".agents" / "skills" / "tdd-solo" / "SKILL.md").exists()
+            )
 
     def test_project_command_customization_survives_upgrade(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -77,12 +81,15 @@ class InstallerArtifactAuditRegressionTests(unittest.TestCase):
             config = root / ".aiflow" / "project.toml"
             config.write_text(
                 config.read_text(encoding="utf-8").replace(
-                    "test_focused = []", 'test_focused = ["ctest", "--output-on-failure"]'
+                    "test_focused = []",
+                    'test_focused = ["ctest", "--output-on-failure"]',
                 ),
                 encoding="utf-8",
             )
             installer.upgrade("science")
-            self.assertIn('test_focused = ["ctest", "--output-on-failure"]', config.read_text())
+            self.assertIn(
+                'test_focused = ["ctest", "--output-on-failure"]', config.read_text()
+            )
 
     def test_rollback_refuses_post_upgrade_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -109,7 +116,9 @@ class InstallerArtifactAuditRegressionTests(unittest.TestCase):
             result = verify_artifact(artifact)
             self.assertFalse(result["ok"])
             self.assertTrue(any("unmanifested" in error for error in result["errors"]))
-            self.assertTrue(any("unsafe archive path" in error for error in result["errors"]))
+            self.assertTrue(
+                any("unsafe archive path" in error for error in result["errors"])
+            )
 
     def test_builder_rejects_source_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

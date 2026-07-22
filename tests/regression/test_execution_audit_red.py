@@ -86,7 +86,9 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
         }
         self.assertEqual(validate_cycle("refactor", evidence)["status"], "VERIFIED")
 
-    def test_test_only_cycle_is_supported_with_discriminating_negative_control(self) -> None:
+    def test_test_only_cycle_is_supported_with_discriminating_negative_control(
+        self,
+    ) -> None:
         evidence = {
             **common_evidence(),
             "negative_control": {"exit_code": 1, "discriminating": True},
@@ -136,11 +138,15 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             validate_cycle("portability", evidence)
 
-    def test_fake_backend_executes_through_durable_lifecycle_and_closes_acceptance(self) -> None:
+    def test_fake_backend_executes_through_durable_lifecycle_and_closes_acceptance(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
             init_project(root)
-            context = resolve_project(explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")})
+            context = resolve_project(
+                explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}
+            )
             environment = {"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")}
             started = RunLifecycle(context, runtime_env=environment).start(
                 mode="solo",
@@ -158,26 +164,43 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                 agent_backend=backend.run,
                 agent_id="fake-worker",
             )
-            result = lifecycle.resume(started["run_id"], budgets=Budgets(max_tasks=1, max_idle=1))
+            result = lifecycle.resume(
+                started["run_id"], budgets=Budgets(max_tasks=1, max_idle=1)
+            )
             self.assertEqual(result["status"], "SUCCEEDED")
             self.assertEqual(result["outcome"], "SUCCEEDED")
             self.assertEqual(result["acceptance_ids_closed"], ["AC-FEATURE-1"])
-            self.assertEqual(lifecycle.status(started["run_id"])["tasks"][0]["status"], "ACCEPTED")
+            self.assertEqual(
+                lifecycle.status(started["run_id"])["tasks"][0]["status"], "ACCEPTED"
+            )
             self.assertEqual(backend.calls, 1)
 
     def test_fake_backend_runs_two_dependent_orchestrated_tasks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
             init_project(root)
-            context = resolve_project(explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")})
+            context = resolve_project(
+                explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}
+            )
             environment = {"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")}
             lifecycle = RunLifecycle(context, runtime_env=environment)
             started = lifecycle.start(
                 mode="orchestrated",
                 objective="two milestones",
                 task_specs=(
-                    {"id": "T0001", "objective": "first", "kind": "feature", "acceptance_ids": ["AC-1"]},
-                    {"id": "T0002", "objective": "second", "kind": "feature", "acceptance_ids": ["AC-2"], "dependencies": ["T0001"]},
+                    {
+                        "id": "T0001",
+                        "objective": "first",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-1"],
+                    },
+                    {
+                        "id": "T0002",
+                        "objective": "second",
+                        "kind": "feature",
+                        "acceptance_ids": ["AC-2"],
+                        "dependencies": ["T0001"],
+                    },
                 ),
             )
             identities = context.identity_fields(started["run_id"])
@@ -190,7 +213,10 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                 }
             )
             resumed = RunLifecycle(
-                context, runtime_env=environment, agent_backend=backend.run, agent_id="fake-worker"
+                context,
+                runtime_env=environment,
+                agent_backend=backend.run,
+                agent_id="fake-worker",
             ).resume(started["run_id"], budgets=Budgets(max_tasks=3, max_idle=1))
             self.assertEqual(resumed["status"], "SUCCEEDED")
             self.assertEqual(resumed["acceptance_ids_closed"], ["AC-1", "AC-2"])

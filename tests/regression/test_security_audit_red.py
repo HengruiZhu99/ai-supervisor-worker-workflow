@@ -53,12 +53,18 @@ class SecurityAuditRegressionTests(unittest.TestCase):
             with self.subTest(extra=extra), self.assertRaises(SystemExit):
                 agent_wrapper.build_codex_command(wrapper_args(extra))
 
-    def test_owned_process_runner_scrubs_context_and_terminates_the_process_group(self) -> None:
+    def test_owned_process_runner_scrubs_context_and_terminates_the_process_group(
+        self,
+    ) -> None:
         runner = getattr(agent_wrapper, "run_owned_process")
         environment = dict(os.environ)
         environment["AIFLOW_PROJECT_ROOT"] = "/wrong/project"
         completed = runner(
-            [sys.executable, "-c", "import os; print(os.getenv('AIFLOW_PROJECT_ROOT', 'clean'))"],
+            [
+                sys.executable,
+                "-c",
+                "import os; print(os.getenv('AIFLOW_PROJECT_ROOT', 'clean'))",
+            ],
             cwd=ROOT,
             env=environment,
             timeout=5,
@@ -114,7 +120,11 @@ class SecurityAuditRegressionTests(unittest.TestCase):
             root = Path(tmp) / "project"
             git_project(root)
             ProjectInstaller(root, distribution_root=ROOT).init("solo")
-            service = ApiService(resolve_project(explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}))
+            service = ApiService(
+                resolve_project(
+                    explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}
+                )
+            )
             with self.assertRaises(RevisionConflict):
                 service.start({"mode": "solo", "objective": "missing identity"})
 
@@ -129,8 +139,12 @@ class SecurityAuditRegressionTests(unittest.TestCase):
             lifecycle = RunLifecycle(
                 context, runtime_env={"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")}
             )
-            first = lifecycle.start(mode="solo", objective="first", acceptance_ids=("AC-1",))
-            second = lifecycle.start(mode="solo", objective="second", acceptance_ids=("AC-2",))
+            first = lifecycle.start(
+                mode="solo", objective="first", acceptance_ids=("AC-1",)
+            )
+            second = lifecycle.start(
+                mode="solo", objective="second", acceptance_ids=("AC-2",)
+            )
             with lifecycle.checkout_mutation(first["run_id"]):
                 with self.assertRaises(StateError):
                     with lifecycle.checkout_mutation(second["run_id"]):

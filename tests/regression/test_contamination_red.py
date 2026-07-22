@@ -26,12 +26,13 @@ class ProjectContaminationRegressionTests(unittest.TestCase):
                 project_b = base / "project-b"
                 for project in (project_a, project_b):
                     project.mkdir()
-                    subprocess.run(
-                        ["git", "init", "-q"], cwd=project, check=True
-                    )
-                with mock.patch.dict(
-                    os.environ, {"AIFLOW_PROJECT_ROOT": str(project_a)}, clear=False
-                ), mock.patch.object(Path, "cwd", return_value=project_b):
+                    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+                with (
+                    mock.patch.dict(
+                        os.environ, {"AIFLOW_PROJECT_ROOT": str(project_a)}, clear=False
+                    ),
+                    mock.patch.object(Path, "cwd", return_value=project_b),
+                ):
                     with mock.patch.object(module.subprocess, "run") as run:
                         run.return_value = subprocess.CompletedProcess(
                             [], 0, stdout=f"{project_b}\n", stderr=""
@@ -52,8 +53,12 @@ class ProjectContaminationRegressionTests(unittest.TestCase):
         findings: list[str] = []
         for path in targets:
             text = path.read_text(encoding="utf-8")
-            findings.extend(f"{path.name}: {token}" for token in forbidden if token in text)
-        self.assertEqual(findings, [], "generic-core contamination: " + ", ".join(findings))
+            findings.extend(
+                f"{path.name}: {token}" for token in forbidden if token in text
+            )
+        self.assertEqual(
+            findings, [], "generic-core contamination: " + ", ".join(findings)
+        )
 
 
 if __name__ == "__main__":

@@ -12,14 +12,18 @@ ROOT = Path(__file__).resolve().parents[2]
 class BackendDefaultRegressionTests(unittest.TestCase):
     def test_codex_is_recommended_for_every_core_role(self) -> None:
         config = json.loads(
-            (ROOT / "agent_wrappers" / "codex" / "wrapper.json").read_text(encoding="utf-8")
+            (ROOT / "agent_wrappers" / "codex" / "wrapper.json").read_text(
+                encoding="utf-8"
+            )
         )
         roles = {"worker", "reviewer", "supervisor", "modulator", "chat"}
         self.assertTrue(roles.issubset(set(config["recommended_roles"])))
 
     def test_active_defaults_use_role_appropriate_gpt_5_6_tiers(self) -> None:
         config = json.loads(
-            (ROOT / "agent_wrappers" / "codex" / "wrapper.json").read_text(encoding="utf-8")
+            (ROOT / "agent_wrappers" / "codex" / "wrapper.json").read_text(
+                encoding="utf-8"
+            )
         )
         expected = {
             "worker": "gpt-5.6-sol",
@@ -65,7 +69,9 @@ class BackendDefaultRegressionTests(unittest.TestCase):
             if default_cursor.search(text):
                 failures.append(f"{path.relative_to(ROOT)} still defaults to Cursor")
             if "gpt-5.6-" not in text:
-                failures.append(f"{path.relative_to(ROOT)} has no current role model default")
+                failures.append(
+                    f"{path.relative_to(ROOT)} has no current role model default"
+                )
         self.assertEqual(failures, [])
 
 

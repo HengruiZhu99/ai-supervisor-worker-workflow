@@ -37,7 +37,9 @@ class StateGuiAuditRegressionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
             init_project(root)
-            context = resolve_project(explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "registry")})
+            context = resolve_project(
+                explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "registry")}
+            )
             store = RunStore.create(
                 context,
                 mode="solo",
@@ -66,7 +68,10 @@ class StateGuiAuditRegressionTests(unittest.TestCase):
             root = Path(tmp) / "project"
             init_project(root)
             store = RunStore.create(
-                resolve_project(explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "registry")}),
+                resolve_project(
+                    explicit_root=root,
+                    env={"XDG_STATE_HOME": str(Path(tmp) / "registry")},
+                ),
                 mode="solo",
                 run_id="heartbeat",
                 runtime_env={"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")},
@@ -81,7 +86,10 @@ class StateGuiAuditRegressionTests(unittest.TestCase):
             root = Path(tmp) / "project"
             init_project(root)
             store = RunStore.create(
-                resolve_project(explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "registry")}),
+                resolve_project(
+                    explicit_root=root,
+                    env={"XDG_STATE_HOME": str(Path(tmp) / "registry")},
+                ),
                 mode="solo",
                 run_id="permissions",
                 runtime_env={"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")},
@@ -101,12 +109,16 @@ class StateGuiAuditRegressionTests(unittest.TestCase):
             for path in sorted((ROOT / "frontend" / "src").glob("*.ts*"))
         )
         self.assertIn("scheduleFallbackPoll", source)
-        self.assertIn('tabIndex={-1}', source)
+        self.assertIn("tabIndex={-1}", source)
         self.assertIn("worktree", source)
 
-    def test_gui_does_not_print_mutation_token_and_e2e_uses_disposable_projects(self) -> None:
+    def test_gui_does_not_print_mutation_token_and_e2e_uses_disposable_projects(
+        self,
+    ) -> None:
         web = (ROOT / "src" / "aiflow" / "cli" / "web.py").read_text(encoding="utf-8")
-        config = (ROOT / "frontend" / "playwright.config.ts").read_text(encoding="utf-8")
+        config = (ROOT / "frontend" / "playwright.config.ts").read_text(
+            encoding="utf-8"
+        )
         self.assertNotIn(
             'print(json.dumps({"checkout_id": context.checkout_id, "mutation_token": token}',
             web,
@@ -127,11 +139,15 @@ class StateGuiAuditRegressionTests(unittest.TestCase):
                 {"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")},
                 clear=False,
             ):
-                path = _write_endpoint_metadata(context, url="http://127.0.0.1:1/", token="secret")
+                path = _write_endpoint_metadata(
+                    context, url="http://127.0.0.1:1/", token="secret"
+                )
                 self.assertEqual(path, endpoint_metadata_path(context))
                 self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
-                self.assertEqual(json.loads(path.read_text())["mutation_token"], "secret")
+                self.assertEqual(
+                    json.loads(path.read_text())["mutation_token"], "secret"
+                )
 
 
 if __name__ == "__main__":
