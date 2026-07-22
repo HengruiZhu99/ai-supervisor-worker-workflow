@@ -3,11 +3,14 @@ from __future__ import annotations
 import ast
 import json
 import os
+import subprocess
 import tempfile
 import tomllib
 from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
+
+from aiflow.quality.architecture import cycle_errors, dependencies, layer_errors, module_name
 
 
 DEFAULTS = {
@@ -227,6 +230,10 @@ class QualityChecker:
                 errors.append(
                     f"expired deprecation: {entry['id']} deadline was {deadline.isoformat()}"
                 )
+            for test in entry["compat_tests"]:
+                relative = str(test)
+                if not (self.root / relative).is_file():
+                    errors.append(f"compatibility test missing: {entry['id']} -> {relative}")
             observed = self._deprecation_usage(str(entry["symbol_or_path"]))
             declared = int(entry["remaining_call_sites"])
             if observed != declared:
@@ -255,22 +262,127 @@ class QualityChecker:
 
     def _architecture(self, files: dict[str, Any]) -> list[str]:
         errors: list[str] = []
+        graph: dict[str, set[str]] = {}
+        authorities: dict[str, list[str]] = {}
         for relative, metric in files.items():
             if not relative.endswith(".py"):
                 continue
+            errors.extend(self._inspect_architecture_file(relative, metric, graph, authorities))
+        errors.extend(cycle_errors(graph))
+        for name, paths in authorities.items():
+            if len(paths) > 1:
+                errors.append(f"duplicate class authority {name}: {', '.join(sorted(paths))}")
+        return errors
+
+    def _inspect_architecture_file(
+        self,
+        relative: str,
+        metric: dict[str, Any],
+        graph: dict[str, set[str]],
+        authorities: dict[str, list[str]],
+    ) -> list[str]:
+        _, tree = python_metrics(self.root / relative)
+        if tree is None:
+            return []
+        errors: list[str] = []
+        core = relative.startswith("src/aiflow/") and "/compat/" not in f"/{relative}"
+        if core and imports_compat(tree):
+            errors.append(f"core import of compat: {relative}")
+        if tiny_forwarder(relative, metric, tree):
+            errors.append(f"tiny forwarder cannot game architecture limits: {relative}")
+        if not core:
+            return errors
+        module = module_name(relative)
+        graph[module] = dependencies(tree)
+        errors.extend(layer_errors(relative, module, graph[module]))
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and not node.name.endswith("Error"):
+                authorities.setdefault(node.name, []).append(relative)
+        return errors
+
+    def _diff_errors(self) -> list[str]:
+        if not (self.root / ".git").exists():
+            return []
+        base = os.environ.get("AIFLOW_DIFF_BASE", "HEAD")
+        verified = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "--verify", base],
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+        if verified.returncode and base == "HEAD":
+            return []
+        if verified.returncode:
+            return [f"cannot measure source diff from {base}"]
+        result = subprocess.run(
+            ["git", "-C", str(self.root), "diff", "--numstat", base],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode:
+            return [f"cannot measure source diff from {base}"]
+        rows = self._source_diff_rows(result.stdout)
+        rows.extend(self._untracked_source_rows())
+        return self._diff_budget_errors(rows)
+
+    def _untracked_source_rows(self) -> list[tuple[int, int, str]]:
+        result = subprocess.run(
+            ["git", "-C", str(self.root), "ls-files", "--others", "--exclude-standard", "-z"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode:
+            return []
+        rows: list[tuple[int, int, str]] = []
+        for relative in result.stdout.split("\0"):
             path = self.root / relative
-            _, tree = python_metrics(path)
-            core = relative.startswith("src/aiflow/") and "/compat/" not in f"/{relative}"
-            if tree is not None and core and imports_compat(tree):
-                errors.append(f"core import of compat: {relative}")
-            if tree is not None and tiny_forwarder(relative, metric, tree):
-                errors.append(f"tiny forwarder cannot game architecture limits: {relative}")
+            if relative and path.is_file() and path.suffix.lower() in SOURCE_SUFFIXES:
+                rows.append((logical_lines(path), 0, relative))
+        return rows
+
+    @staticmethod
+    def _source_diff_rows(output: str) -> list[tuple[int, int, str]]:
+        source_rows: list[tuple[int, int, str]] = []
+        for line in output.splitlines():
+            parts = line.split("\t", 2)
+            if len(parts) != 3:
+                continue
+            added, removed, path = parts
+            if path and Path(path).suffix.lower() in SOURCE_SUFFIXES and added.isdigit() and removed.isdigit():
+                source_rows.append((int(added), int(removed), path))
+        return source_rows
+
+    def _diff_budget_errors(self, source_rows: list[tuple[int, int, str]]) -> list[str]:
+        config = self.policy["raw"].get("diff", {})
+        soft_files = int(config.get("soft_source_files", 8))
+        soft_lines = int(config.get("soft_logical_lines", 500))
+        multiplier = float(config.get("hard_multiplier", 2.0))
+        files, lines = len(source_rows), sum(add + remove for add, remove, _ in source_rows)
+        errors = []
+        if files > soft_files * multiplier or lines > soft_lines * multiplier:
+            errors.append(f"diff hard budget exceeded: {files} files, {lines} changed lines")
+        note = self.root / "docs" / "architecture-impact.md"
+        if (files > soft_files or lines > soft_lines) and not note.is_file():
+            errors.append("soft diff budget requires docs/architecture-impact.md")
         return errors
 
     def check(self) -> dict[str, Any]:
         files = self._measure()
         previous = self._baseline().get("files", {})
-        errors = self._exceptions() + self._deprecations() + self._architecture(files)
+        errors = (
+            self._exceptions()
+            + self._deprecations()
+            + self._architecture(files)
+            + self._diff_errors()
+        )
         for relative, metric in files.items():
             old = previous.get(relative, {}) if isinstance(previous, dict) else {}
             errors.extend(self._file_errors(relative, metric, old))

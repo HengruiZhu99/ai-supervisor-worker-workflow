@@ -22,6 +22,25 @@ def git(root: Path, *args: str) -> str:
 
 
 class QualityIntegrationAuditRegressionTests(unittest.TestCase):
+    def test_untracked_source_is_included_in_diff_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            git(root, "init", "-q")
+            git(root, "config", "user.email", "audit@example.invalid")
+            git(root, "config", "user.name", "Audit")
+            (root / ".aiflow").mkdir()
+            (root / ".aiflow" / "quality.toml").write_text(
+                "[diff]\nsoft_source_files=1\nsoft_logical_lines=1\nhard_multiplier=1\n",
+                encoding="utf-8",
+            )
+            (root / "seed.txt").write_text("seed\n", encoding="utf-8")
+            git(root, "add", ".")
+            git(root, "commit", "-qm", "seed")
+            (root / "new_source.py").write_text("one = 1\ntwo = 2\n", encoding="utf-8")
+            result = QualityChecker(root).check()
+            self.assertFalse(result["ok"])
+            self.assertTrue(any("diff hard budget" in error for error in result["errors"]))
+
     def test_layer_violation_and_dependency_cycle_fail_quality(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
