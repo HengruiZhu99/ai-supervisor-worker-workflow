@@ -1,0 +1,20 @@
+{
+  "name": "aiflow-gui",
+  "private": true,
+  "version": "0.4.0-dev",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.tsx --bundle --minify --outfile=../src/aiflow/api/static/app.js",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.10",
+    "@types/react-dom": "19.2.3",
+    "esbuild": "0.28.1",
+    "typescript": "7.0.2"
+  }
+}

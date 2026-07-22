@@ -16,10 +16,15 @@ from aiflow.skills.installer import InstallError, ProjectInstaller
 from aiflow.skills.manager import SkillCollision, SkillManager, SkillValidationError
 from aiflow.state.lifecycle import RunLifecycle
 from aiflow.state.store import StateError
+from aiflow.cli.web import gui_command, hub_command
+from aiflow.cli.release import package_command
+
+
+DISTRIBUTION_ROOT_OVERRIDE: Path | None = None
 
 
 def distribution_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return DISTRIBUTION_ROOT_OVERRIDE or Path(__file__).resolve().parents[3]
 
 
 def _root(value: str) -> Path:
@@ -228,6 +233,31 @@ def _add_budgets(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-agent-calls", type=int, default=50)
 
 
+def _add_web_commands(commands: argparse._SubParsersAction) -> None:
+    for name, command, default_port in (("gui", gui_command, 8765), ("hub", hub_command, 8766)):
+        help_text = "serve the project UI" if name == "gui" else "serve the read-only project hub"
+        web = commands.add_parser(name, help=help_text)
+        web.add_argument("--host", default="127.0.0.1")
+        web.add_argument("--port", type=int, default=default_port)
+        web.add_argument("--allow-remote", action="store_true")
+        web.add_argument("--no-open", action="store_true")
+        web.add_argument("--check", action="store_true")
+        if name == "hub":
+            web.add_argument("--project", action="append", default=[])
+        web.set_defaults(func=command)
+
+
+def _add_package_commands(commands: argparse._SubParsersAction) -> None:
+    package = commands.add_parser("package", help="build or verify an offline zipapp")
+    actions = package.add_subparsers(dest="package_action", required=True)
+    build = actions.add_parser("build")
+    build.add_argument("--distribution-root", default=str(distribution_root()))
+    build.add_argument("--output-dir", default="dist")
+    verify = actions.add_parser("verify")
+    verify.add_argument("artifact")
+    package.set_defaults(func=package_command)
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="aiflow")
     result.add_argument("--version", action="version", version=__version__)
@@ -320,6 +350,10 @@ def parser() -> argparse.ArgumentParser:
     integrate.add_argument("--base-sha", default="")
     integrate.add_argument("--method", choices=("merge", "cherry-pick"), default="merge")
     integrate.set_defaults(func=integrate_command)
+
+    _add_web_commands(commands)
+
+    _add_package_commands(commands)
     return result
 
 

@@ -52,7 +52,7 @@ removal_version = "0.6.0"
 removal_deadline = "2027-01-31"
 owner = "workflow-maintainers"
 compat_tests = ["tests/regression/test_finite_execution_red.py"]
-remaining_call_sites = 3
+remaining_call_sites = 1
 
 [[deprecation]]
 id = "legacy-supervisor-loop"
@@ -63,7 +63,7 @@ removal_version = "0.6.0"
 removal_deadline = "2027-01-31"
 owner = "workflow-maintainers"
 compat_tests = ["tests/regression/test_finite_execution_red.py"]
-remaining_call_sites = 3
+remaining_call_sites = 1
 
 [[deprecation]]
 id = "legacy-modulator-loop"
@@ -74,7 +74,7 @@ removal_version = "0.6.0"
 removal_deadline = "2027-01-31"
 owner = "workflow-maintainers"
 compat_tests = ["tests/regression/test_finite_execution_red.py"]
-remaining_call_sites = 3
+remaining_call_sites = 1
 
 [[deprecation]]
 id = "legacy-integrator"
@@ -85,5 +85,27 @@ removal_version = "0.6.0"
 removal_deadline = "2027-01-31"
 owner = "workflow-maintainers"
 compat_tests = ["tests/regression/test_integration_red.py"]
-remaining_call_sites = 1
+remaining_call_sites = 0
+
+[[deprecation]]
+id = "legacy-workflow-gui"
+symbol_or_path = "scripts/workflow_gui.py"
+replacement = "aiflow gui"
+introduced_version = "0.4.0"
+removal_version = "0.6.0"
+removal_deadline = "2027-01-31"
+owner = "workflow-maintainers"
+compat_tests = ["tests/integration/test_api_project_isolation.py"]
+remaining_call_sites = 0
+
+[[deprecation]]
+id = "legacy-copy-installer"
+symbol_or_path = "install.sh"
+replacement = "aiflow project init --profile <profile>"
+introduced_version = "0.4.0"
+removal_version = "0.6.0"
+removal_deadline = "2027-01-31"
+owner = "workflow-maintainers"
+compat_tests = ["tests/integration/test_legacy_installer.py"]
+remaining_call_sites = 0
 """

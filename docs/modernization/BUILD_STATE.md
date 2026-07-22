@@ -2,8 +2,8 @@
 
 ## Current checkpoint
 
-- Phase: `P9-P10`
-- State: `P6_P8_ACCEPTED_LOCALLY`
+- Phase: `P11`
+- State: `P9_P10_ACCEPTED_LOCALLY`
 - Branch: `codex/aiflow-v2-lightweight-multiproject`
 - Base: `e9311a932dc2d5bab57c2cfd7ed734b8e1ca5466`
 - Active acceptance target: modular project-isolated API/SSE and Solo-first static UI,
@@ -13,9 +13,10 @@
   `AC-PROGRESS-001`, `AC-PROGRESS-002`, `AC-PROGRESS-003`, `AC-PERM-002`,
   `AC-BACKEND-002`, `AC-ID-005`, `AC-STATE-002`, `AC-SOLO-001`, `AC-SOLO-003`,
   `AC-AUTO-001`, `AC-EXEC-001`, `AC-EXEC-002`, `AC-QUALITY-001`, `AC-DEPR-001`,
-  `AC-INTEGRATE-001`
-- Next action: write API/UI isolation, security, SSE replay, accessibility, and
-  scheduler fixture tests before replacing the legacy GUI.
+  `AC-INTEGRATE-001`, `AC-STATE-003`, `AC-MIGRATE-001`, `AC-GUI-001`, `AC-GUI-002`,
+  `AC-HPC-001`, `AC-HANDOFF-001`
+- Next action: complete the deterministic acceptance scenario matrix, CI, operator
+  documentation, archive/secret audit, and release evidence without publication.
 
 ## Immutable inputs
 

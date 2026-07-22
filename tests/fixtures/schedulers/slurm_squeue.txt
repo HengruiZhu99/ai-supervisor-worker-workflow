@@ -1,0 +1,2 @@
+901|RUNNING|gpu|00:03:12|node01|train
+902|PENDING|gpu|00:00:00|(Priority)|sweep

@@ -127,6 +127,19 @@ class LifecycleCliTests(unittest.TestCase):
             allowed = run_cli(project, *base, "--parent-sandbox", "workspace-write")
             self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
+    def test_gui_and_read_only_hub_have_nonblocking_validation_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            project.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+            self.assertEqual(run_cli(project, "project", "init", "--profile", "solo").returncode, 0)
+            gui = run_cli(project, "gui", "--check")
+            self.assertEqual(gui.returncode, 0, gui.stderr)
+            self.assertTrue(json.loads(gui.stdout)["ok"])
+            hub = run_cli(project, "hub", "--check", "--project", str(project))
+            self.assertEqual(hub.returncode, 0, hub.stderr)
+            self.assertTrue(json.loads(hub.stdout)["read_only"])
+
 
 if __name__ == "__main__":
     unittest.main()

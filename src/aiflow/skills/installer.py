@@ -141,6 +141,20 @@ class ProjectInstaller:
             else "schema_version = 1\n"
         )
         desired[".aiflow/deprecations.toml"] = deprecations.encode()
+        if profile in {"hpc", "full"}:
+            desired[".aiflow/site.toml"] = (
+                "schema_version = 1\n\n"
+                "[scheduler]\n"
+                'kind = "auto"\n'
+                "monitor_read_only = true\n"
+                "min_poll_seconds = 5\n\n"
+                "[environment]\n"
+                'setup_script = ""\n'
+                'modules = []\n\n'
+                "[storage]\n"
+                'scratch_root = ""\n'
+                'persistent_root = ""\n'
+            ).encode()
         for skill_name in profile_skills(profile):
             source = self.skill_source / skill_name
             if not (source / "SKILL.md").is_file():

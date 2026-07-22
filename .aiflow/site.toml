@@ -1,0 +1,14 @@
+schema_version = 1
+
+[scheduler]
+kind = "auto"
+monitor_read_only = true
+min_poll_seconds = 5
+
+[environment]
+setup_script = ""
+modules = []
+
+[storage]
+scratch_root = ""
+persistent_root = ""

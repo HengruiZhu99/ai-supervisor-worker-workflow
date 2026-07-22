@@ -10,6 +10,7 @@ __pycache__/
 .ai/runtime/
 .aiflow/backups/
 .aiflow/.transactions/
+frontend/node_modules/
 .ai/supervisor_runs/*.log
 .ai/supervisor_runs/*.pid
 .ai/supervisor_runs/*.answer.md
