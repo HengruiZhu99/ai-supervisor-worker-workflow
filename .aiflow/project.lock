@@ -57,7 +57,7 @@
     ".agents/skills/verification-before-completion/agents/openai.yaml": "3c3d4c85e0eaf64ebaa9372e679745b1ad29eeb5d4e3f3bbf231031185b9b1d5",
     ".aiflow/deprecations.toml": "bb32d88b0bef469e39f8ffacff1baa024a25663f489ae7eb44a83f3f6c0e5492",
     ".aiflow/handoffs/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    ".aiflow/project.toml": "aaf32d328c9904b79b95450e8392ad97c116b01816037833fb7840484ef16ae2",
+    ".aiflow/project.toml": "7647ba2a76a265171119da02c24b55401c79a1590cb0f06f5c0a8acac18bf106",
     ".aiflow/quality.toml": "8dddf7237f983b27518ad286776bb6f9dd970ed000d508f616dce47e97b16a8a",
     ".aiflow/site.toml": "49e3626e3ba4216dbc9a28fdbf2479655c66a8634fecb978b9a261cd73be84de",
     ".codex/agents/codebase-mapper.toml": "c9e239cf7e42909d41417584ddbdb900cef72bb0f5c591d72333b2733cc263a0",

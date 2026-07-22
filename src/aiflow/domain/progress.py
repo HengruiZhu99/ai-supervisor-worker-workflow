@@ -176,6 +176,12 @@ class ProgressPolicy:
     def _ready(self, item: Task) -> bool:
         return item.status == "READY" and set(item.dependencies) <= self._accepted
 
+    def task(self, task_id: str) -> Task:
+        try:
+            return self._tasks[task_id]
+        except KeyError as exc:
+            raise TaskContractError(f"unknown task: {task_id}") from exc
+
     def next_task(self) -> Task:
         if self._replan_pending:
             raise ProgressBlocked("NO_ACCEPTANCE_DELTA requires a controller replan")
@@ -306,6 +312,10 @@ class ProgressPolicy:
             )
         self._replan_pending = False
         self._no_delta = 0
+
+    @property
+    def needs_replan(self) -> bool:
+        return self._replan_pending
 
     def report(self) -> dict[str, Any]:
         ready = sorted(

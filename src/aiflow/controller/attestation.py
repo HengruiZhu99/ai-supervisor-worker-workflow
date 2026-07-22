@@ -149,6 +149,7 @@ def attest_preconditions(
     timeout: float,
     injected: Mapping[str, str],
 ) -> list[dict[str, Any]]:
+    before = workspace_snapshot(root)
     configured = _commands(task.get("pre_commands", []))
     if not configured:
         raise AttestationError(
@@ -158,6 +159,10 @@ def attest_preconditions(
         _run_command(root.resolve(), command, timeout=timeout, injected=injected)
         for command in configured
     ]
+    if changed_paths(before, workspace_snapshot(root)):
+        raise AttestationError(
+            "pre-change commands must not mutate tracked or nonignored workspace files"
+        )
     kind = str(task.get("kind", "feature"))
     passing_baseline = kind in {"refactor", "performance", "portability"}
     if passing_baseline and any(item["exit_code"] != 0 for item in results):
@@ -197,6 +202,22 @@ def _controller_cycle(
     post_results: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     kind = str(task.get("kind", "feature"))
+    passing_baseline = kind in {"refactor", "performance", "portability"}
+    eligible = [
+        item for item in pre_results if passing_baseline or int(item["exit_code"]) != 0
+    ]
+    linked = next(
+        (
+            item
+            for item in eligible
+            if any(post["command"] == item["command"] for post in post_results)
+        ),
+        None,
+    )
+    if linked is None:
+        raise AttestationError(
+            "pre-change evidence must rerun the same causal command after the change"
+        )
     attempt = int(task.get("attempts", 0)) + 1
     cycle: dict[str, Any] = {
         "green": {"exit_code": int(post_results[0]["exit_code"]), "attested": True},
@@ -207,27 +228,23 @@ def _controller_cycle(
         "attempts": attempt,
         "questions": 0,
     }
-    first_failure = next(
-        (item for item in pre_results if int(item["exit_code"]) != 0),
-        pre_results[0],
-    )
     if kind in {"feature", "bug"}:
         cycle["red"] = {
-            "exit_code": int(first_failure["exit_code"]),
+            "exit_code": int(linked["exit_code"]),
             "discriminating": True,
             "attested": True,
         }
         cycle["observable" if kind == "feature" else "reproduction"] = expected
     elif kind == "refactor":
         cycle["characterization"] = {
-            "exit_code": int(pre_results[0]["exit_code"]),
+            "exit_code": int(linked["exit_code"]),
             "discriminating": True,
             "attested": True,
         }
         cycle["behavior_equivalent"] = True
     elif kind == "test":
         cycle["negative_control"] = {
-            "exit_code": int(first_failure["exit_code"]),
+            "exit_code": int(linked["exit_code"]),
             "discriminating": True,
             "attested": True,
         }

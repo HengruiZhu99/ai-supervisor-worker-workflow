@@ -166,7 +166,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
             root = Path(tmp) / "project"
             init_project(root, commit=True)
             context = context_for(root, tmp)
-            command = [sys.executable, "-c", "pass"]
+            command = missing_artifact("feature.txt")
             started = RunLifecycle(context, runtime_env=runtime(tmp)).start(
                 mode="solo",
                 objective="must close acceptance",
@@ -177,7 +177,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "must close acceptance",
                         "kind": "feature",
                         "acceptance_ids": ["AC-OPEN"],
-                        "pre_commands": [missing_artifact("feature.txt")],
+                        "pre_commands": [command],
                         "commands": [command],
                         "allowed_scope": ["feature.txt"],
                     },
@@ -207,7 +207,10 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
             root = Path(tmp) / "project"
             init_project(root, commit=True)
             context = context_for(root, tmp)
-            command = [sys.executable, "-c", "pass"]
+            commands = {
+                task_id: missing_artifact(f"{task_id}.txt")
+                for task_id in ("T0001", "T0002")
+            }
             lifecycle = RunLifecycle(context, runtime_env=runtime(tmp))
             started = lifecycle.start(
                 mode="orchestrated",
@@ -218,8 +221,8 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "first",
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
-                        "pre_commands": [missing_artifact("T0001.txt")],
-                        "commands": [command],
+                        "pre_commands": [commands["T0001"]],
+                        "commands": [commands["T0001"]],
                         "allowed_scope": ["T0001.txt"],
                     },
                     {
@@ -228,14 +231,14 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "kind": "feature",
                         "acceptance_ids": ["AC-2"],
                         "dependencies": ["T0001"],
-                        "pre_commands": [missing_artifact("T0002.txt")],
-                        "commands": [command],
+                        "pre_commands": [commands["T0002"]],
+                        "commands": [commands["T0002"]],
                         "allowed_scope": ["T0002.txt"],
                     },
                 ),
             )
 
-            backend = OrchestratedBackend(root, command)
+            backend = OrchestratedBackend(root, commands["T0001"])
             resumed = RunLifecycle(
                 context, runtime_env=runtime(tmp), agent_backend=backend
             )
@@ -295,7 +298,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
             root = Path(tmp) / "project"
             init_project(root)
             context = context_for(root, tmp)
-            command = [sys.executable, "-c", "pass"]
+            command = missing_artifact("long.txt")
             started = RunLifecycle(context, runtime_env=runtime(tmp)).start(
                 mode="solo",
                 objective="long task",
@@ -306,7 +309,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "long task",
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
-                        "pre_commands": [missing_artifact("long.txt")],
+                        "pre_commands": [command],
                         "commands": [command],
                         "allowed_scope": ["long.txt"],
                     },
@@ -352,7 +355,7 @@ class FinalExecutionAuditRegressionTests(unittest.TestCase):
                         "risk": "normal",
                         "acceptance_ids": ["AC-ORCH"],
                         "allowed_scope": ["src/orchestrated.txt"],
-                        "pre_commands": [missing_artifact("src/orchestrated.txt")],
+                        "pre_commands": [command],
                         "commands": [command],
                         "expected_diff_budget": 1,
                     },

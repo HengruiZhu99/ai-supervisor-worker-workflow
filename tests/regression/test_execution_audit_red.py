@@ -212,7 +212,7 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                 explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}
             )
             environment = {"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")}
-            command = [sys.executable, "-c", "pass"]
+            command = missing_artifact("src/feature.cpp")
             started = RunLifecycle(context, runtime_env=environment).start(
                 mode="solo",
                 objective="bounded feature",
@@ -223,7 +223,7 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "bounded feature",
                         "kind": "feature",
                         "acceptance_ids": ["AC-FEATURE-1"],
-                        "pre_commands": [missing_artifact("src/feature.cpp")],
+                        "pre_commands": [command],
                         "commands": [command],
                         "allowed_scope": ["src/feature.cpp"],
                     },
@@ -269,7 +269,10 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                 explicit_root=root, env={"XDG_STATE_HOME": str(Path(tmp) / "state")}
             )
             environment = {"XDG_RUNTIME_DIR": str(Path(tmp) / "runtime")}
-            command = [sys.executable, "-c", "pass"]
+            commands = {
+                task_id: missing_artifact(f"{task_id}.txt")
+                for task_id in ("T0001", "T0002")
+            }
             lifecycle = RunLifecycle(context, runtime_env=environment)
             started = lifecycle.start(
                 mode="orchestrated",
@@ -280,8 +283,8 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                         "objective": "first",
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
-                        "pre_commands": [missing_artifact("T0001.txt")],
-                        "commands": [command],
+                        "pre_commands": [commands["T0001"]],
+                        "commands": [commands["T0001"]],
                         "allowed_scope": ["T0001.txt"],
                     },
                     {
@@ -290,8 +293,8 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                         "kind": "feature",
                         "acceptance_ids": ["AC-2"],
                         "dependencies": ["T0001"],
-                        "pre_commands": [missing_artifact("T0002.txt")],
-                        "commands": [command],
+                        "pre_commands": [commands["T0002"]],
+                        "commands": [commands["T0002"]],
                         "allowed_scope": ["T0002.txt"],
                     },
                 ),
@@ -299,6 +302,7 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
 
             def execute(capsule):
                 task_id = str(capsule["task_id"])
+                command = commands[task_id]
                 worktree = Path(str(capsule["working_directory"]))
                 (worktree / f"{task_id}.txt").write_text("done\n", encoding="utf-8")
                 return child_result(

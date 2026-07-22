@@ -297,7 +297,7 @@ def _add_run_commands(commands: argparse._SubParsersAction) -> None:
     start.add_argument(
         "--task-file",
         default="",
-        help="JSON task DAG for orchestrated programs (tasks array, maximum 100)",
+        help="JSON executable task contract (one Solo task or up to 100 orchestrated tasks)",
     )
     start.add_argument(
         "--task-kind",

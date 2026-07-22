@@ -5,6 +5,7 @@ profile = "full"
 
 [commands]
 build = []
+test_red = []
 test_focused = []
 test_regression = []
 

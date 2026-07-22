@@ -21,6 +21,7 @@ from aiflow.state.store import RunStore
 
 InvokeAgent = Callable[[dict[str, Any]], Mapping[str, Any]]
 ValidateAcceptance = Callable[[Mapping[str, Any]], None]
+StageIntegration = Callable[[Mapping[str, Any], str, str], Mapping[str, str]]
 
 
 class OrchestratedTaskRunner:
@@ -33,11 +34,13 @@ class OrchestratedTaskRunner:
         invoke: InvokeAgent,
         timeout: float,
         validate_acceptance: ValidateAcceptance,
+        stage_integration: StageIntegration,
     ) -> None:
         self.store = store
         self.invoke = invoke
         self.timeout = timeout
         self.validate_acceptance = validate_acceptance
+        self.stage_integration = stage_integration
 
     @staticmethod
     def _capsule(
@@ -160,6 +163,63 @@ class OrchestratedTaskRunner:
         if not claimed <= expected:
             raise AttestationError("writer acceptance claim escapes the task contract")
 
+    def _stage_candidate(
+        self,
+        result: dict[str, Any],
+        worktree: TaskWorktree,
+        fields: Mapping[str, str],
+        analyses: list[dict[str, Any]],
+        reviews: list[dict[str, Any]],
+        record: Mapping[str, Any],
+    ) -> tuple[str, str]:
+        candidate = worktree.commit(
+            message=f"aiflow: {record['id']} {record['objective']}"
+        )
+        result["writer_worktree_id"] = fields["worktree_id"]
+        result["worktree_id"] = self.store.context.worktree_id
+        result["orchestration"] = {
+            "analyses": analyses,
+            "reviews": reviews,
+            "candidate": candidate,
+            "base_sha": worktree.base_sha,
+            "target_before": "",
+            "target_after": "",
+            "tested_tree": "",
+            "target_tree": "",
+        }
+        worktree.remove()
+        staged = self.stage_integration(result, candidate, worktree.base_sha)
+        return candidate, staged["target_before"]
+
+    def _apply_candidate(
+        self,
+        result: dict[str, Any],
+        record: Mapping[str, Any],
+        candidate: str,
+        base_sha: str,
+        target_before: str,
+    ) -> None:
+        commands = tuple(tuple(command) for command in record.get("commands", []))
+        integrated = IntegrationTransaction(
+            self.store.context.root,
+            gates=GateCommands(focused=commands),
+        ).apply(
+            candidate,
+            method="merge",
+            base_sha=base_sha,
+            expected_head=target_before,
+        )
+        if not integrated.ok:
+            raise AttestationError(f"two-phase integration failed: {integrated.reason}")
+        result["orchestration"].update(
+            {
+                "target_before": integrated.target_before,
+                "target_after": integrated.target_after,
+                "tested_tree": integrated.tested_tree,
+                "target_tree": integrated.target_tree,
+            }
+        )
+
     def execute(
         self, record: Mapping[str, Any], base_capsule: Mapping[str, Any]
     ) -> dict[str, Any]:
@@ -171,13 +231,14 @@ class OrchestratedTaskRunner:
         worktree = TaskWorktree(
             self.store.context,
             self.store.run_id,
-            str(record["id"]),
+            f"{record['id']}-a{int(base_capsule.get('attempt', 1))}",
             self.store.runtime,
         ).create()
         assert worktree.context is not None and worktree.path is not None
         fields = worktree.context.identity_fields(self.store.run_id)
         analyses = self._analyze(base_capsule, fields, worktree.path)
         injected = {f"AIFLOW_{key.upper()}": value for key, value in fields.items()}
+        injected["AIFLOW_TASK_ID"] = str(record["id"])
         pre_results = attest_preconditions(
             worktree.path,
             record,
@@ -226,26 +287,10 @@ class OrchestratedTaskRunner:
         result["cycle_evidence"] = cycle
         self._validate_before_integration(record, result)
         self.validate_acceptance(result)
-        candidate = worktree.commit(
-            message=f"aiflow: {record['id']} {record['objective']}"
+        candidate, target_before = self._stage_candidate(
+            result, worktree, fields, analyses, reviews, record
         )
-        commands = tuple(tuple(command) for command in record.get("commands", []))
-        integrated = IntegrationTransaction(
-            self.store.context.root,
-            gates=GateCommands(focused=commands),
-        ).apply(candidate, method="merge", base_sha=worktree.base_sha)
-        if not integrated.ok:
-            raise AttestationError(f"two-phase integration failed: {integrated.reason}")
-        worktree.remove()
-        result["writer_worktree_id"] = fields["worktree_id"]
-        result["worktree_id"] = self.store.context.worktree_id
-        result["orchestration"] = {
-            "analyses": analyses,
-            "reviews": reviews,
-            "candidate": candidate,
-            "target_before": integrated.target_before,
-            "target_after": integrated.target_after,
-            "tested_tree": integrated.tested_tree,
-            "target_tree": integrated.target_tree,
-        }
+        self._apply_candidate(
+            result, record, candidate, worktree.base_sha, target_before
+        )
         return result

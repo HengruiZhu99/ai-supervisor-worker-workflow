@@ -18,7 +18,13 @@ from aiflow.controller.runner import Budgets, ControllerOutcome, ControllerRunne
 from aiflow.controller.watchdog import DeterministicWatchdog
 from aiflow.domain.evidence import validate_cycle
 from aiflow.controller.tasks import record_to_task
-from aiflow.domain.progress import ProgressPolicy, Task
+from aiflow.domain.progress import ProgressBlocked, ProgressPolicy, Task
+from aiflow.integration.transaction import GateCommands, IntegrationTransaction
+from aiflow.integration.recovery import (
+    candidate_is_integrated,
+    git_head,
+    pending_result,
+)
 from aiflow.state.store import RunStore
 
 
@@ -65,7 +71,17 @@ class TaskExecutionEngine:
         }
         self.policy = ProgressPolicy(
             open_acceptance_ids=open_ids,
-            tasks=[record_to_task(record) for record in self.records],
+            tasks=[
+                record_to_task(
+                    {
+                        **record,
+                        "status": "READY"
+                        if record.get("status") == "INTEGRATION_PENDING"
+                        else record.get("status", "READY"),
+                    }
+                )
+                for record in self.records
+            ],
             state=task_payload.get("progress_state", {}),
         )
         self.closed = {
@@ -75,6 +91,7 @@ class TaskExecutionEngine:
             for value in record.get("acceptance_ids", [])
         }
         self.mode = str(self.store.read_run()["mode"])
+        self._prepared_inbox: Path | None = None
 
     def _record(self, task_id: str) -> dict[str, Any]:
         return next(record for record in self.records if record["id"] == task_id)
@@ -101,6 +118,7 @@ class TaskExecutionEngine:
         record["failure_signature"] = signature
         blocked = record["attempts"] >= self.budgets.max_attempts
         record["status"] = "BLOCKED" if blocked else "READY"
+        record.pop("integration", None)
         self._persist(event_type="task_attempt_failed")
         self.watchdog.observe(
             {
@@ -122,6 +140,16 @@ class TaskExecutionEngine:
 
     def _next_task(self) -> Task | None:
         try:
+            return self.policy.next_task()
+        except ProgressBlocked:
+            if not self.policy.needs_replan:
+                return None
+            ready = bool(self.policy.report()["ready_delivery_validation"])
+            try:
+                self.policy.complete_replan(ready_acceptance_task=ready)
+            except ProgressBlocked:
+                return None
+            self._persist(event_type="progress_replanned")
             return self.policy.next_task()
         except Exception:
             return None
@@ -161,11 +189,23 @@ class TaskExecutionEngine:
                     },
                     evidence=candidate.get("delivery_evidence", {}),
                 ),
+                stage_integration=lambda result, candidate, base_sha: (
+                    self._stage_integration(
+                        task,
+                        record,
+                        int(capsule["attempt"]),
+                        result,
+                        candidate,
+                        base_sha,
+                        identities,
+                    )
+                ),
             ).execute(record, capsule)
         else:
             injected = {
                 f"AIFLOW_{key.upper()}": value for key, value in identities.items()
             }
+            injected["AIFLOW_TASK_ID"] = task.id
             pre_results = attest_preconditions(
                 self.workspace,
                 record,
@@ -186,6 +226,42 @@ class TaskExecutionEngine:
             result = self._cold_review(result, capsule, identities)
         validate_child_result(result, identities=identities, task_id=task.id)
         return result
+
+    def _stage_integration(
+        self,
+        task: Task,
+        record: Mapping[str, Any],
+        attempt: int,
+        result: Mapping[str, Any],
+        candidate: str,
+        base_sha: str,
+        identities: Mapping[str, str],
+    ) -> Mapping[str, str]:
+        validate_child_result(result, identities=identities, task_id=task.id)
+        target_before = git_head(self.workspace)
+        inbox = self.store.write_inbox_result(
+            task_id=task.id,
+            agent_id=f"{self.agent_id}-{attempt}",
+            result=result,
+        )
+        relative = str(inbox.relative_to(self.store.path))
+        mutable = self._record(str(record["id"]))
+        mutable["status"] = "INTEGRATION_PENDING"
+        mutable["evidence"] = sorted(
+            {str(value) for value in mutable.get("evidence", [])} | {relative}
+        )
+        mutable["integration"] = {
+            "candidate": candidate,
+            "base_sha": base_sha,
+            "target_before": target_before,
+            "inbox": relative,
+            "attempt": attempt,
+        }
+        self._persist(
+            event_type="task_integration_prepared", evidence=list(mutable["evidence"])
+        )
+        self._prepared_inbox = inbox
+        return {"target_before": target_before, "inbox": relative}
 
     def _cold_review(
         self,
@@ -254,10 +330,13 @@ class TaskExecutionEngine:
         attempt: int,
         inbox: Path,
         claimed: set[str],
+        result: Mapping[str, Any] | None = None,
     ) -> str:
         record["attempts"] = attempt
         record["failure_signature"] = ""
         record["status"] = "ACCEPTED"
+        if result and isinstance(result.get("orchestration"), Mapping):
+            record["integration"] = dict(result["orchestration"])
         record["evidence"] = sorted(
             {str(value) for value in record.get("evidence", [])}
             | {str(inbox.relative_to(self.store.path))}
@@ -271,7 +350,76 @@ class TaskExecutionEngine:
             else "progress"
         )
 
+    def _recover_pending_integration(self) -> str | None:
+        record = next(
+            (
+                item
+                for item in self.records
+                if item.get("status") == "INTEGRATION_PENDING"
+            ),
+            None,
+        )
+        if record is None:
+            return None
+        try:
+            result, inbox, integration = pending_result(self.store, record)
+            candidate = str(integration.get("candidate", ""))
+            target_before = str(integration.get("target_before", ""))
+            if git_head(self.workspace) == target_before:
+                commands = tuple(
+                    tuple(command) for command in record.get("commands", [])
+                )
+                applied = IntegrationTransaction(
+                    self.workspace, gates=GateCommands(focused=commands)
+                ).apply(
+                    candidate,
+                    method="merge",
+                    base_sha=str(integration.get("base_sha", "")),
+                    expected_head=target_before,
+                )
+                if not applied.ok:
+                    raise AttestationError(
+                        f"pending integration failed: {applied.reason}"
+                    )
+                result.setdefault("orchestration", {}).update(
+                    {
+                        "target_before": applied.target_before,
+                        "target_after": applied.target_after,
+                        "tested_tree": applied.tested_tree,
+                        "target_tree": applied.target_tree,
+                    }
+                )
+            elif not candidate_is_integrated(self.workspace, candidate):
+                raise AttestationError(
+                    "pending integration target is ambiguous and needs reconciliation"
+                )
+            task = self.policy.task(str(record["id"]))
+            identities = self.store.context.identity_fields(self.store.run_id)
+            validate_child_result(result, identities=identities, task_id=task.id)
+            claimed = self._validate_acceptance(task, record, result)
+        except Exception as exc:
+            return self._failure(record, exc)
+        return self._finalize_acceptance(
+            record,
+            attempt=int(integration.get("attempt", 1)),
+            inbox=inbox,
+            claimed=claimed,
+            result=result,
+        )
+
+    def _pending_apply_completed(self, record: Mapping[str, Any]) -> bool:
+        integration = record.get("integration", {})
+        if record.get("status") != "INTEGRATION_PENDING" or not isinstance(
+            integration, Mapping
+        ):
+            return False
+        candidate = str(integration.get("candidate", ""))
+        return bool(candidate and candidate_is_integrated(self.workspace, candidate))
+
     def _step(self) -> str:
+        recovered = self._recover_pending_integration()
+        if recovered is not None:
+            return recovered
         task = self._next_task()
         if task is None:
             return self._terminal_state()
@@ -282,18 +430,25 @@ class TaskExecutionEngine:
         attempt = int(record.get("attempts", 0)) + 1
         capsule = self._capsule(task, record, attempt)
         try:
+            self._prepared_inbox = None
             identities = self.store.context.identity_fields(self.store.run_id)
             result = self._invoke_result(task, record, capsule, identities)
             claimed = self._validate_acceptance(task, record, result)
-            inbox = self.store.write_inbox_result(
+            inbox = self._prepared_inbox or self.store.write_inbox_result(
                 task_id=task.id,
                 agent_id=f"{self.agent_id}-{attempt}",
                 result=result,
             )
         except Exception as exc:
+            if self._pending_apply_completed(record):
+                return "progress"
             return self._failure(record, exc)
         return self._finalize_acceptance(
-            record, attempt=attempt, inbox=inbox, claimed=claimed
+            record,
+            attempt=attempt,
+            inbox=inbox,
+            claimed=claimed,
+            result=result,
         )
 
     def run(self) -> ExecutionResult:

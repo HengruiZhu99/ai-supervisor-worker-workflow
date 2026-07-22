@@ -57,6 +57,7 @@ def project_config(
         f'profile = "{profile}"\n\n'
         "[commands]\n"
         "build = []\n"
+        "test_red = []\n"
         "test_focused = []\n"
         "test_regression = []\n\n"
         "[execution]\n"

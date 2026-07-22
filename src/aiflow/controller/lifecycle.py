@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from aiflow.controller.execution import AgentBackend, TaskExecutionEngine
 from aiflow.controller.runner import Budgets, ControllerRunner
 from aiflow.controller.watchdog import DeterministicWatchdog
-from aiflow.controller.tasks import project_commands, task_records
+from aiflow.controller.tasks import project_commands, project_pre_commands, task_records
 from aiflow.identity.context import ProjectContext
 from aiflow.identity.context import validate_thread_identity
 from aiflow.state.atomic import atomic_write_json, read_json, signed, verify_signed
@@ -138,6 +138,9 @@ class RunLifecycle:
                         "acceptance_ids": list(
                             acceptance_ids or (f"AC-RUN-{store.run_id[:8].upper()}",)
                         ),
+                        "pre_commands": project_pre_commands(
+                            self.context.root, task_kind
+                        ),
                     },
                 ),
                 worktree_id=self.context.worktree_id,
@@ -214,9 +217,12 @@ class RunLifecycle:
                 except Exception as exc:
                     from aiflow.controller.runner import ControllerOutcome
 
-                    store.heartbeat_controller(
-                        controller, ttl_seconds=self.controller_ttl_seconds
-                    )
+                    try:
+                        store.heartbeat_controller(
+                            controller, ttl_seconds=self.controller_ttl_seconds
+                        )
+                    except Exception:
+                        pass
                     outcome = ControllerOutcome.FAILED
                     closed = tuple(current.get("acceptance_ids_closed", []))
                     failure_detail = f"{type(exc).__name__}: {exc}"[:1000]

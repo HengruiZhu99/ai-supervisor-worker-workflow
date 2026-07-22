@@ -151,25 +151,44 @@ class IntegrationTransaction:
                     return f"{label} gate failed", evidence
         return "", evidence
 
-    def _apply_target(self, candidate: str, method: str, base_sha: str) -> bool:
+    def _apply_target(
+        self,
+        candidate: str,
+        method: str,
+        base_sha: str,
+        captured: str,
+        tested_tree: str,
+    ) -> bool:
+        del base_sha
+        parents = ["-p", captured]
         if method == "merge":
-            result = self._git(
-                self.target,
-                "merge",
-                "--no-ff",
-                candidate,
-                "-m",
-                f"integrate {candidate[:12]}",
-            )
-        else:
-            result = self._git(self.target, "cherry-pick", f"{base_sha}..{candidate}")
-        return result.returncode == 0
-
-    def _rollback_failed_apply(self, method: str, captured: str) -> None:
-        operation = "merge" if method == "merge" else "cherry-pick"
-        self._git(self.target, operation, "--abort")
-        if self._head(self.target) != captured:
-            raise RuntimeError("target changed during failed final apply")
+            parents.extend(("-p", candidate))
+        created = self._git(
+            self.target,
+            "-c",
+            "user.name=AIFLOW Controller",
+            "-c",
+            "user.email=aiflow@example.invalid",
+            "commit-tree",
+            tested_tree,
+            *parents,
+            "-m",
+            f"integrate {candidate[:12]}",
+        )
+        integrated = created.stdout.strip()
+        if created.returncode or not integrated:
+            return False
+        symbolic = self._git(self.target, "symbolic-ref", "-q", "HEAD")
+        target_ref = symbolic.stdout.strip() if symbolic.returncode == 0 else "HEAD"
+        updated = self._git(self.target, "update-ref", target_ref, integrated, captured)
+        if updated.returncode:
+            return False
+        refreshed = self._git(self.target, "read-tree", "--reset", "-u", integrated)
+        if refreshed.returncode:
+            self._git(self.target, "update-ref", target_ref, captured, integrated)
+            self._git(self.target, "read-tree", "--reset", "-u", captured)
+            return False
+        return True
 
     def _preserve_untracked(self) -> str:
         result = self._git(
@@ -237,11 +256,17 @@ class IntegrationTransaction:
         evidence: list[str],
     ) -> IntegrationResult:
         try:
-            if not self._apply_target(candidate, method, base_sha):
-                self._rollback_failed_apply(method, captured)
+            if not self._apply_target(
+                candidate, method, base_sha, captured, tested_tree
+            ):
+                reason = (
+                    "target HEAD changed"
+                    if self._head(self.target) != captured
+                    else "final apply failed"
+                )
                 return self._result(
                     False,
-                    "final apply failed",
+                    reason,
                     captured,
                     evidence,
                     tested_tree=tested_tree,
@@ -280,7 +305,12 @@ class IntegrationTransaction:
         )
 
     def apply(
-        self, candidate: str, *, method: str, base_sha: str = ""
+        self,
+        candidate: str,
+        *,
+        method: str,
+        base_sha: str = "",
+        expected_head: str = "",
     ) -> IntegrationResult:
         if not self._valid_ref(candidate):
             return IntegrationResult(False, "invalid candidate ref", "", "")
@@ -299,6 +329,8 @@ class IntegrationTransaction:
                 )
             try:
                 captured = self._head(worktree)
+                if expected_head and captured != expected_head:
+                    return self._result(False, "target HEAD changed", captured)
                 failure, tested_tree, evidence = self._test_candidate(
                     worktree, candidate, method, base_sha, captured
                 )

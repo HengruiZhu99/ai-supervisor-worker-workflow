@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from aiflow.domain.progress import ProgressPolicy, Task, ValueClass
+from aiflow.state.identifiers import SAFE_ID
 
 
 def record_to_task(record: Mapping[str, Any]) -> Task:
@@ -44,19 +45,41 @@ def _command_arrays(value: object) -> list[list[str]]:
 
 
 def project_commands(root: Path) -> list[list[str]]:
+    commands = _project_command_table(root)
+    result: list[list[str]] = []
+    for name in ("build", "test_focused", "test_regression"):
+        result.extend(_command_arrays(commands.get(name, [])))
+    return result
+
+
+def project_pre_commands(root: Path, kind: str) -> list[list[str]]:
+    commands = _project_command_table(root)
+    key = (
+        "test_focused"
+        if kind in {"refactor", "performance", "portability"}
+        else "test_red"
+    )
+    return _command_arrays(commands.get(key, []))
+
+
+def _project_command_table(root: Path) -> Mapping[str, Any]:
     try:
         config = tomllib.loads(
             (root / ".aiflow" / "project.toml").read_text(encoding="utf-8")
         )
     except (FileNotFoundError, OSError, tomllib.TOMLDecodeError):
-        return []
+        return {}
     commands = config.get("commands", {})
     if not isinstance(commands, Mapping):
-        return []
-    result: list[list[str]] = []
-    for name in ("build", "test_focused", "test_regression"):
-        result.extend(_command_arrays(commands.get(name, [])))
-    return result
+        return {}
+    return commands
+
+
+def _safe_task_id(spec: Mapping[str, Any], index: int) -> str:
+    task_id = str(spec.get("id", f"T{index:04d}"))
+    if not SAFE_ID.fullmatch(task_id):
+        raise ValueError(f"unsafe task ID: {task_id!r}")
+    return task_id
 
 
 def task_records(
@@ -70,8 +93,9 @@ def task_records(
         requested_kind = str(spec.get("kind", "feature"))
         kind = "bug" if requested_kind == "bugfix" else requested_kind
         commands = spec.get("commands", defaults)
+        task_id = _safe_task_id(spec, index)
         record = {
-            "id": str(spec.get("id", f"T{index:04d}")),
+            "id": task_id,
             "objective": str(spec.get("objective", "")).strip(),
             "kind": kind,
             "risk": str(

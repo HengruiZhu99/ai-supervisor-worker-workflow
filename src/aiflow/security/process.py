@@ -9,6 +9,33 @@ from typing import Mapping, Sequence
 from aiflow.security.environment import scrub_environment
 
 
+def _signal_group(pid: int, selected: signal.Signals) -> None:
+    try:
+        os.killpg(pid, selected)
+    except ProcessLookupError:
+        pass
+
+
+def _bounded_cleanup(
+    process: subprocess.Popen[str],
+) -> tuple[str, str]:
+    _signal_group(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
+    _signal_group(process.pid, signal.SIGKILL)
+    try:
+        return process.communicate(timeout=2)
+    except subprocess.TimeoutExpired as exc:
+        if process.stdout:
+            process.stdout.close()
+        if process.stderr:
+            process.stderr.close()
+        process.wait(timeout=2)
+        return str(exc.output or ""), str(exc.stderr or "")
+
+
 def run_owned_process(
     command: Sequence[str],
     *,
@@ -35,15 +62,7 @@ def run_owned_process(
     try:
         stdout, stderr = process.communicate(input=input_text, timeout=timeout)
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-            process.wait(timeout=2)
-        except (ProcessLookupError, subprocess.TimeoutExpired):
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        stdout, stderr = process.communicate()
+        stdout, stderr = _bounded_cleanup(process)
         return subprocess.CompletedProcess(list(command), 124, stdout, stderr)
     return subprocess.CompletedProcess(
         list(command), process.returncode, stdout, stderr

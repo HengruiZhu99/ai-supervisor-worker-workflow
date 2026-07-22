@@ -109,7 +109,7 @@ class OrchestratedBackend:
             capsule,
             [str(value) for value in capsule["task"]["acceptance_ids"]],
             artifact=artifact,
-            command=self.command,
+            command=[str(part) for part in capsule["task"]["commands"][0]],
         )
 
     def _review(

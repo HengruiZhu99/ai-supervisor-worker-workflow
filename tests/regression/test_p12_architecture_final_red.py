@@ -84,12 +84,12 @@ class P12ArchitectureFinalRegressionTests(unittest.TestCase):
             init_project(root, commit=True)
             git(root, "checkout", "-qb", "codex/audit-test")
             context = context_for(root, tmp)
-            command = [sys.executable, "-c", "pass"]
             red = [
                 sys.executable,
                 "-c",
                 "from pathlib import Path; assert Path('src/orchestrated.txt').is_file()",
             ]
+            command = red
             started = RunLifecycle(context, runtime_env=runtime(tmp)).start(
                 mode="orchestrated",
                 objective="reviewed isolated change",
@@ -120,7 +120,11 @@ class P12ArchitectureFinalRegressionTests(unittest.TestCase):
             root = Path(tmp) / "project"
             init_project(root, commit=True)
             context = context_for(root, tmp)
-            command = [sys.executable, "-c", "pass"]
+            command = [
+                sys.executable,
+                "-c",
+                "from pathlib import Path; assert Path('T0001.txt').is_file()",
+            ]
             started = RunLifecycle(context, runtime_env=runtime(tmp)).start(
                 mode="orchestrated",
                 objective="review every changed file",
@@ -131,7 +135,7 @@ class P12ArchitectureFinalRegressionTests(unittest.TestCase):
                         "kind": "feature",
                         "acceptance_ids": ["AC-1"],
                         "allowed_scope": ["T0001.txt"],
-                        "pre_commands": [[sys.executable, "-c", "raise SystemExit(1)"]],
+                        "pre_commands": [command],
                         "commands": [command],
                     },
                 ),
