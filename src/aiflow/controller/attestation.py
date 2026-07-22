@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
@@ -40,18 +41,47 @@ def _git_paths(root: Path) -> list[str]:
     return sorted({_relative(value) for value in completed.stdout.split("\0") if value})
 
 
+def _git_index(root: Path) -> dict[str, str]:
+    completed = run_owned_process(
+        ["git", "ls-files", "--stage", "-z"], cwd=root, timeout=30
+    )
+    if completed.returncode:
+        raise AttestationError("cannot inventory task workspace index metadata")
+    entries: dict[str, str] = {}
+    for item in completed.stdout.split("\0"):
+        if not item:
+            continue
+        metadata, separator, path = item.partition("\t")
+        if not separator:
+            raise AttestationError("malformed Git index metadata")
+        entries[_relative(path)] = metadata
+    return entries
+
+
+def _gitlink_head(path: Path) -> str:
+    completed = run_owned_process(["git", "rev-parse", "HEAD"], cwd=path, timeout=10)
+    return completed.stdout.strip() if completed.returncode == 0 else "missing"
+
+
 def workspace_snapshot(root: Path) -> dict[str, str]:
     root = root.resolve()
+    index = _git_index(root)
     snapshot: dict[str, str] = {}
     for relative in _git_paths(root):
         path = root / relative
-        if path.is_symlink():
+        metadata = index.get(relative, "untracked")
+        if metadata.startswith("160000 "):
+            payload = b"gitlink\0" + _gitlink_head(path).encode()
+        elif path.is_symlink():
             payload = b"symlink\0" + os.readlink(path).encode()
         elif path.is_file():
-            payload = b"file\0" + path.read_bytes()
+            mode = stat.S_IMODE(path.stat().st_mode)
+            payload = f"file\0{mode:o}\0".encode() + path.read_bytes()
         else:
             payload = b"missing\0"
-        snapshot[relative] = hashlib.sha256(payload).hexdigest()
+        snapshot[relative] = hashlib.sha256(
+            metadata.encode() + b"\0" + payload
+        ).hexdigest()
     return snapshot
 
 
