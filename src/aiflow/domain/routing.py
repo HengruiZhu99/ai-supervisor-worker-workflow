@@ -9,7 +9,9 @@ class RouteDecision:
     reasons: tuple[str, ...]
 
 
-def recommend_mode(*, task_count: int, milestones: int, independent_writes: int) -> RouteDecision:
+def recommend_mode(
+    *, task_count: int, milestones: int, independent_writes: int
+) -> RouteDecision:
     if min(task_count, milestones, independent_writes) < 0:
         raise ValueError("routing counts cannot be negative")
     reasons = []

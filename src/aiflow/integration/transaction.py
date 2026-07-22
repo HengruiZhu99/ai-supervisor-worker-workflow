@@ -35,8 +35,13 @@ class IntegrationResult:
 
 def run_command(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        args, cwd=cwd, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, check=False, timeout=1800,
+        args,
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=1800,
     )
 
 
@@ -103,17 +108,29 @@ class IntegrationTransaction:
     def _candidate_checks(self, candidate: str, base_sha: str, captured: str) -> str:
         if self._git(self.target, "status", "--porcelain").stdout.strip():
             return "dirty target"
-        if self._git(self.target, "cat-file", "-e", f"{candidate}^{{commit}}").returncode:
-            return "candidate does not exist"
-        if self._git(self.target, "merge-base", "--is-ancestor", candidate, captured).returncode == 0:
-            return "duplicate integration"
-        if base_sha and self._git(
-            self.target, "merge-base", "--is-ancestor", base_sha, candidate
+        if self._git(
+            self.target, "cat-file", "-e", f"{candidate}^{{commit}}"
         ).returncode:
+            return "candidate does not exist"
+        if (
+            self._git(
+                self.target, "merge-base", "--is-ancestor", candidate, captured
+            ).returncode
+            == 0
+        ):
+            return "duplicate integration"
+        if (
+            base_sha
+            and self._git(
+                self.target, "merge-base", "--is-ancestor", base_sha, candidate
+            ).returncode
+        ):
             return "candidate base mismatch"
         return ""
 
-    def _prepare(self, worktree: Path, candidate: str, method: str, base_sha: str) -> str:
+    def _prepare(
+        self, worktree: Path, candidate: str, method: str, base_sha: str
+    ) -> str:
         command: tuple[str, ...]
         if method == "merge":
             command = ("merge", "--no-commit", "--no-ff", candidate)
@@ -139,8 +156,12 @@ class IntegrationTransaction:
     def _apply_target(self, candidate: str, method: str, base_sha: str) -> bool:
         if method == "merge":
             result = self._git(
-                self.target, "merge", "--no-ff", candidate,
-                "-m", f"integrate {candidate[:12]}",
+                self.target,
+                "merge",
+                "--no-ff",
+                candidate,
+                "-m",
+                f"integrate {candidate[:12]}",
             )
         else:
             result = self._git(self.target, "cherry-pick", f"{base_sha}..{candidate}")
@@ -153,12 +174,16 @@ class IntegrationTransaction:
             raise RuntimeError("target changed during failed final apply")
 
     def _preserve_untracked(self) -> str:
-        result = self._git(self.target, "ls-files", "--others", "--exclude-standard", "-z")
+        result = self._git(
+            self.target, "ls-files", "--others", "--exclude-standard", "-z"
+        )
         paths = [value for value in result.stdout.split("\0") if value]
         if not paths:
             return ""
         common = self._git(self.target, "rev-parse", "--git-common-dir").stdout.strip()
-        common_path = Path(common) if Path(common).is_absolute() else self.target / common
+        common_path = (
+            Path(common) if Path(common).is_absolute() else self.target / common
+        )
         recovery = common_path.resolve() / "aiflow" / "recovery" / str(uuid.uuid4())
         for relative in paths:
             source = (self.target / relative).resolve()
@@ -174,10 +199,14 @@ class IntegrationTransaction:
         current = self._head(self.target)
         updated = self._git(self.target, "update-ref", "HEAD", captured, current)
         restored = self._git(self.target, "read-tree", "--reset", "-u", captured)
-        if updated.returncode or restored.returncode or self._git(
-            self.target, "status", "--porcelain"
-        ).stdout.strip():
-            raise RuntimeError("failed integration could not restore the captured target")
+        if (
+            updated.returncode
+            or restored.returncode
+            or self._git(self.target, "status", "--porcelain").stdout.strip()
+        ):
+            raise RuntimeError(
+                "failed integration could not restore the captured target"
+            )
         return recovery
 
     def _test_candidate(
@@ -213,7 +242,11 @@ class IntegrationTransaction:
             if not self._apply_target(candidate, method, base_sha):
                 self._rollback_failed_apply(method, captured)
                 return self._result(
-                    False, "final apply failed", captured, evidence, tested_tree=tested_tree
+                    False,
+                    "final apply failed",
+                    captured,
+                    evidence,
+                    tested_tree=tested_tree,
                 )
             if self.after_apply:
                 self.after_apply()
@@ -230,7 +263,11 @@ class IntegrationTransaction:
         dirty = self._git(self.target, "status", "--porcelain").stdout.strip()
         target_tree = self._tree(self.target)
         if dirty or target_tree != tested_tree:
-            reason = "post-apply target dirty" if dirty else "applied tree differs from tested tree"
+            reason = (
+                "post-apply target dirty"
+                if dirty
+                else "applied tree differs from tested tree"
+            )
             recovery = self._rollback_applied(captured)
             return self._result(
                 False,
@@ -240,9 +277,13 @@ class IntegrationTransaction:
                 tested_tree=tested_tree,
                 recovery_path=recovery,
             )
-        return self._result(True, "integrated", captured, evidence, tested_tree=tested_tree)
+        return self._result(
+            True, "integrated", captured, evidence, tested_tree=tested_tree
+        )
 
-    def apply(self, candidate: str, *, method: str, base_sha: str = "") -> IntegrationResult:
+    def apply(
+        self, candidate: str, *, method: str, base_sha: str = ""
+    ) -> IntegrationResult:
         if not self._valid_ref(candidate):
             return IntegrationResult(False, "invalid candidate ref", "", "")
         if not self._valid_ref(base_sha, optional=True):
@@ -251,9 +292,13 @@ class IntegrationTransaction:
             worktree = Path(container) / "integration-worktree"
             # Capture HEAD by materializing an integration worktree first. This is the
             # first Git mutation and never changes the target branch or target files.
-            added = self._git(self.target, "worktree", "add", "--detach", str(worktree), "HEAD")
+            added = self._git(
+                self.target, "worktree", "add", "--detach", str(worktree), "HEAD"
+            )
             if added.returncode:
-                return IntegrationResult(False, "integration worktree creation failed", "", "")
+                return IntegrationResult(
+                    False, "integration worktree creation failed", "", ""
+                )
             try:
                 captured = self._head(worktree)
                 failure, tested_tree, evidence = self._test_candidate(
@@ -269,7 +314,9 @@ class IntegrationTransaction:
                 except KeyboardInterrupt:
                     return self._result(False, "user interruption", captured, evidence)
                 if self._head(self.target) != captured:
-                    return self._result(False, "target HEAD changed", captured, evidence)
+                    return self._result(
+                        False, "target HEAD changed", captured, evidence
+                    )
                 return self._finalize(
                     candidate, method, base_sha, captured, tested_tree, evidence
                 )

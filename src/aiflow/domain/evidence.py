@@ -8,7 +8,15 @@ class EvidenceError(ValueError):
     """A Solo cycle lacks discriminating, bounded verification evidence."""
 
 
-KINDS = {"feature", "bug", "refactor", "test", "numerical", "performance", "portability"}
+KINDS = {
+    "feature",
+    "bug",
+    "refactor",
+    "test",
+    "numerical",
+    "performance",
+    "portability",
+}
 
 
 def _exit(evidence: Mapping[str, Any], key: str) -> int:
@@ -49,7 +57,10 @@ def _numerical(evidence: Mapping[str, Any]) -> None:
     for key in ("reference", "oracle_provenance", "units", "dimensions", "shapes"):
         if evidence.get(key) in (None, "", [], {}):
             raise EvidenceError(f"numerical evidence requires {key}")
-    if not isinstance(evidence.get("dimensions"), int) or int(evidence["dimensions"]) < 1:
+    if (
+        not isinstance(evidence.get("dimensions"), int)
+        or int(evidence["dimensions"]) < 1
+    ):
         raise EvidenceError("numerical dimensions must be a positive integer")
     _numerical_shapes(evidence.get("shapes"))
     _numerical_tolerance(evidence.get("tolerance", {}))
@@ -59,19 +70,24 @@ def _numerical(evidence: Mapping[str, Any]) -> None:
 
 
 def _numerical_shapes(shapes: Any) -> None:
-    if not isinstance(shapes, list) or not shapes or any(
-        not isinstance(shape, list)
-        or not shape
-        or any(not isinstance(size, int) or size < 1 for size in shape)
-        for shape in shapes
+    if (
+        not isinstance(shapes, list)
+        or not shapes
+        or any(
+            not isinstance(shape, list)
+            or not shape
+            or any(not isinstance(size, int) or size < 1 for size in shape)
+            for shape in shapes
+        )
     ):
         raise EvidenceError("numerical shapes must contain positive integer extents")
 
 
 def _numerical_tolerance(tolerance: Any) -> None:
-    if not isinstance(tolerance, Mapping) or not {
-        "absolute", "relative", "justification"
-    } <= tolerance.keys():
+    if (
+        not isinstance(tolerance, Mapping)
+        or not {"absolute", "relative", "justification"} <= tolerance.keys()
+    ):
         raise EvidenceError("numerical tolerance requires bounds and justification")
     bounds = (float(tolerance["absolute"]), float(tolerance["relative"]))
     if any(not math.isfinite(value) or value < 0 for value in bounds):
@@ -83,7 +99,10 @@ def _numerical_convergence(convergence: Any) -> None:
         raise EvidenceError("numerical convergence evidence is required")
     observed = float(convergence.get("observed_order", float("nan")))
     minimum = float(convergence.get("minimum_order", float("nan")))
-    if not all(math.isfinite(value) for value in (observed, minimum)) or observed < minimum:
+    if (
+        not all(math.isfinite(value) for value in (observed, minimum))
+        or observed < minimum
+    ):
         raise EvidenceError("observed convergence order is below the contract")
 
 
@@ -94,7 +113,9 @@ def _performance(evidence: Mapping[str, Any]) -> None:
     if not all(math.isfinite(value) for value in (baseline, candidate, allowance)):
         raise EvidenceError("performance metrics must be finite")
     if baseline <= 0 or candidate <= 0 or not 0 <= allowance < 1:
-        raise EvidenceError("performance baseline, candidate, and regression bound are invalid")
+        raise EvidenceError(
+            "performance baseline, candidate, and regression bound are invalid"
+        )
     _performance_protocol(evidence)
     direction = str(evidence["direction"])
     if _performance_regressed(direction, baseline, candidate, allowance):
@@ -112,7 +133,9 @@ def _performance_protocol(evidence: Mapping[str, Any]) -> None:
         evidence.get("output_equivalent") is True,
     )
     if not all(required):
-        raise EvidenceError("performance evidence requires a metric and at least three samples")
+        raise EvidenceError(
+            "performance evidence requires a metric and at least three samples"
+        )
 
 
 def _performance_regressed(
@@ -132,7 +155,9 @@ def _portability(evidence: Mapping[str, Any]) -> None:
     required = {"status", "dtype", "layout", "provenance"}
     for name, result in backends.items():
         if not isinstance(result, Mapping) or not required <= result.keys():
-            raise EvidenceError(f"portability backend {name} lacks structured provenance")
+            raise EvidenceError(
+                f"portability backend {name} lacks structured provenance"
+            )
         if result.get("status") != "pass":
             raise EvidenceError("every declared portability backend must pass")
 
@@ -149,7 +174,9 @@ def _kind_baseline(kind: str, evidence: Mapping[str, Any]) -> None:
     elif kind == "refactor":
         _discriminating(evidence, "characterization", failing=False)
         if evidence.get("behavior_equivalent") is not True:
-            raise EvidenceError("refactor evidence requires characterization and equivalence")
+            raise EvidenceError(
+                "refactor evidence requires characterization and equivalence"
+            )
     elif kind == "test":
         _discriminating(evidence, "negative_control", failing=True)
         if not evidence.get("oracle"):

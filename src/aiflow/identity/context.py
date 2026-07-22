@@ -53,8 +53,11 @@ class ProjectContext:
 
 def _run_git(root: Path, *args: str) -> str:
     result = subprocess.run(
-        ["git", "-C", str(root), *args], text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, check=False,
+        ["git", "-C", str(root), *args],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
     )
     if result.returncode != 0 or not result.stdout.strip():
         detail = result.stderr.strip() or "not a Git repository"
@@ -138,7 +141,9 @@ def _registry_path(values: Mapping[str, str]) -> Path:
     if state_home:
         base = Path(state_home).expanduser()
     else:
-        base = Path(values.get("HOME", str(Path.home()))).expanduser() / ".local" / "state"
+        base = (
+            Path(values.get("HOME", str(Path.home()))).expanduser() / ".local" / "state"
+        )
     return base / "aiflow" / "checkout-registry.json"
 
 
@@ -174,21 +179,29 @@ class CheckoutRegistry:
         except FileNotFoundError:
             return {}
         except (OSError, json.JSONDecodeError) as exc:
-            raise IdentityError(f"invalid checkout registry {self.path}: {exc}") from exc
+            raise IdentityError(
+                f"invalid checkout registry {self.path}: {exc}"
+            ) from exc
         return {str(key): str(value) for key, value in payload.items()}
 
     def register(self, checkout_id: str, git_common_dir: Path) -> None:
         location = str(git_common_dir.resolve())
         records = self._load()
         previous = records.get(checkout_id)
-        if previous and Path(previous).resolve() != Path(location) and Path(previous).exists():
+        if (
+            previous
+            and Path(previous).resolve() != Path(location)
+            and Path(previous).exists()
+        ):
             raise IdentityCollision(
                 f"checkout ID {checkout_id} is registered at both {previous} and {location}"
             )
         records[checkout_id] = location
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.path.parent, 0o700)
-        descriptor, temporary = tempfile.mkstemp(prefix=".registry.", dir=self.path.parent)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".registry.", dir=self.path.parent
+        )
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 json.dump(records, handle, indent=2, sort_keys=True)
@@ -203,8 +216,12 @@ class CheckoutRegistry:
 
 
 def validate_thread_identity(
-    record: Mapping[str, object], *, checkout_id: str, run_id: str,
-    cwd: Path, worktree_id: str,
+    record: Mapping[str, object],
+    *,
+    checkout_id: str,
+    run_id: str,
+    cwd: Path,
+    worktree_id: str,
 ) -> None:
     expected = {
         "checkout_id": checkout_id,
@@ -214,7 +231,10 @@ def validate_thread_identity(
     }
     mismatches = [
         f"{key}: recorded={record.get(key)!r} expected={value!r}"
-        for key, value in expected.items() if str(record.get(key, "")) != value
+        for key, value in expected.items()
+        if str(record.get(key, "")) != value
     ]
     if mismatches:
-        raise ThreadIdentityMismatch("thread identity mismatch: " + "; ".join(mismatches))
+        raise ThreadIdentityMismatch(
+            "thread identity mismatch: " + "; ".join(mismatches)
+        )

@@ -37,7 +37,9 @@ class RunLifecycle:
 
     def _claim(self, store: RunStore) -> str:
         controller_id = f"controller-{uuid.uuid4()}"
-        store.claim_controller(controller_id, ttl_seconds=120, **store.local_process_identity())
+        store.claim_controller(
+            controller_id, ttl_seconds=120, **store.local_process_identity()
+        )
         return controller_id
 
     @contextmanager
@@ -125,10 +127,14 @@ class RunLifecycle:
                 "objective": str(spec.get("objective", "")).strip(),
                 "kind": str(spec.get("kind", "feature")),
                 "value_class": str(spec.get("value_class", "delivery")),
-                "acceptance_ids": [str(value) for value in spec.get("acceptance_ids", [])],
+                "acceptance_ids": [
+                    str(value) for value in spec.get("acceptance_ids", [])
+                ],
                 "dependencies": [str(value) for value in spec.get("dependencies", [])],
                 "unblocks_task_id": str(spec.get("unblocks_task_id", "")),
-                "allowed_scope": [str(value) for value in spec.get("allowed_scope", [])],
+                "allowed_scope": [
+                    str(value) for value in spec.get("allowed_scope", [])
+                ],
                 "worktree": self.context.worktree_id,
                 "commands": [list(command) for command in spec.get("commands", [])],
                 "evidence": [],
@@ -179,8 +185,10 @@ class RunLifecycle:
                         f"stale revision {expected_revision}; current revision is {revision}"
                     )
                 store.transition(
-                    revision, {"status": "RUNNING"},
-                    event_type="run_resumed", controller_id=controller,
+                    revision,
+                    {"status": "RUNNING"},
+                    event_type="run_resumed",
+                    controller_id=controller,
                 )
                 selected = budgets or Budgets()
                 if self.agent_backend is None:
@@ -214,7 +222,9 @@ class RunLifecycle:
                 store.release_controller(controller)
         return {**final, "outcome": outcome.value}
 
-    def stop(self, run_id: str, *, expected_revision: int | None = None) -> dict[str, Any]:
+    def stop(
+        self, run_id: str, *, expected_revision: int | None = None
+    ) -> dict[str, Any]:
         store = self.store(run_id)
         store.recover()
         controller = self._claim(store)
@@ -230,7 +240,8 @@ class RunLifecycle:
             return store.transition(
                 revision,
                 {"status": "STOPPED", "terminal_reason": "STOPPED_BY_USER"},
-                event_type="run_stopped", controller_id=controller,
+                event_type="run_stopped",
+                controller_id=controller,
             )
         finally:
             store.release_controller(controller)

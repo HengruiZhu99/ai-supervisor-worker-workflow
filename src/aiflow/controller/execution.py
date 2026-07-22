@@ -25,7 +25,10 @@ def _task(record: Mapping[str, Any]) -> Task:
         unblocks_task_id=str(record.get("unblocks_task_id", "")),
         allowed_scope=tuple(str(value) for value in record.get("allowed_scope", [])),
         worktree=str(record.get("worktree", "")),
-        commands=tuple(tuple(str(part) for part in command) for command in record.get("commands", [])),
+        commands=tuple(
+            tuple(str(part) for part in command)
+            for command in record.get("commands", [])
+        ),
         evidence=tuple(str(value) for value in record.get("evidence", [])),
         expected_diff_budget=int(record.get("expected_diff_budget", 0)),
     )
@@ -54,7 +57,9 @@ class TaskExecutionEngine:
         self.controller_id = controller_id
         self.agent_id = agent_id
         self.watchdog = watchdog or DeterministicWatchdog()
-        self.runner = ControllerRunner(budgets=budgets, agent_call=lambda capsule: backend(capsule))
+        self.runner = ControllerRunner(
+            budgets=budgets, agent_call=lambda capsule: backend(capsule)
+        )
         records = self.store.read_tasks()["tasks"]
         self.records: list[dict[str, Any]] = [dict(record) for record in records]
         open_ids = {
@@ -63,7 +68,11 @@ class TaskExecutionEngine:
             for value in record.get("acceptance_ids", [])
             if record.get("status") != "ACCEPTED"
         }
-        ready = [_task(record) for record in self.records if record.get("status") != "ACCEPTED"]
+        ready = [
+            _task(record)
+            for record in self.records
+            if record.get("status") != "ACCEPTED"
+        ]
         self.policy = ProgressPolicy(open_acceptance_ids=open_ids, tasks=ready)
         self.closed = {
             str(value)
@@ -87,7 +96,9 @@ class TaskExecutionEngine:
         )
 
     def _failure(self, record: dict[str, Any], exc: Exception) -> str:
-        signature = hashlib.sha256(f"{type(exc).__name__}:{exc}".encode()).hexdigest()[:16]
+        signature = hashlib.sha256(f"{type(exc).__name__}:{exc}".encode()).hexdigest()[
+            :16
+        ]
         record["attempts"] = int(record.get("attempts", 0)) + 1
         record["failure_signature"] = signature
         record["status"] = "READY"
@@ -106,9 +117,12 @@ class TaskExecutionEngine:
         try:
             task = self.policy.next_task()
         except Exception:
-            return "succeeded" if self.records and all(
-                record.get("status") == "ACCEPTED" for record in self.records
-            ) else "blocked"
+            return (
+                "succeeded"
+                if self.records
+                and all(record.get("status") == "ACCEPTED" for record in self.records)
+                else "blocked"
+            )
         record = self._record(task.id)
         attempt = int(record.get("attempts", 0)) + 1
         capsule = {
@@ -125,7 +139,9 @@ class TaskExecutionEngine:
             identities = self.store.context.identity_fields(self.store.run_id)
             validate_child_result(result, identities=identities, task_id=task.id)
             if result.get("status") != "completed":
-                raise ValueError(f"agent result is not completed: {result.get('status')}")
+                raise ValueError(
+                    f"agent result is not completed: {result.get('status')}"
+                )
             kind = str(result.get("cycle_kind", ""))
             if kind != str(record.get("kind", "feature")):
                 raise ValueError("cycle kind does not match the durable task contract")
@@ -147,11 +163,16 @@ class TaskExecutionEngine:
         record["failure_signature"] = ""
         record["status"] = "ACCEPTED"
         record["evidence"] = sorted(
-            {str(value) for value in record.get("evidence", [])} | {str(inbox.relative_to(self.store.path))}
+            {str(value) for value in record.get("evidence", [])}
+            | {str(inbox.relative_to(self.store.path))}
         )
         self.closed.update(claimed)
         self._persist(event_type="task_accepted", evidence=list(record["evidence"]))
-        return "succeeded" if all(item.get("status") == "ACCEPTED" for item in self.records) else "progress"
+        return (
+            "succeeded"
+            if all(item.get("status") == "ACCEPTED" for item in self.records)
+            else "progress"
+        )
 
     def run(self) -> ExecutionResult:
         outcome = self.runner.run(self._step)

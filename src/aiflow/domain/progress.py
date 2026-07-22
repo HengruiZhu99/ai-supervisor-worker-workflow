@@ -48,15 +48,21 @@ class Task:
     def _validate_value_contract(self) -> None:
         if self.value_class in {ValueClass.DELIVERY, ValueClass.VALIDATION}:
             if not self.acceptance_ids:
-                raise TaskContractError("delivery/validation must target acceptance IDs")
+                raise TaskContractError(
+                    "delivery/validation must target acceptance IDs"
+                )
         elif self.acceptance_ids:
             raise TaskContractError(f"{self.value_class} cannot claim acceptance IDs")
         if self.value_class is ValueClass.ENABLER and not self.unblocks_task_id:
             raise TaskContractError("enabler must name exactly one task it unblocks")
         if self.value_class is not ValueClass.ENABLER and self.unblocks_task_id:
             raise TaskContractError("only an enabler may set unblocks_task_id")
-        if self.value_class is ValueClass.RESEARCH and (self.commands or self.allowed_scope):
-            raise TaskContractError("research is read-only controller evidence, not a mutating task")
+        if self.value_class is ValueClass.RESEARCH and (
+            self.commands or self.allowed_scope
+        ):
+            raise TaskContractError(
+                "research is read-only controller evidence, not a mutating task"
+            )
 
 
 @dataclass
@@ -83,14 +89,18 @@ class ProgressPolicy:
         for item in self._tasks.values():
             missing = set(item.dependencies) - self._tasks.keys()
             if missing:
-                raise TaskContractError(f"task {item.id} has unknown dependencies: {sorted(missing)}")
+                raise TaskContractError(
+                    f"task {item.id} has unknown dependencies: {sorted(missing)}"
+                )
             if item.unblocks_task_id and item.unblocks_task_id not in self._tasks:
                 raise TaskContractError(
                     f"enabler {item.id} targets unknown task {item.unblocks_task_id}"
                 )
             unknown = set(item.acceptance_ids) - self.open_acceptance_ids
             if unknown:
-                raise TaskContractError(f"task {item.id} targets unknown acceptance IDs: {sorted(unknown)}")
+                raise TaskContractError(
+                    f"task {item.id} targets unknown acceptance IDs: {sorted(unknown)}"
+                )
 
     def _ready(self, item: Task) -> bool:
         return item.status == "READY" and set(item.dependencies) <= self._accepted
@@ -112,7 +122,8 @@ class ProgressPolicy:
         }
         ready = [item for item in self._tasks.values() if self._ready(item)]
         ready = [
-            item for item in ready
+            item
+            for item in ready
             if item.value_class is not ValueClass.HOUSEKEEPING
             or self._housekeeping_used < self.housekeeping_budget
         ]
@@ -130,7 +141,9 @@ class ProgressPolicy:
             path.startswith((".ai/", ".aiflow/", "docs/")) for path in changed
         )
         if metadata_only or not expected or expected not in changed:
-            raise TaskContractError(f"{item.id} evidence does not contain its expected artifact")
+            raise TaskContractError(
+                f"{item.id} evidence does not contain its expected artifact"
+            )
         if not commands or not results:
             raise TaskContractError(f"{item.id} lacks executable evidence")
         if any(int(result.get("exit_code", 1)) != 0 for result in results):
@@ -160,12 +173,18 @@ class ProgressPolicy:
     ) -> None:
         if item.status != "READY" or not set(item.dependencies) <= self._accepted:
             raise TaskContractError(f"task is not ready: {item.id}")
-        valid = claimed <= set(item.acceptance_ids) and claimed <= self.open_acceptance_ids
+        valid = (
+            claimed <= set(item.acceptance_ids) and claimed <= self.open_acceptance_ids
+        )
         if not valid:
-            raise TaskContractError("acceptance delta is outside the task/open contract")
+            raise TaskContractError(
+                "acceptance delta is outside the task/open contract"
+            )
         if item.value_class in {ValueClass.DELIVERY, ValueClass.VALIDATION}:
             self._assert_delivery_evidence(item, evidence)
-        if item.value_class is ValueClass.ENABLER and not evidence.get("completion_proof"):
+        if item.value_class is ValueClass.ENABLER and not evidence.get(
+            "completion_proof"
+        ):
             raise TaskContractError("enabler acceptance requires completion proof")
 
     def _record_acceptance(
@@ -180,7 +199,9 @@ class ProgressPolicy:
         self._no_delta = 0 if claimed else self._no_delta + 1
         if item.value_class is ValueClass.ENABLER:
             if self._progress_debt:
-                raise TaskContractError("cannot accept a second enabler while progress debt exists")
+                raise TaskContractError(
+                    "cannot accept a second enabler while progress debt exists"
+                )
             self._progress_debt = item.unblocks_task_id
         if self._progress_debt == item.id:
             self._progress_debt = ""
@@ -191,13 +212,16 @@ class ProgressPolicy:
         if not self._replan_pending:
             raise TaskContractError("no replan is pending")
         if not ready_acceptance_task:
-            raise ProgressBlocked("NO_ACCEPTANCE_DELTA: no acceptance-closing task became ready")
+            raise ProgressBlocked(
+                "NO_ACCEPTANCE_DELTA: no acceptance-closing task became ready"
+            )
         self._replan_pending = False
         self._no_delta = 0
 
     def report(self) -> dict[str, Any]:
         ready = sorted(
-            item.id for item in self._tasks.values()
+            item.id
+            for item in self._tasks.values()
             if self._ready(item)
             and item.value_class in {ValueClass.DELIVERY, ValueClass.VALIDATION}
         )
