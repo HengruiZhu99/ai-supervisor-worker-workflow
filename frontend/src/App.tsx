@@ -6,6 +6,9 @@ import { Runs } from "./Runs";
 import { TaskForm } from "./TaskForm";
 import type { Snapshot } from "./types";
 
+const MAX_RECONNECTS = 5;
+const MAX_FALLBACK_POLLS = 6;
+
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
@@ -28,11 +31,12 @@ export function App() {
     let source: EventSource | null = null;
     let lastEventId = "";
     let stopped = false;
-    const reconciliation = window.setInterval(() => void refresh(), 5000);
+    let fallbackPolls = 0;
     function scheduleFallbackPoll() {
-      if (stopped) return;
+      if (stopped || fallbackPolls >= MAX_FALLBACK_POLLS) return;
       timer = window.setTimeout(
         async () => {
+          fallbackPolls += 1;
           await refresh();
           scheduleFallbackPoll();
         },
@@ -40,7 +44,7 @@ export function App() {
       );
     }
     function connect() {
-      if (!("EventSource" in window) || reconnects >= 5) {
+      if (!("EventSource" in window) || reconnects >= MAX_RECONNECTS) {
         scheduleFallbackPoll();
         return;
       }
@@ -49,20 +53,30 @@ export function App() {
         : "";
       const connection = new EventSource(`/api/v1/events${replay}`);
       source = connection;
+      connection.onopen = () => {
+        if (source !== connection) return;
+        reconnects = 0;
+        fallbackPolls = 0;
+      };
       connection.addEventListener("run", (event) => {
+        if (source !== connection) return;
         lastEventId = (event as MessageEvent).lastEventId || lastEventId;
         reconnects = 0;
+        fallbackPolls = 0;
         void refresh();
       });
       connection.addEventListener("reset", (event) => {
+        if (source !== connection) return;
         lastEventId = (event as MessageEvent).lastEventId || "";
         reconnects = 0;
+        fallbackPolls = 0;
         setSnapshot(JSON.parse((event as MessageEvent).data) as Snapshot);
         setError("");
       });
       connection.onerror = () => {
+        if (source !== connection) return;
         connection.close();
-        if (source === connection) source = null;
+        source = null;
         reconnects += 1;
         window.clearTimeout(timer);
         timer = window.setTimeout(
@@ -76,7 +90,6 @@ export function App() {
       stopped = true;
       source?.close();
       window.clearTimeout(timer);
-      window.clearInterval(reconciliation);
     };
   }, [refresh]);
   return (
