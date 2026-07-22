@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import fcntl
 import os
 import subprocess
 import tempfile
@@ -184,21 +185,7 @@ class CheckoutRegistry:
             ) from exc
         return {str(key): str(value) for key, value in payload.items()}
 
-    def register(self, checkout_id: str, git_common_dir: Path) -> None:
-        location = str(git_common_dir.resolve())
-        records = self._load()
-        previous = records.get(checkout_id)
-        if (
-            previous
-            and Path(previous).resolve() != Path(location)
-            and Path(previous).exists()
-        ):
-            raise IdentityCollision(
-                f"checkout ID {checkout_id} is registered at both {previous} and {location}"
-            )
-        records[checkout_id] = location
-        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(self.path.parent, 0o700)
+    def _write(self, records: Mapping[str, str]) -> None:
         descriptor, temporary = tempfile.mkstemp(
             prefix=".registry.", dir=self.path.parent
         )
@@ -213,6 +200,30 @@ class CheckoutRegistry:
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
+
+    def register(self, checkout_id: str, git_common_dir: Path) -> None:
+        location = str(git_common_dir.resolve())
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(self.path.parent, 0o700)
+        lock_path = self.path.with_name(f".{self.path.name}.lock")
+        descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            records = self._load()
+            previous = records.get(checkout_id)
+            if (
+                previous
+                and Path(previous).resolve() != Path(location)
+                and Path(previous).exists()
+            ):
+                raise IdentityCollision(
+                    f"checkout ID {checkout_id} is registered at both {previous} and {location}"
+                )
+            records[checkout_id] = location
+            self._write(records)
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
 
 
 def validate_thread_identity(
