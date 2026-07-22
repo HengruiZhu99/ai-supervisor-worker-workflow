@@ -32,3 +32,10 @@ test("built runtime is bundled and Node-free", () => {
   assert.doesNotMatch(built, /from\s+["']react["']/);
   assert.match(built, /EventSource/);
 });
+
+test("a successful snapshot clears stale transient errors", () => {
+  assert.match(
+    source,
+    /setSnapshot\(await readSnapshot\(\)\);\s*setError\(""\)/,
+  );
+});
