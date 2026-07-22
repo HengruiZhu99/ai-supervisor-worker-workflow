@@ -68,6 +68,32 @@ class IntegrationTransaction:
     def _tree(self, cwd: Path) -> str:
         return self._git(cwd, "rev-parse", "HEAD^{tree}").stdout.strip()
 
+    def _target_ref(self) -> str:
+        symbolic = self._git(self.target, "symbolic-ref", "-q", "HEAD")
+        return symbolic.stdout.strip() if symbolic.returncode == 0 else "HEAD"
+
+    def _target_matches(self, reference: str, head: str) -> bool:
+        return self._target_ref() == reference and self._head(self.target) == head
+
+    def _target_drift_reason(self, reference: str) -> str:
+        return (
+            "target symbolic ref changed"
+            if self._target_ref() != reference
+            else "target HEAD changed"
+        )
+
+    def _target_dirty(self) -> bool:
+        return bool(self._git(self.target, "status", "--porcelain").stdout.strip())
+
+    def _target_dirty_against(self, treeish: str) -> bool:
+        tracked = self._git(
+            self.target, "diff-index", "--quiet", treeish, "--"
+        ).returncode
+        untracked = self._git(
+            self.target, "ls-files", "--others", "--exclude-standard"
+        ).stdout.strip()
+        return bool(tracked or untracked)
+
     def _result(
         self,
         ok: bool,
@@ -157,8 +183,9 @@ class IntegrationTransaction:
         method: str,
         base_sha: str,
         captured: str,
+        target_ref: str,
         tested_tree: str,
-    ) -> bool:
+    ) -> str:
         del base_sha
         parents = ["-p", captured]
         if method == "merge":
@@ -177,18 +204,26 @@ class IntegrationTransaction:
         )
         integrated = created.stdout.strip()
         if created.returncode or not integrated:
-            return False
-        symbolic = self._git(self.target, "symbolic-ref", "-q", "HEAD")
-        target_ref = symbolic.stdout.strip() if symbolic.returncode == 0 else "HEAD"
+            return "final apply failed"
+        if not self._target_matches(target_ref, captured):
+            return self._target_drift_reason(target_ref)
+        if self._target_dirty():
+            return "dirty target"
         updated = self._git(self.target, "update-ref", target_ref, integrated, captured)
         if updated.returncode:
-            return False
+            return "target HEAD changed"
+        if self._target_ref() != target_ref:
+            self._git(self.target, "update-ref", target_ref, captured, integrated)
+            return "target symbolic ref changed"
+        if self._target_dirty_against(captured):
+            self._git(self.target, "update-ref", target_ref, captured, integrated)
+            return "dirty target"
         refreshed = self._git(self.target, "read-tree", "--reset", "-u", integrated)
         if refreshed.returncode:
             self._git(self.target, "update-ref", target_ref, captured, integrated)
-            self._git(self.target, "read-tree", "--reset", "-u", captured)
-            return False
-        return True
+            self._git(self.target, "read-tree", "--reset", captured)
+            return "target worktree refresh failed"
+        return ""
 
     def _preserve_untracked(self) -> str:
         result = self._git(
@@ -252,21 +287,18 @@ class IntegrationTransaction:
         method: str,
         base_sha: str,
         captured: str,
+        target_ref: str,
         tested_tree: str,
         evidence: list[str],
     ) -> IntegrationResult:
         try:
-            if not self._apply_target(
-                candidate, method, base_sha, captured, tested_tree
-            ):
-                reason = (
-                    "target HEAD changed"
-                    if self._head(self.target) != captured
-                    else "final apply failed"
-                )
+            failure = self._apply_target(
+                candidate, method, base_sha, captured, target_ref, tested_tree
+            )
+            if failure:
                 return self._result(
                     False,
-                    reason,
+                    failure,
                     captured,
                     evidence,
                     tested_tree=tested_tree,
@@ -316,12 +348,19 @@ class IntegrationTransaction:
             return IntegrationResult(False, "invalid candidate ref", "", "")
         if not self._valid_ref(base_sha, optional=True):
             return IntegrationResult(False, "invalid base ref", "", "")
+        captured_ref = self._target_ref()
+        captured_target = self._head(self.target)
         with tempfile.TemporaryDirectory(prefix="aiflow-integrate-") as container:
             worktree = Path(container) / "integration-worktree"
             # Capture HEAD by materializing an integration worktree first. This is the
             # first Git mutation and never changes the target branch or target files.
             added = self._git(
-                self.target, "worktree", "add", "--detach", str(worktree), "HEAD"
+                self.target,
+                "worktree",
+                "add",
+                "--detach",
+                str(worktree),
+                captured_target,
             )
             if added.returncode:
                 return IntegrationResult(
@@ -343,12 +382,23 @@ class IntegrationTransaction:
                         self.before_apply()
                 except KeyboardInterrupt:
                     return self._result(False, "user interruption", captured, evidence)
-                if self._head(self.target) != captured:
+                if not self._target_matches(captured_ref, captured):
                     return self._result(
-                        False, "target HEAD changed", captured, evidence
+                        False,
+                        self._target_drift_reason(captured_ref),
+                        captured,
+                        evidence,
                     )
+                if self._target_dirty():
+                    return self._result(False, "dirty target", captured, evidence)
                 return self._finalize(
-                    candidate, method, base_sha, captured, tested_tree, evidence
+                    candidate,
+                    method,
+                    base_sha,
+                    captured,
+                    captured_ref,
+                    tested_tree,
+                    evidence,
                 )
             finally:
                 self._git(self.target, "worktree", "remove", "--force", str(worktree))

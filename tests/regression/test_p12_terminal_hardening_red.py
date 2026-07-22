@@ -200,7 +200,9 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
                 base_sha=base,
             )
             self.assertFalse(result.ok)
-            self.assertEqual((root / "value.txt").read_text(encoding="utf-8"), "USER WORK\n")
+            self.assertEqual(
+                (root / "value.txt").read_text(encoding="utf-8"), "USER WORK\n"
+            )
             self.assertEqual(git(root, "rev-parse", "HEAD").stdout.strip(), base)
             self.assertFalse((root / "candidate.txt").exists())
 
