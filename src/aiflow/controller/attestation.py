@@ -63,6 +63,45 @@ def _gitlink_head(path: Path) -> str:
     return completed.stdout.strip() if completed.returncode == 0 else "missing"
 
 
+def _control_digest(root: Path, label: str, *arguments: str) -> tuple[str, str]:
+    completed = run_owned_process(["git", *arguments], cwd=root, timeout=30)
+    if completed.returncode:
+        raise AttestationError(f"cannot inventory Git {label} metadata")
+    digest = hashlib.sha256(completed.stdout.encode()).hexdigest()
+    return f"\0git-control/{label}", digest
+
+
+def _git_control_metadata(root: Path) -> dict[str, str]:
+    symbolic = run_owned_process(
+        ["git", "symbolic-ref", "-q", "HEAD"], cwd=root, timeout=30
+    )
+    if symbolic.returncode not in {0, 1}:
+        raise AttestationError("cannot inventory Git symbolic HEAD metadata")
+    head = run_owned_process(
+        ["git", "rev-parse", "--verify", "HEAD"], cwd=root, timeout=30
+    )
+    if head.returncode and symbolic.returncode != 0:
+        raise AttestationError("cannot inventory Git HEAD metadata")
+    metadata = dict(
+        (
+            _control_digest(
+                root,
+                "refs",
+                "for-each-ref",
+                "--format=%(refname)%00%(objectname)%00%(symref)",
+            ),
+            _control_digest(root, "config", "config", "--local", "--null", "--list"),
+        )
+    )
+    metadata["\0git-control/HEAD"] = hashlib.sha256(
+        (head.stdout if head.returncode == 0 else "UNBORN").encode()
+    ).hexdigest()
+    metadata["\0git-control/symbolic-ref"] = hashlib.sha256(
+        (symbolic.stdout if symbolic.returncode == 0 else "DETACHED").encode()
+    ).hexdigest()
+    return metadata
+
+
 def workspace_snapshot(root: Path) -> dict[str, str]:
     root = root.resolve()
     index = _git_index(root)
@@ -82,6 +121,7 @@ def workspace_snapshot(root: Path) -> dict[str, str]:
         snapshot[relative] = hashlib.sha256(
             metadata.encode() + b"\0" + payload
         ).hexdigest()
+    snapshot.update(_git_control_metadata(root))
     return snapshot
 
 
