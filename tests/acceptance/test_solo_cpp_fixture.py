@@ -16,13 +16,20 @@ CLI = ROOT / "bin" / "aiflow"
 
 def run(args: list[str], cwd: Path, env=None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        args, cwd=cwd, env=env, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, check=False,
+        args,
+        cwd=cwd,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
     )
 
 
 class SoloCppAcceptanceTests(unittest.TestCase):
-    def test_existing_cmake_project_runs_red_green_quality_and_durable_stop(self) -> None:
+    def test_existing_cmake_project_runs_red_green_quality_and_durable_stop(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             project = base / "athenak-like"
@@ -31,15 +38,32 @@ class SoloCppAcceptanceTests(unittest.TestCase):
             environment = dict(os.environ)
             environment["XDG_RUNTIME_DIR"] = str(base / "runtime")
             initialized = run(
-                [str(CLI), "--project-root", str(project), "project", "init", "--profile", "solo"],
+                [
+                    str(CLI),
+                    "--project-root",
+                    str(project),
+                    "project",
+                    "init",
+                    "--profile",
+                    "solo",
+                ],
                 ROOT,
                 environment,
             )
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
             started = run(
                 [
-                    str(CLI), "--project-root", str(project), "run", "start", "--mode", "solo",
-                    "--objective", "Correct the vector L2 norm", "--acceptance-id", "AC-NORM-001",
+                    str(CLI),
+                    "--project-root",
+                    str(project),
+                    "run",
+                    "start",
+                    "--mode",
+                    "solo",
+                    "--objective",
+                    "Correct the vector L2 norm",
+                    "--acceptance-id",
+                    "AC-NORM-001",
                 ],
                 ROOT,
                 environment,
@@ -51,11 +75,17 @@ class SoloCppAcceptanceTests(unittest.TestCase):
             configured = run(["cmake", "-S", ".", "-B", str(build)], project)
             self.assertEqual(configured.returncode, 0, configured.stderr)
             self.assertEqual(
-                run(["cmake", "--build", str(build), "--clean-first"], project).returncode,
+                run(
+                    ["cmake", "--build", str(build), "--clean-first"], project
+                ).returncode,
                 0,
             )
-            red = run(["ctest", "--test-dir", str(build), "--output-on-failure"], project)
-            self.assertNotEqual(red.returncode, 0, "fixture must prove the intended RED result")
+            red = run(
+                ["ctest", "--test-dir", str(build), "--output-on-failure"], project
+            )
+            self.assertNotEqual(
+                red.returncode, 0, "fixture must prove the intended RED result"
+            )
 
             header = project / "include" / "vector_norm.hpp"
             header.write_text(
@@ -66,18 +96,30 @@ class SoloCppAcceptanceTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(
-                run(["cmake", "--build", str(build), "--clean-first"], project).returncode,
+                run(
+                    ["cmake", "--build", str(build), "--clean-first"], project
+                ).returncode,
                 0,
             )
-            green = run(["ctest", "--test-dir", str(build), "--output-on-failure"], project)
+            green = run(
+                ["ctest", "--test-dir", str(build), "--output-on-failure"], project
+            )
             self.assertEqual(green.returncode, 0, green.stdout + green.stderr)
             quality = run(
-                [str(CLI), "--project-root", str(project), "quality", "check"], ROOT, environment
+                [str(CLI), "--project-root", str(project), "quality", "check"],
+                ROOT,
+                environment,
             )
             self.assertEqual(quality.returncode, 0, quality.stdout + quality.stderr)
             stopped = run(
                 [
-                    str(CLI), "--project-root", str(project), "run", "stop", "--run-id", run_id,
+                    str(CLI),
+                    "--project-root",
+                    str(project),
+                    "run",
+                    "stop",
+                    "--run-id",
+                    run_id,
                 ],
                 ROOT,
                 environment,

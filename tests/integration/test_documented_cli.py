@@ -23,8 +23,13 @@ class DocumentedCliTests(unittest.TestCase):
                 if arguments[0] == "aiflow":
                     arguments[0] = str(ROOT / "bin" / "aiflow")
                 result = subprocess.run(
-                    arguments, cwd=ROOT, env=environment, text=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                    arguments,
+                    cwd=ROOT,
+                    env=environment,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
 

@@ -28,7 +28,9 @@ from aiflow.skills.installer import ProjectInstaller  # noqa: E402
 def project(path: Path) -> None:
     path.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=path, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"], cwd=path, check=True
+    )
     subprocess.run(["git", "config", "user.name", "AIFLOW Test"], cwd=path, check=True)
     ProjectInstaller(path, distribution_root=ROOT).init("solo")
     subprocess.run(["git", "add", "."], cwd=path, check=True)
@@ -62,7 +64,8 @@ def request(url: str, *, method: str = "GET", token: str = "", payload=None):
             }
         )
     return urllib.request.urlopen(
-        urllib.request.Request(url, data=data, method=method, headers=headers), timeout=3
+        urllib.request.Request(url, data=data, method=method, headers=headers),
+        timeout=3,
     )
 
 
@@ -73,7 +76,9 @@ class ApiProjectIsolationTests(unittest.TestCase):
             project(path)
             with running_server(path, "token") as (server, _url):
                 server.service.events.publish("run", {"status": "PAUSED"})
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+                connection = http.client.HTTPConnection(
+                    "127.0.0.1", server.server_port, timeout=2
+                )
                 try:
                     connection.request("GET", "/api/v1/events")
                     response = connection.getresponse()
@@ -107,11 +112,14 @@ class ApiProjectIsolationTests(unittest.TestCase):
             previous = os.environ.get("XDG_RUNTIME_DIR")
             os.environ["XDG_RUNTIME_DIR"] = str(runtime)
             try:
-                with running_server(first, "first-token") as (_, first_url), running_server(
-                    second, "second-token"
-                ) as (_, second_url):
+                with (
+                    running_server(first, "first-token") as (_, first_url),
+                    running_server(second, "second-token") as (_, second_url),
+                ):
                     first_snapshot = json.load(request(first_url + "/api/v1/snapshot"))
-                    second_snapshot = json.load(request(second_url + "/api/v1/snapshot"))
+                    second_snapshot = json.load(
+                        request(second_url + "/api/v1/snapshot")
+                    )
                     self.assertNotEqual(
                         first_snapshot["project"]["checkout_id"],
                         second_snapshot["project"]["checkout_id"],
@@ -129,8 +137,16 @@ class ApiProjectIsolationTests(unittest.TestCase):
                         )
                     )
                     self.assertEqual(created["mode"], "solo")
-                    self.assertEqual(len(json.load(request(first_url + "/api/v1/snapshot"))["runs"]), 1)
-                    self.assertEqual(len(json.load(request(second_url + "/api/v1/snapshot"))["runs"]), 0)
+                    self.assertEqual(
+                        len(json.load(request(first_url + "/api/v1/snapshot"))["runs"]),
+                        1,
+                    )
+                    self.assertEqual(
+                        len(
+                            json.load(request(second_url + "/api/v1/snapshot"))["runs"]
+                        ),
+                        0,
+                    )
                     with self.assertRaises(urllib.error.HTTPError) as denied:
                         request(
                             second_url + "/api/v1/runs",
@@ -139,7 +155,9 @@ class ApiProjectIsolationTests(unittest.TestCase):
                             payload={
                                 "mode": "solo",
                                 "objective": "wrong project",
-                                "checkout_id": second_snapshot["project"]["checkout_id"],
+                                "checkout_id": second_snapshot["project"][
+                                    "checkout_id"
+                                ],
                             },
                         )
                     self.assertEqual(denied.exception.code, 403)
@@ -188,7 +206,11 @@ class ApiProjectIsolationTests(unittest.TestCase):
                         payload=mutation,
                     )
                 self.assertEqual(stale.exception.code, 409)
-                wrong = dict(mutation, expected_revision=stopped["state_revision"], checkout_id="wrong")
+                wrong = dict(
+                    mutation,
+                    expected_revision=stopped["state_revision"],
+                    checkout_id="wrong",
+                )
                 with self.assertRaises(urllib.error.HTTPError) as mismatch:
                     request(
                         f"{url}/api/v1/runs/{created['run_id']}/stop",
@@ -227,7 +249,9 @@ class ApiProjectIsolationTests(unittest.TestCase):
             project(path)
             context = resolve_project(explicit_root=path)
             hub = ProjectHub([context])
-            self.assertEqual(hub.snapshot()["projects"][0]["checkout_id"], context.checkout_id)
+            self.assertEqual(
+                hub.snapshot()["projects"][0]["checkout_id"], context.checkout_id
+            )
             with self.assertRaises(ReadOnlyHubError):
                 hub.mutate("stop", {})
             with running_server(path, "token") as (_, url):

@@ -15,8 +15,12 @@ from aiflow.integration.transaction import GateCommands, IntegrationTransaction 
 
 def git(root: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", *args], cwd=root, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, check=True,
+        ["git", *args],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
     ).stdout.strip()
 
 
@@ -47,17 +51,23 @@ class IntegrationTransactionTests(unittest.TestCase):
         commands = GateCommands(
             focused=(passing(),), regression=(passing(),), quality=(passing(),)
         )
-        return IntegrationTransaction(root, gates=overrides.pop("gates", commands), **overrides)
+        return IntegrationTransaction(
+            root, gates=overrides.pop("gates", commands), **overrides
+        )
 
     def test_merge_and_duplicate_detection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"
             base, candidate = repository(root)
-            result = self.transaction(root).apply(candidate, method="merge", base_sha=base)
+            result = self.transaction(root).apply(
+                candidate, method="merge", base_sha=base
+            )
             self.assertTrue(result.ok, result.reason)
             self.assertTrue((root / "candidate.txt").is_file())
             self.assertEqual(git(root, "status", "--porcelain"), "")
-            duplicate = self.transaction(root).apply(candidate, method="merge", base_sha=base)
+            duplicate = self.transaction(root).apply(
+                candidate, method="merge", base_sha=base
+            )
             self.assertFalse(duplicate.ok)
             self.assertEqual(duplicate.reason, "duplicate integration")
 
@@ -65,17 +75,26 @@ class IntegrationTransactionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"
             base, candidate = repository(root)
-            result = self.transaction(root).apply(candidate, method="cherry-pick", base_sha=base)
+            result = self.transaction(root).apply(
+                candidate, method="cherry-pick", base_sha=base
+            )
             self.assertTrue(result.ok, result.reason)
             self.assertEqual((root / "candidate.txt").read_text(), "candidate\n")
 
     def test_each_preapply_gate_failure_leaves_target_unchanged(self) -> None:
         failing = (sys.executable, "-c", "raise SystemExit(7)")
         for failed_gate in ("focused", "regression", "quality"):
-            with self.subTest(failed_gate=failed_gate), tempfile.TemporaryDirectory() as tmp:
+            with (
+                self.subTest(failed_gate=failed_gate),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
                 root = Path(tmp) / "repo"
                 base, candidate = repository(root)
-                values = {"focused": (passing(),), "regression": (passing(),), "quality": (passing(),)}
+                values = {
+                    "focused": (passing(),),
+                    "regression": (passing(),),
+                    "quality": (passing(),),
+                }
                 values[failed_gate] = (failing,)
                 gates = GateCommands(**values)
                 result = self.transaction(root, gates=gates).apply(
@@ -100,12 +119,16 @@ class IntegrationTransactionTests(unittest.TestCase):
             git(root, "commit", "-q", "-m", "conflict")
             candidate = git(root, "rev-parse", "HEAD")
             git(root, "switch", "-q", "main")
-            conflict = self.transaction(root).apply(candidate, method="merge", base_sha=base)
+            conflict = self.transaction(root).apply(
+                candidate, method="merge", base_sha=base
+            )
             self.assertFalse(conflict.ok)
             self.assertIn("conflict", conflict.reason)
             self.assertEqual(git(root, "rev-parse", "HEAD"), target)
             (root / "dirty.txt").write_text("user work\n", encoding="utf-8")
-            dirty = self.transaction(root).apply(candidate, method="merge", base_sha=base)
+            dirty = self.transaction(root).apply(
+                candidate, method="merge", base_sha=base
+            )
             self.assertEqual(dirty.reason, "dirty target")
 
     def test_target_head_cas_and_interruption_cleanup(self) -> None:

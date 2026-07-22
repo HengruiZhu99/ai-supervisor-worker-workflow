@@ -12,7 +12,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class LegacyInstallerTests(unittest.TestCase):
-    def test_installer_delegates_to_transactional_profile_without_copying_runtime(self) -> None:
+    def test_installer_delegates_to_transactional_profile_without_copying_runtime(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             project.mkdir()

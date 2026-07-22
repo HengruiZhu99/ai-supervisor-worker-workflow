@@ -50,7 +50,8 @@ def main() -> int:
             for root, port in zip(roots, ports, strict=True)
         ]
         threads = [
-            threading.Thread(target=server.serve_forever, daemon=True) for server in servers
+            threading.Thread(target=server.serve_forever, daemon=True)
+            for server in servers
         ]
         for thread in threads:
             thread.start()

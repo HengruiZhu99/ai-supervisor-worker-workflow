@@ -23,13 +23,21 @@ class OfflineArtifactTests(unittest.TestCase):
             artifact = Path(result["artifact"])
             checksum = Path(result["checksum_file"])
             self.assertTrue(artifact.is_file())
-            self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(), checksum.read_text().split()[0])
+            self.assertEqual(
+                hashlib.sha256(artifact.read_bytes()).hexdigest(),
+                checksum.read_text().split()[0],
+            )
             self.assertTrue(verify_artifact(artifact)["ok"])
             with zipfile.ZipFile(artifact) as archive:
                 names = archive.namelist()
-            self.assertFalse(any(".git/" in name or "RUN.json" in name for name in names))
+            self.assertFalse(
+                any(".git/" in name or "RUN.json" in name for name in names)
+            )
             version = subprocess.run(
-                [str(artifact), "--version"], text=True, capture_output=True, check=False,
+                [str(artifact), "--version"],
+                text=True,
+                capture_output=True,
+                check=False,
                 env={**os.environ, "PIP_NO_INDEX": "1"},
             )
             self.assertEqual(version.returncode, 0, version.stderr)
@@ -37,7 +45,15 @@ class OfflineArtifactTests(unittest.TestCase):
             project.mkdir()
             subprocess.run(["git", "init", "-q"], cwd=project, check=True)
             initialized = subprocess.run(
-                [str(artifact), "--project-root", str(project), "project", "init", "--profile", "solo"],
+                [
+                    str(artifact),
+                    "--project-root",
+                    str(project),
+                    "project",
+                    "init",
+                    "--profile",
+                    "solo",
+                ],
                 text=True,
                 capture_output=True,
                 check=False,
@@ -58,16 +74,25 @@ class OfflineArtifactTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             built = subprocess.run(
                 [
-                    str(ROOT / "bin" / "aiflow"), "package", "build",
-                    "--distribution-root", str(ROOT), "--output-dir", tmp,
+                    str(ROOT / "bin" / "aiflow"),
+                    "package",
+                    "build",
+                    "--distribution-root",
+                    str(ROOT),
+                    "--output-dir",
+                    tmp,
                 ],
-                text=True, capture_output=True, check=False,
+                text=True,
+                capture_output=True,
+                check=False,
             )
             self.assertEqual(built.returncode, 0, built.stderr)
             artifact = json.loads(built.stdout)["artifact"]
             verified = subprocess.run(
                 [str(ROOT / "bin" / "aiflow"), "package", "verify", artifact],
-                text=True, capture_output=True, check=False,
+                text=True,
+                capture_output=True,
+                check=False,
             )
             self.assertEqual(verified.returncode, 0, verified.stderr)
             self.assertTrue(json.loads(verified.stdout)["ok"])
