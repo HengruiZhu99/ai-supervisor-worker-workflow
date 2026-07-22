@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-07-22",
+  "base_sha": "e9311a932dc2d5bab57c2cfd7ed734b8e1ca5466",
+  "method": "physical and nonblank/non-comment logical lines; Python AST branch proxy",
+  "limits": {
+    "python_module_hard": 450,
+    "python_cli_api_hard": 400,
+    "shell_hard": 160,
+    "javascript_typescript_hard": 450,
+    "react_component_hard": 300,
+    "function_hard": 100,
+    "complexity_hard": 12
+  },
+  "oversized_files": [
+    {"path": "scripts/workflow_gui.py", "physical_lines": 2841, "logical_lines": 2505},
+    {"path": "scripts/worker_loop.sh", "physical_lines": 1929, "logical_lines": 1699},
+    {"path": "gui/app.js", "physical_lines": 981, "logical_lines": 923},
+    {"path": "scripts/architect_core.py", "physical_lines": 748, "logical_lines": 628},
+    {"path": "scripts/human_milestone_review.py", "physical_lines": 707, "logical_lines": 624},
+    {"path": "scripts/modulator_loop.sh", "physical_lines": 667, "logical_lines": 573},
+    {"path": "scripts/orchestrator.py", "physical_lines": 641, "logical_lines": 544},
+    {"path": "scripts/check_job_progress_gate.py", "physical_lines": 574, "logical_lines": 488},
+    {"path": "scripts/supervisor_loop.sh", "physical_lines": 530, "logical_lines": 450},
+    {"path": "scripts/consensus_core.py", "physical_lines": 492, "logical_lines": 412}
+  ],
+  "oversized_functions": [
+    {"path": "scripts/workflow_gui.py", "name": "modulator_terminal_chat", "lines": 204, "branch_proxy": 27},
+    {"path": "scripts/create_commit_doc.py", "name": "main", "lines": 151, "branch_proxy": 18},
+    {"path": "scripts/workflow_gui.py", "name": "supervisor_chat", "lines": 144, "branch_proxy": 16},
+    {"path": "scripts/workflow_gui.py", "name": "write_human_review", "lines": 124, "branch_proxy": 25},
+    {"path": "scripts/update_job_status.py", "name": "main", "lines": 119, "branch_proxy": 22},
+    {"path": "scripts/consensus_core.py", "name": "synthesize", "lines": 118, "branch_proxy": 23},
+    {"path": "scripts/orchestrator.py", "name": "run_consensus", "lines": 116, "branch_proxy": 25},
+    {"path": "scripts/workflow_gui.py", "name": "activity_state", "lines": 111, "branch_proxy": 48},
+    {"path": "scripts/check_attempt_consistency.py", "name": "main", "lines": 101, "branch_proxy": 31},
+    {"path": "scripts/workflow_gui.py", "name": "do_POST", "lines": 101, "branch_proxy": 28}
+  ],
+  "compatibility_paths": [
+    "bin/aiflow",
+    "scripts/aiflow.py",
+    "scripts/worker_loop.sh",
+    "scripts/supervisor_loop.sh",
+    "scripts/modulator_loop.sh",
+    "scripts/workflow_gui.py",
+    "install.sh"
+  ],
+  "known_architecture_violations": [
+    "generic scripts carry project-specific BBHK headers",
+    "worker loop embeds oneAPI/SYCL/site behavior and an absolute user path",
+    "legacy resolvers trust inherited AIFLOW_PROJECT_ROOT",
+    "Codex wrapper defaults to danger-full-access and approval never",
+    "worker/test timeouts can be unbounded",
+    "supervisor/reviewer consensus defaults enabled",
+    "primary role and panel wrapper defaults are cursor-agent"
+  ],
+  "policy": "oversized baselines are frozen immediately; migration must extract coherent ownership and leave thin shims"
+}
