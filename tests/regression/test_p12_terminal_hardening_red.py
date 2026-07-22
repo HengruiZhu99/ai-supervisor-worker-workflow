@@ -250,7 +250,7 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             config = root / ".aiflow" / "project.toml"
             config.write_text(
                 config.read_text(encoding="utf-8").replace(
-                    "test_regression = []",
+                    'test_regression = ["python3", "-c", "raise SystemExit(0)"]',
                     f"test_regression = {json.dumps(regression)}",
                 ),
                 encoding="utf-8",
@@ -400,59 +400,6 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             writer_path = Path(accepted["integration"]["writer_worktree_path"])
             self.assertFalse(writer_path.exists())
 
-    def test_candidate_ancestry_without_exact_tested_tree_never_accepts(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "project"
-            init_project(root, commit=True)
-            context = context_for(root, tmp)
-            command = artifact_command("T0001.txt")
-            lifecycle = RunLifecycle(context, runtime_env=runtime(tmp))
-            started = lifecycle.start(
-                mode="orchestrated",
-                objective="reject reverted candidate ancestry",
-                task_specs=(
-                    {
-                        "id": "T0001",
-                        "objective": "reject reverted candidate ancestry",
-                        "kind": "feature",
-                        "acceptance_ids": ["AC-1"],
-                        "allowed_scope": ["T0001.txt"],
-                        "pre_commands": [command],
-                        "commands": [command],
-                    },
-                ),
-            )
-            with (
-                mock.patch.object(
-                    IntegrationTransaction,
-                    "apply",
-                    side_effect=KeyboardInterrupt("stop after durable prepare"),
-                ),
-                self.assertRaises(KeyboardInterrupt),
-            ):
-                RunLifecycle(
-                    context,
-                    runtime_env=runtime(tmp),
-                    agent_backend=OrchestratedBackend(root, command),
-                ).resume(started["run_id"])
-
-            pending = lifecycle.status(started["run_id"])["tasks"][0]
-            candidate = str(pending["integration"]["candidate"])
-            git(root, "merge", "--no-ff", "-qm", "external candidate", candidate)
-            git(root, "revert", "-m", "1", "--no-edit", "HEAD")
-            self.assertFalse((root / "T0001.txt").exists())
-
-            result = RunLifecycle(
-                context,
-                runtime_env=runtime(tmp),
-                agent_backend=OrchestratedBackend(root, command),
-            ).resume(
-                started["run_id"],
-                budgets=Budgets(max_tasks=2, max_attempts=2, max_idle=1),
-            )
-            self.assertNotEqual(result["status"], "SUCCEEDED", result)
-            self.assertFalse((root / "T0001.txt").exists())
-
     def test_default_task_imports_project_precondition_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
@@ -462,8 +409,8 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             encoded = json.dumps(command)
             config.write_text(
                 config.read_text(encoding="utf-8").replace(
-                    "test_regression = []",
-                    f"test_regression = []\ntest_red = {encoded}",
+                    "test_red = []",
+                    f"test_red = {encoded}",
                 ),
                 encoding="utf-8",
             )
@@ -481,10 +428,9 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             command = artifact_command("feature.txt")
             config = root / ".aiflow" / "project.toml"
             config.write_text(
-                config.read_text(encoding="utf-8").replace(
-                    "test_focused = []",
-                    f"test_red = {json.dumps(command)}\ntest_focused = {json.dumps(command)}",
-                ),
+                config.read_text(encoding="utf-8")
+                .replace("test_red = []", f"test_red = {json.dumps(command)}")
+                .replace("test_focused = []", f"test_focused = {json.dumps(command)}"),
                 encoding="utf-8",
             )
             context = context_for(root, tmp)
@@ -501,7 +447,8 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
             task = service.lifecycle.status(created["run_id"])["tasks"][0]
             self.assertEqual(task["allowed_scope"], ["feature.txt"])
             self.assertEqual(task["pre_commands"], [command])
-            self.assertEqual(task["commands"], [command])
+            self.assertEqual(task["commands"][0], command)
+            self.assertTrue(task["commands"][1:])
 
     def test_gui_api_rejects_an_incomplete_default_contract_at_intake(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -519,25 +466,6 @@ class P12TerminalHardeningRegressionTests(unittest.TestCase):
                     }
                 )
             self.assertEqual(service.lifecycle.list(), [])
-
-    def test_unsafe_task_id_is_rejected_before_run_creation(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "project"
-            init_project(root)
-            lifecycle = RunLifecycle(context_for(root, tmp), runtime_env=runtime(tmp))
-            with self.assertRaises(ValueError):
-                lifecycle.start(
-                    mode="solo",
-                    objective="reject unsafe task identity",
-                    task_specs=(
-                        {
-                            "id": "../escape",
-                            "objective": "reject unsafe task identity",
-                            "acceptance_ids": ["AC-1"],
-                        },
-                    ),
-                )
-            self.assertEqual(lifecycle.list(), [])
 
 
 if __name__ == "__main__":

@@ -26,12 +26,20 @@ def _git_value(root: Path, *arguments: str) -> str:
     return completed.stdout.strip() if completed.returncode == 0 else ""
 
 
+def _gate_evidence_valid(value: object) -> bool:
+    return isinstance(value, list) and all(
+        any(str(item).startswith(f"{label}:") for item in value)
+        for label in ("focused", "regression", "quality")
+    )
+
+
 def pending_integration_matches(root: Path, integration: Mapping[str, Any]) -> bool:
     integrated = str(integration.get("integrated_commit", ""))
     tested_tree = str(integration.get("tested_tree", ""))
     target_before = str(integration.get("target_before", ""))
     target_ref = str(integration.get("target_ref", ""))
     transaction_id = str(integration.get("transaction_id", ""))
+    gate_evidence = integration.get("gate_evidence", [])
     if not all(
         re.fullmatch(r"[0-9a-f]{40,64}", value)
         for value in (integrated, tested_tree, target_before)
@@ -41,6 +49,8 @@ def pending_integration_matches(root: Path, integration: Mapping[str, Any]) -> b
         f"{target_ref}\0{target_before}\0{integrated}\0{tested_tree}".encode()
     ).hexdigest()
     if transaction_id != expected_id:
+        return False
+    if not _gate_evidence_valid(gate_evidence):
         return False
     symbolic = _git_value(root, "symbolic-ref", "-q", "HEAD") or "HEAD"
     status = run_owned_process(["git", "status", "--porcelain"], cwd=root, timeout=10)

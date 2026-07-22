@@ -52,3 +52,8 @@ test("stale EventSource errors cannot close a replacement connection", () => {
   assert.match(source, /const connection = new EventSource/);
   assert.match(source, /connection\.close\(\)/);
 });
+
+test("snapshot reconciliation continues while SSE appears connected", () => {
+  assert.match(source, /setInterval\(\(\) => void refresh\(\), 5000\)/);
+  assert.match(source, /clearInterval\(reconciliation\)/);
+});

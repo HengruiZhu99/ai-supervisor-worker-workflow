@@ -36,7 +36,8 @@ def init_project(path: Path, *, commit: bool = False) -> None:
     config.parent.mkdir()
     config.write_text(
         'schema_version = 1\nproject_id = "execution-audit"\nname = "fixture"\n'
-        'profile = "solo"\n[execution]\nallow_parallel_mutating_runs = false\n',
+        'profile = "solo"\n[commands]\ntest_regression = ["python3", "-c", '
+        '"raise SystemExit(0)"]\n[execution]\nallow_parallel_mutating_runs = false\n',
         encoding="utf-8",
     )
     if commit:
@@ -324,8 +325,13 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
                 runtime_env=environment,
                 agent_backend=backend.run,
                 agent_id="fake-worker",
-            ).resume(started["run_id"], budgets=Budgets(max_tasks=3, max_idle=1))
-            self.assertEqual(resumed["status"], "SUCCEEDED")
+            ).resume(
+                started["run_id"],
+                budgets=Budgets(max_tasks=3, max_attempts=1, max_idle=1),
+            )
+            self.assertEqual(
+                resumed["status"], "SUCCEEDED", lifecycle.status(started["run_id"])
+            )
             self.assertEqual(resumed["acceptance_ids_closed"], ["AC-1", "AC-2"])
             self.assertEqual(backend.calls, 8)
 

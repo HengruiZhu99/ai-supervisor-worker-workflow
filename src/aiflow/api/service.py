@@ -121,6 +121,9 @@ class ApiService:
             acceptance_ids=tuple(
                 str(value) for value in payload.get("acceptance_ids", [])
             ),
+            allowed_scope=tuple(
+                str(value) for value in payload.get("allowed_scope", [])
+            ),
         )
         self._publish_run("start", result)
         return result

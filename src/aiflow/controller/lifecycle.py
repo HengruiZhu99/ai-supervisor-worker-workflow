@@ -9,7 +9,12 @@ from typing import Any, Mapping
 from aiflow.controller.execution import AgentBackend, TaskExecutionEngine
 from aiflow.controller.runner import Budgets, ControllerRunner
 from aiflow.controller.watchdog import DeterministicWatchdog
-from aiflow.controller.tasks import project_commands, project_pre_commands, task_records
+from aiflow.controller.tasks import (
+    bounded_default_contract,
+    project_commands,
+    project_pre_commands,
+    task_records,
+)
 from aiflow.identity.context import ProjectContext
 from aiflow.identity.context import validate_thread_identity
 from aiflow.state.atomic import atomic_write_json, read_json, signed, verify_signed
@@ -18,6 +23,9 @@ from aiflow.state.handoff import create_handoff
 from aiflow.state.leases import maintain_controller
 from aiflow.state.locks import owned_directory_lock
 from aiflow.state.ownership import owner_is_live, owner_is_local
+
+
+DefaultContract = tuple[list[list[str]], list[list[str]], list[str]] | None
 
 
 class RunLifecycle:
@@ -107,6 +115,53 @@ class RunLifecycle:
             worktree_id=self.context.worktree_id,
         )
 
+    def _prepare_tasks(
+        self,
+        task_specs: tuple[Mapping[str, Any], ...],
+        task_kind: str,
+        allowed_scope: tuple[str, ...] | None,
+    ) -> tuple[list[dict[str, Any]], DefaultContract]:
+        if task_specs:
+            return task_records(task_specs, worktree_id=self.context.worktree_id), None
+        contract = (
+            bounded_default_contract(self.context.root, task_kind, allowed_scope)
+            if allowed_scope is not None
+            else None
+        )
+        return [], contract
+
+    def _default_tasks(
+        self,
+        store: RunStore,
+        objective: str,
+        acceptance_ids: tuple[str, ...],
+        task_kind: str,
+        allowed_scope: tuple[str, ...] | None,
+        contract: DefaultContract,
+    ) -> list[dict[str, Any]]:
+        configured = contract or (
+            project_pre_commands(self.context.root, task_kind),
+            project_commands(self.context.root),
+            list(allowed_scope or ()),
+        )
+        pre_commands, commands, scopes = configured
+        return task_records(
+            (
+                {
+                    "id": "T0001",
+                    "objective": objective.strip(),
+                    "kind": task_kind,
+                    "acceptance_ids": list(
+                        acceptance_ids or (f"AC-RUN-{store.run_id[:8].upper()}",)
+                    ),
+                    "pre_commands": pre_commands,
+                    "allowed_scope": scopes,
+                },
+            ),
+            worktree_id=self.context.worktree_id,
+            defaults=commands,
+        )
+
     def start(
         self,
         *,
@@ -115,6 +170,7 @@ class RunLifecycle:
         acceptance_ids: tuple[str, ...] = (),
         task_kind: str = "feature",
         task_specs: tuple[Mapping[str, Any], ...] = (),
+        allowed_scope: tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
         if mode not in {"solo", "orchestrated"}:
             raise ValueError(f"unknown run mode: {mode}")
@@ -122,29 +178,19 @@ class RunLifecycle:
             raise ValueError("run objective is required")
         if mode == "solo" and len(task_specs) > 1:
             raise ValueError("Solo mode accepts exactly one bounded task")
-        if task_specs:
-            tasks = task_records(task_specs, worktree_id=self.context.worktree_id)
-        else:
-            tasks = []
+        tasks, default_contract = self._prepare_tasks(
+            task_specs, task_kind, allowed_scope
+        )
         store = RunStore.create(self.context, mode=mode, runtime_env=self.runtime_env)
         controller = self._claim(store)
         if not tasks:
-            tasks = task_records(
-                (
-                    {
-                        "id": "T0001",
-                        "objective": objective.strip(),
-                        "kind": task_kind,
-                        "acceptance_ids": list(
-                            acceptance_ids or (f"AC-RUN-{store.run_id[:8].upper()}",)
-                        ),
-                        "pre_commands": project_pre_commands(
-                            self.context.root, task_kind
-                        ),
-                    },
-                ),
-                worktree_id=self.context.worktree_id,
-                defaults=project_commands(self.context.root),
+            tasks = self._default_tasks(
+                store,
+                objective,
+                acceptance_ids,
+                task_kind,
+                allowed_scope,
+                default_contract,
             )
         try:
             run = store.transition(

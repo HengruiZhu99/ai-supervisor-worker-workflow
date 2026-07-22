@@ -28,6 +28,7 @@ export function App() {
     let source: EventSource | null = null;
     let lastEventId = "";
     let stopped = false;
+    const reconciliation = window.setInterval(() => void refresh(), 5000);
     function scheduleFallbackPoll() {
       if (stopped) return;
       timer = window.setTimeout(
@@ -75,6 +76,7 @@ export function App() {
       stopped = true;
       source?.close();
       window.clearTimeout(timer);
+      window.clearInterval(reconciliation);
     };
   }, [refresh]);
   return (

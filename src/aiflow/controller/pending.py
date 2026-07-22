@@ -8,13 +8,13 @@ from aiflow.controller.attestation import AttestationError
 from aiflow.integration.recovery import pending_integration_matches
 
 
-def update_prepared_record(record: dict[str, Any], details: Mapping[str, str]) -> None:
+def update_prepared_record(record: dict[str, Any], details: Mapping[str, Any]) -> None:
     integration = record.get("integration")
     if record.get("status") != "INTEGRATION_PENDING" or not isinstance(
         integration, dict
     ):
         raise AttestationError("integration preparation has no durable intent")
-    integration.update({str(key): str(value) for key, value in details.items()})
+    integration.update({str(key): value for key, value in details.items()})
 
 
 def mark_reconciliation_required(record: dict[str, Any], exc: Exception) -> None:

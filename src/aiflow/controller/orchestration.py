@@ -12,9 +12,10 @@ from aiflow.controller.attestation import (
     changed_paths,
     workspace_snapshot,
 )
+from aiflow.controller.gates import integration_gates
 from aiflow.controller.worktrees import TaskWorktree
 from aiflow.domain.evidence import validate_cycle
-from aiflow.integration.transaction import GateCommands, IntegrationTransaction
+from aiflow.integration.transaction import IntegrationTransaction
 from aiflow.security.process import run_owned_process
 from aiflow.state.store import RunStore
 
@@ -22,7 +23,7 @@ from aiflow.state.store import RunStore
 InvokeAgent = Callable[[dict[str, Any]], Mapping[str, Any]]
 ValidateAcceptance = Callable[[Mapping[str, Any]], None]
 StageIntegration = Callable[[Mapping[str, Any], str, str], Mapping[str, str]]
-RecordPrepared = Callable[[Mapping[str, str]], None]
+RecordPrepared = Callable[[Mapping[str, Any]], None]
 
 
 class OrchestratedTaskRunner:
@@ -202,15 +203,13 @@ class OrchestratedTaskRunner:
         base_sha: str,
         target_before: str,
     ) -> None:
-        commands = tuple(tuple(command) for command in record.get("commands", []))
-
-        def record_prepared(details: Mapping[str, str]) -> None:
+        def record_prepared(details: Mapping[str, Any]) -> None:
             result["orchestration"].update(details)
             self.record_prepared(details)
 
         integrated = IntegrationTransaction(
             self.store.context.root,
-            gates=GateCommands(focused=commands),
+            gates=integration_gates(self.store.context.root, record, base_sha),
             on_prepared=record_prepared,
         ).apply(
             candidate,
@@ -226,6 +225,7 @@ class OrchestratedTaskRunner:
                 "target_after": integrated.target_after,
                 "tested_tree": integrated.tested_tree,
                 "target_tree": integrated.target_tree,
+                "gate_evidence": list(integrated.evidence),
             }
         )
 

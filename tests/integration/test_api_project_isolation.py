@@ -33,6 +33,22 @@ def project(path: Path) -> None:
     )
     subprocess.run(["git", "config", "user.name", "AIFLOW Test"], cwd=path, check=True)
     ProjectInstaller(path, distribution_root=ROOT).init("solo")
+    config = path / ".aiflow" / "project.toml"
+    command = [
+        sys.executable,
+        "-c",
+        "from pathlib import Path; assert Path('src/result.txt').is_file()",
+    ]
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        .replace("test_red = []", f"test_red = {json.dumps(command)}")
+        .replace("test_focused = []", f"test_focused = {json.dumps(command)}")
+        .replace(
+            "test_regression = []",
+            f"test_regression = {json.dumps([sys.executable, '-c', 'raise SystemExit(0)'])}",
+        ),
+        encoding="utf-8",
+    )
     subprocess.run(["git", "add", "."], cwd=path, check=True)
     subprocess.run(["git", "commit", "-qm", "fixture"], cwd=path, check=True)
 
@@ -132,6 +148,7 @@ class ApiProjectIsolationTests(unittest.TestCase):
                             payload={
                                 "mode": "solo",
                                 "objective": "fix norm",
+                                "allowed_scope": ["src/result.txt"],
                                 "checkout_id": first_snapshot["project"]["checkout_id"],
                             },
                         )
@@ -155,6 +172,7 @@ class ApiProjectIsolationTests(unittest.TestCase):
                             payload={
                                 "mode": "solo",
                                 "objective": "wrong project",
+                                "allowed_scope": ["src/result.txt"],
                                 "checkout_id": second_snapshot["project"][
                                     "checkout_id"
                                 ],
@@ -181,6 +199,7 @@ class ApiProjectIsolationTests(unittest.TestCase):
                         payload={
                             "mode": "solo",
                             "objective": "bounded task",
+                            "allowed_scope": ["src/result.txt"],
                             "checkout_id": snapshot["project"]["checkout_id"],
                         },
                     )

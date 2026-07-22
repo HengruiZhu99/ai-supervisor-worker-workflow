@@ -29,6 +29,25 @@ def run_cli(project: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def configure_commands(project: Path) -> None:
+    command = [
+        sys.executable,
+        "-c",
+        "from pathlib import Path; assert Path('result.txt').is_file()",
+    ]
+    config = project / ".aiflow" / "project.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        .replace("test_red = []", f"test_red = {json.dumps(command)}")
+        .replace("test_focused = []", f"test_focused = {json.dumps(command)}")
+        .replace(
+            "test_regression = []",
+            f"test_regression = {json.dumps([sys.executable, '-c', 'raise SystemExit(0)'])}",
+        ),
+        encoding="utf-8",
+    )
+
+
 class LifecycleCliTests(unittest.TestCase):
     def test_project_and_skill_commands_emit_json_and_verify(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -91,6 +110,7 @@ class LifecycleCliTests(unittest.TestCase):
             self.assertEqual(
                 run_cli(project, "project", "init", "--profile", "solo").returncode, 0
             )
+            configure_commands(project)
             started = run_cli(
                 project,
                 "run",
@@ -101,6 +121,8 @@ class LifecycleCliTests(unittest.TestCase):
                 "bounded change",
                 "--acceptance-id",
                 "AC-1",
+                "--allowed-scope",
+                "result.txt",
             )
             self.assertEqual(started.returncode, 0, started.stderr)
             run_id = json.loads(started.stdout)["run_id"]
@@ -132,6 +154,7 @@ class LifecycleCliTests(unittest.TestCase):
                 ).returncode,
                 0,
             )
+            configure_commands(project)
             base = (
                 "run",
                 "start",
@@ -141,6 +164,8 @@ class LifecycleCliTests(unittest.TestCase):
                 "goal",
                 "--acceptance-id",
                 "AC-1",
+                "--allowed-scope",
+                "result.txt",
             )
             missing = run_cli(project, *base)
             self.assertNotEqual(missing.returncode, 0)

@@ -13,6 +13,8 @@ from aiflow.controller.attestation import (
     changed_paths,
     workspace_snapshot,
 )
+from aiflow.controller.capsules import execution_capsule
+from aiflow.controller.gates import integration_gates
 from aiflow.controller.orchestration import OrchestratedTaskRunner
 from aiflow.controller.pending import (
     mark_reconciliation_required,
@@ -25,7 +27,7 @@ from aiflow.controller.watchdog import DeterministicWatchdog
 from aiflow.domain.evidence import validate_cycle
 from aiflow.controller.tasks import record_to_task
 from aiflow.domain.progress import ProgressBlocked, ProgressPolicy, Task
-from aiflow.integration.transaction import GateCommands, IntegrationTransaction
+from aiflow.integration.transaction import IntegrationTransaction
 from aiflow.integration.recovery import (
     git_head,
     pending_integration_matches,
@@ -123,6 +125,7 @@ class TaskExecutionEngine:
         ]
         record["attempts"] = int(record.get("attempts", 0)) + 1
         record["failure_signature"] = signature
+        record["failure_detail"] = f"{type(exc).__name__}: {exc}"[:1000]
         blocked = record["attempts"] >= self.budgets.max_attempts
         record["status"] = "BLOCKED" if blocked else "READY"
         record.pop("integration", None)
@@ -152,21 +155,6 @@ class TaskExecutionEngine:
             return self.policy.next_task()
         except Exception:
             return None
-
-    def _capsule(
-        self, task: Task, record: Mapping[str, Any], attempt: int
-    ) -> dict[str, Any]:
-        return {
-            "action": "execute_task",
-            **self.store.context.identity_fields(self.store.run_id),
-            "task_id": task.id,
-            "mode": self.mode,
-            "task": dict(record),
-            "attempt": attempt,
-            "agent_id": self.agent_id,
-            "agent_role": "implementation-worker",
-            "working_directory": str(self.workspace),
-        }
 
     def _invoke_result(
         self,
@@ -269,7 +257,7 @@ class TaskExecutionEngine:
         return {"target_before": target_before, "inbox": relative}
 
     def _record_prepared_integration(
-        self, task_id: str, details: Mapping[str, str]
+        self, task_id: str, details: Mapping[str, Any]
     ) -> None:
         record = self._record(task_id)
         update_prepared_record(record, details)
@@ -346,6 +334,7 @@ class TaskExecutionEngine:
     ) -> str:
         record["attempts"] = attempt
         record["failure_signature"] = ""
+        record.pop("failure_detail", None)
         record["status"] = "ACCEPTED"
         if result and isinstance(result.get("orchestration"), Mapping):
             record["integration"] = dict(result["orchestration"])
@@ -380,18 +369,19 @@ class TaskExecutionEngine:
             candidate = str(integration.get("candidate", ""))
             target_before = str(integration.get("target_before", ""))
             if git_head(self.workspace) == target_before:
-                commands = tuple(
-                    tuple(command) for command in record.get("commands", [])
-                )
 
-                def record_prepared(details: Mapping[str, str]) -> None:
+                def record_prepared(details: Mapping[str, Any]) -> None:
                     integration.update(details)
                     result.setdefault("orchestration", {}).update(details)
                     self._record_prepared_integration(str(record["id"]), details)
 
                 applied = IntegrationTransaction(
                     self.workspace,
-                    gates=GateCommands(focused=commands),
+                    gates=integration_gates(
+                        self.workspace,
+                        record,
+                        str(integration.get("base_sha", "")),
+                    ),
                     on_prepared=record_prepared,
                 ).apply(
                     candidate,
@@ -409,6 +399,7 @@ class TaskExecutionEngine:
                         "target_after": applied.target_after,
                         "tested_tree": applied.tested_tree,
                         "target_tree": applied.target_tree,
+                        "gate_evidence": list(applied.evidence),
                     }
                 )
             elif not pending_integration_matches(self.workspace, integration):
@@ -446,7 +437,15 @@ class TaskExecutionEngine:
             record["status"] = "BLOCKED"
             return "blocked"
         attempt = int(record.get("attempts", 0)) + 1
-        capsule = self._capsule(task, record, attempt)
+        capsule = execution_capsule(
+            self.store,
+            task,
+            record,
+            attempt=attempt,
+            mode=self.mode,
+            agent_id=self.agent_id,
+            workspace=self.workspace,
+        )
         try:
             self._prepared_inbox = None
             identities = self.store.context.identity_fields(self.store.run_id)

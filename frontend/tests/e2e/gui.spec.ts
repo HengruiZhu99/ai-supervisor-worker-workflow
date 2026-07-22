@@ -43,6 +43,7 @@ test("run mutation, stale revision, SSE reset, and responsive layout", async ({
 }) => {
   const objective = `Playwright bounded task ${Date.now()}`;
   await page.getByLabel("Describe the outcome").fill(objective);
+  await page.getByLabel("Allowed paths").fill("src/result.txt");
   await page.getByRole("button", { name: /Create paused run/ }).click();
   const runCard = page.locator("article").filter({
     has: page.getByRole("heading", { name: objective }),
@@ -105,6 +106,7 @@ test("two disposable project servers remain isolated", async ({
     (await fetch("/api/v1/snapshot")).json(),
   );
   await page.getByLabel("Describe the outcome").fill(objective);
+  await page.getByLabel("Allowed paths").fill("src/result.txt");
   await page.getByRole("button", { name: /Create paused run/ }).click();
   await expect(page.getByRole("heading", { name: objective })).toBeVisible();
 
@@ -133,6 +135,7 @@ test("browser receives a reset snapshot after the project server restarts", asyn
 }) => {
   const objective = `Restart cursor seed ${Date.now()}`;
   await page.getByLabel("Describe the outcome").fill(objective);
+  await page.getByLabel("Allowed paths").fill("src/result.txt");
   await page.getByRole("button", { name: /Create paused run/ }).click();
   await expect(page.getByRole("heading", { name: objective })).toBeVisible();
   const priorCursor = Number(

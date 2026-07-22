@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any, Mapping, Sequence
 
 from aiflow.domain.progress import ProgressPolicy, Task, ValueClass
@@ -45,21 +46,49 @@ def _command_arrays(value: object) -> list[list[str]]:
 
 
 def project_commands(root: Path) -> list[list[str]]:
-    commands = _project_command_table(root)
     result: list[list[str]] = []
     for name in ("build", "test_focused", "test_regression"):
-        result.extend(_command_arrays(commands.get(name, [])))
+        result.extend(project_command_group(root, name))
     return result
 
 
 def project_pre_commands(root: Path, kind: str) -> list[list[str]]:
-    commands = _project_command_table(root)
     key = (
         "test_focused"
         if kind in {"refactor", "performance", "portability"}
         else "test_red"
     )
-    return _command_arrays(commands.get(key, []))
+    return project_command_group(root, key)
+
+
+def project_command_group(root: Path, name: str) -> list[list[str]]:
+    return _command_arrays(_project_command_table(root).get(name, []))
+
+
+def bounded_default_contract(
+    root: Path, kind: str, allowed_scope: Sequence[str]
+) -> tuple[list[list[str]], list[list[str]], list[str]]:
+    scopes = _safe_scopes(allowed_scope)
+    if not scopes:
+        raise ValueError("a default run requires at least one explicit allowed scope")
+    pre_commands = project_pre_commands(root, kind)
+    if not pre_commands:
+        key = (
+            "test_focused"
+            if kind in {"refactor", "performance", "portability"}
+            else "test_red"
+        )
+        raise ValueError(f"project command {key} is required before run creation")
+    commands = project_commands(root)
+    if not commands:
+        raise ValueError(
+            "at least one build, test_focused, or test_regression command is required"
+        )
+    if not project_command_group(root, "test_regression"):
+        raise ValueError(
+            "project command test_regression is required before run creation"
+        )
+    return pre_commands, commands, scopes
 
 
 def _project_command_table(root: Path) -> Mapping[str, Any]:
@@ -80,6 +109,22 @@ def _safe_task_id(spec: Mapping[str, Any], index: int) -> str:
     if not SAFE_ID.fullmatch(task_id):
         raise ValueError(f"unsafe task ID: {task_id!r}")
     return task_id
+
+
+def _safe_scopes(values: Sequence[object]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        rendered = str(value).replace("\\", "/")
+        path = PurePosixPath(rendered)
+        if (
+            not rendered
+            or path.is_absolute()
+            or "." in path.parts
+            or ".." in path.parts
+        ):
+            raise ValueError(f"unsafe allowed scope: {value!r}")
+        result.append(path.as_posix())
+    return result
 
 
 def task_records(
@@ -110,7 +155,7 @@ def task_records(
             "acceptance_ids": [str(value) for value in spec.get("acceptance_ids", [])],
             "dependencies": [str(value) for value in spec.get("dependencies", [])],
             "unblocks_task_id": str(spec.get("unblocks_task_id", "")),
-            "allowed_scope": [str(value) for value in spec.get("allowed_scope", [])],
+            "allowed_scope": _safe_scopes(spec.get("allowed_scope", [])),
             "worktree": worktree_id,
             "pre_commands": [
                 [str(part) for part in command]

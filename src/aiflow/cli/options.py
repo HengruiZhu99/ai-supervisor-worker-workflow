@@ -32,6 +32,42 @@ def add_budgets(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-agent-calls", type=int, default=50)
 
 
+def add_run_start_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--mode", choices=("solo", "orchestrated"), default="solo")
+    parser.add_argument("--objective", required=True)
+    parser.add_argument("--acceptance-id", action="append", default=[])
+    parser.add_argument(
+        "--allowed-scope",
+        action="append",
+        default=[],
+        help="bounded repository-relative path for a default task (repeatable)",
+    )
+    parser.add_argument(
+        "--task-file",
+        default="",
+        help="JSON executable task contract (one Solo task or up to 100 orchestrated tasks)",
+    )
+    parser.add_argument(
+        "--task-kind",
+        choices=(
+            "feature",
+            "bug",
+            "bugfix",
+            "refactor",
+            "test",
+            "numerical",
+            "performance",
+            "portability",
+        ),
+        default="feature",
+    )
+    parser.add_argument(
+        "--parent-sandbox",
+        choices=("read-only", "workspace-write", "danger-full-access"),
+        default="",
+    )
+
+
 def add_handoff_actions(actions: argparse._SubParsersAction) -> None:
     for name in ("pause", "handoff"):
         action = actions.add_parser(name)

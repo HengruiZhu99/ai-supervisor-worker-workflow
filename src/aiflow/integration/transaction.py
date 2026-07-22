@@ -8,14 +8,14 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 from aiflow.security.process import run_owned_process
 
 
 Command = tuple[str, ...]
 Runner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
-PreparedCallback = Callable[[Mapping[str, str]], None]
+PreparedCallback = Callable[[Mapping[str, Any]], None]
 
 
 @dataclass(frozen=True)
@@ -188,6 +188,7 @@ class IntegrationTransaction:
         captured: str,
         integrated: str,
         tested_tree: str,
+        evidence: list[str],
     ) -> None:
         details = {
             "transaction_id": hashlib.sha256(
@@ -197,6 +198,7 @@ class IntegrationTransaction:
             "tested_tree": tested_tree,
             "target_ref": target_ref,
             "target_before": captured,
+            "gate_evidence": list(evidence),
         }
         if self.on_prepared:
             self.on_prepared(details)
@@ -209,6 +211,7 @@ class IntegrationTransaction:
         captured: str,
         target_ref: str,
         tested_tree: str,
+        evidence: list[str],
     ) -> str:
         del base_sha
         parents = ["-p", captured]
@@ -238,6 +241,7 @@ class IntegrationTransaction:
             captured=captured,
             integrated=integrated,
             tested_tree=tested_tree,
+            evidence=evidence,
         )
         if not self._target_matches(target_ref, captured):
             return self._target_drift_reason(target_ref)
@@ -327,7 +331,13 @@ class IntegrationTransaction:
     ) -> IntegrationResult:
         try:
             failure = self._apply_target(
-                candidate, method, base_sha, captured, target_ref, tested_tree
+                candidate,
+                method,
+                base_sha,
+                captured,
+                target_ref,
+                tested_tree,
+                evidence,
             )
             if failure:
                 return self._result(

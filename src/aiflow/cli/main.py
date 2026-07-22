@@ -25,6 +25,7 @@ from aiflow.cli.options import (
     add_budgets,
     add_handoff_actions,
     add_quality_commands,
+    add_run_start_options,
     load_task_specs,
 )
 
@@ -159,6 +160,7 @@ def run_command(args: argparse.Namespace) -> int:
             acceptance_ids=tuple(args.acceptance_id),
             task_kind=args.task_kind,
             task_specs=load_task_specs(args.task_file),
+            allowed_scope=tuple(args.allowed_scope) if not args.task_file else None,
         )
     elif args.run_action == "list":
         result = lifecycle.list()
@@ -291,33 +293,7 @@ def _add_run_commands(commands: argparse._SubParsersAction) -> None:
     runs = commands.add_parser("run", help="create and control durable project runs")
     actions = runs.add_subparsers(dest="run_action", required=True)
     start = actions.add_parser("start")
-    start.add_argument("--mode", choices=("solo", "orchestrated"), default="solo")
-    start.add_argument("--objective", required=True)
-    start.add_argument("--acceptance-id", action="append", default=[])
-    start.add_argument(
-        "--task-file",
-        default="",
-        help="JSON executable task contract (one Solo task or up to 100 orchestrated tasks)",
-    )
-    start.add_argument(
-        "--task-kind",
-        choices=(
-            "feature",
-            "bug",
-            "bugfix",
-            "refactor",
-            "test",
-            "numerical",
-            "performance",
-            "portability",
-        ),
-        default="feature",
-    )
-    start.add_argument(
-        "--parent-sandbox",
-        choices=("read-only", "workspace-write", "danger-full-access"),
-        default="",
-    )
+    add_run_start_options(start)
     actions.add_parser("list")
     status = actions.add_parser("status")
     status.add_argument("--run-id", default="")

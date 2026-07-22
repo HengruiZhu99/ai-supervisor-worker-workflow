@@ -21,12 +21,17 @@ export function TaskForm({
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean);
+    const allowedScope = String(data.get("allowed_scope") ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
     setMessage("Creating a project-scoped run…");
     try {
       await post("/api/v1/runs", {
         objective: String(data.get("objective") ?? ""),
         mode,
         acceptance_ids: acceptance,
+        allowed_scope: allowedScope,
         checkout_id: snapshot.project.checkout_id,
         parent_sandbox: snapshot.parent_sandbox,
       });
@@ -50,6 +55,15 @@ export function TaskForm({
         required
         maxLength={4000}
         placeholder="Fix the vector norm and add a regression test…"
+      />
+      <label htmlFor="allowed-scope">
+        Allowed paths <span>(comma separated)</span>
+      </label>
+      <input
+        id="allowed-scope"
+        name="allowed_scope"
+        required
+        placeholder="src/vector_norm.cpp, tests/vector_norm_test.cpp"
       />
       <fieldset>
         <legend>Choose a working mode</legend>

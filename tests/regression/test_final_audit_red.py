@@ -39,8 +39,9 @@ def init_project(path: Path, *, commit: bool = False) -> None:
     self_config.parent.mkdir()
     self_config.write_text(
         'schema_version = 1\nproject_id = "final-audit"\nname = "fixture"\n'
-        'profile = "orchestrated"\n[commands]\nbuild = []\ntest_focused = []\n'
-        "test_regression = []\n[execution]\nallow_parallel_mutating_runs = false\n",
+        'profile = "orchestrated"\n[commands]\nbuild = []\ntest_red = []\n'
+        'test_focused = []\ntest_regression = ["python3", "-c", '
+        '"raise SystemExit(0)"]\n[execution]\nallow_parallel_mutating_runs = false\n',
         encoding="utf-8",
     )
     assert git(path, "init", "-q").returncode == 0
