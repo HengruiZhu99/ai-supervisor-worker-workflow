@@ -276,6 +276,8 @@ update_status() {
   local status_file="$1"
   shift
   local allow_state=()
+  local expected_revision
+  expected_revision="$(jq -r '.state_revision // 0' "$status_file")"
   local item
   for item in "$@"; do
     if [[ "$item" == state=* ]]; then
@@ -283,7 +285,8 @@ update_status() {
       break
     fi
   done
-  python3 scripts/update_job_status.py "${allow_state[@]}" "$status_file" "$@" >/dev/null
+  python3 scripts/update_job_status.py --expected-revision "$expected_revision" \
+    "${allow_state[@]}" "$status_file" "$@" >/dev/null
 }
 
 run_progress_gate() {

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiflow-workflow"
+version = "0.4.0.dev0"
+description = "Project-isolated evidence-first AI software workflow"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+gui = []
+hpc = []
+dev = []
+
+[project.scripts]
+aiflow = "aiflow.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

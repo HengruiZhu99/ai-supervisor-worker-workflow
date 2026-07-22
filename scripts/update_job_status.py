@@ -52,6 +52,12 @@ def load_status_fields(path: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--expected-revision",
+        required=True,
+        type=int,
+        help="required optimistic-concurrency revision for this mutation",
+    )
+    parser.add_argument(
         "--allow-state",
         action="store_true",
         help="allow explicit state=... updates; prefer transition_job.py for manual state changes",
@@ -102,6 +108,17 @@ def main() -> int:
         return 4
 
     old_state = str(data.get("state", ""))
+    try:
+        current_revision = int(data.get("state_revision", 0))
+    except (TypeError, ValueError):
+        print(f"invalid state_revision in {status_path}", file=sys.stderr)
+        return 4
+    if args.expected_revision != current_revision:
+        print(
+            f"stale revision {args.expected_revision}; current revision is {current_revision}",
+            file=sys.stderr,
+        )
+        return 5
 
     def validate_state_update(value: object) -> int:
         if not args.allow_state:
@@ -151,6 +168,7 @@ def main() -> int:
                 return state_validation
         data[key] = value
 
+    data["state_revision"] = current_revision + 1
     data["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     status_path.parent.mkdir(parents=True, exist_ok=True)

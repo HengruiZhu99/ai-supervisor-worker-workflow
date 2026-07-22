@@ -2,16 +2,17 @@
 
 ## Current checkpoint
 
-- Phase: `P2-P3`
-- State: `P1_ACCEPTED_LOCALLY`
+- Phase: `P4-P5`
+- State: `P2_P3_ACCEPTED_LOCALLY`
 - Branch: `codex/aiflow-v2-lightweight-multiproject`
 - Base: `e9311a932dc2d5bab57c2cfd7ed734b8e1ca5466`
-- Active acceptance target: modular package, identity/project isolation, environment
-  scrubbing, and revisioned single-writer state for `AC-ID-001` through `AC-ID-005` and
-  `AC-STATE-001` through `AC-STATE-003`
-- Acceptance IDs closed: `AC-PERM-001`, `AC-BACKEND-001`
-- Next action: add functional identity/state tests, implement the standard-library
-  package and canonical CLI, then make the state and project-isolation RED tests green.
+- Active acceptance target: project lifecycle, profile validation, progress policy, and
+  skill management for `AC-INSTALL-001`, `AC-SKILL-001`, and `AC-PROGRESS-001` through
+  `AC-PROGRESS-003`
+- Acceptance IDs closed: `AC-PERM-001`, `AC-BACKEND-001`, `AC-ID-001`, `AC-ID-002`,
+  `AC-ID-003`, `AC-ID-004`, `AC-STATE-001`
+- Next action: write functional lifecycle/progress/skill tests, import and adapt the
+  verified seed, then implement the canonical CLI surfaces.
 
 ## Immutable inputs
 
@@ -32,7 +33,7 @@ for narrow high-volume classification/routing. Deterministic style gates use no 
 
 - unchanged failing command repeats: 0
 - same normalized implementation failure: 0
-- consecutive accepted checkpoints without acceptance delta: 0 (P1 closed two IDs)
+- consecutive accepted checkpoints without acceptance delta: 0 (P2-P3 closed five IDs)
 - environment corrections: 0
 
 ## Safe resume

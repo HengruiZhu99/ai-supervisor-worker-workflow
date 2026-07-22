@@ -37,7 +37,7 @@ class UpdateJobStatusTests(unittest.TestCase):
     def test_non_state_update_still_works(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             status = self.write_status(Path(tmp))
-            result = self.run_status(str(status), "tests_passed=true")
+            result = self.run_status("--expected-revision", "0", str(status), "tests_passed=true")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             data = json.loads(status.read_text(encoding="utf-8"))
             self.assertTrue(data["tests_passed"])
@@ -46,7 +46,7 @@ class UpdateJobStatusTests(unittest.TestCase):
     def test_state_update_requires_allow_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             status = self.write_status(Path(tmp))
-            result = self.run_status(str(status), "state=running")
+            result = self.run_status("--expected-revision", "0", str(status), "state=running")
             self.assertEqual(result.returncode, 2)
             self.assertIn("refusing state update", result.stderr)
             data = json.loads(status.read_text(encoding="utf-8"))
@@ -55,7 +55,9 @@ class UpdateJobStatusTests(unittest.TestCase):
     def test_allow_state_updates_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             status = self.write_status(Path(tmp))
-            result = self.run_status("--allow-state", str(status), "state=running")
+            result = self.run_status(
+                "--expected-revision", "0", "--allow-state", str(status), "state=running"
+            )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             data = json.loads(status.read_text(encoding="utf-8"))
             self.assertEqual(data["state"], "running")
@@ -67,7 +69,9 @@ class UpdateJobStatusTests(unittest.TestCase):
                 json.dumps({"id": "J0001", "state": "accepted"}) + "\n",
                 encoding="utf-8",
             )
-            result = self.run_status("--allow-state", str(status), "state=review_failed")
+            result = self.run_status(
+                "--expected-revision", "0", "--allow-state", str(status), "state=review_failed"
+            )
             self.assertEqual(result.returncode, 3)
             self.assertIn("refusing to change terminal state", result.stderr)
             data = json.loads(status.read_text(encoding="utf-8"))
@@ -83,6 +87,8 @@ class UpdateJobStatusTests(unittest.TestCase):
             result = self.run_status(
                 "--allow-state",
                 "--allow-terminal-state-overwrite",
+                "--expected-revision",
+                "0",
                 str(status),
                 "state=review_failed",
             )
@@ -107,7 +113,9 @@ class UpdateJobStatusTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            result = self.run_status(str(status), "--merge-status-fields", str(fields))
+            result = self.run_status(
+                "--expected-revision", "0", "--merge-status-fields", str(fields), str(status)
+            )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             data = json.loads(status.read_text(encoding="utf-8"))
             self.assertEqual(data["progress_job_type"], "implementation")
