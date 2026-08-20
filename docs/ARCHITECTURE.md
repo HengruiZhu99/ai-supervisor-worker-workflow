@@ -56,3 +56,8 @@ canonical state directory. A mismatch at any layer fails closed.
 Core has no runtime dependency beyond Python 3.11+. React, TypeScript, esbuild, and
 Playwright are build/test dependencies only. No database, Node runtime, scheduler SDK,
 daemon, or live model is mandatory for tests.
+
+The `core` installation profile is also the minimal model-facing boundary. It vendors
+only the grilling, Solo TDD, autonomous, and handoff skills. Scientific, HPC, GUI,
+release-audit, and custom-agent presets remain explicit profile choices; they are not
+loaded merely because the durable engine supports them.

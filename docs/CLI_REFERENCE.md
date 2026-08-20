@@ -36,7 +36,7 @@ aiflow --project-root . hub --check --project .
 ## Project lifecycle
 
 ```text
-project init [--profile solo|science|hpc|orchestrated|full]
+project init [--profile core|solo|science|hpc|orchestrated|full]
 project status
 project verify
 project upgrade --profile PROFILE
@@ -44,8 +44,10 @@ project rollback TRANSACTION_ID
 project uninstall
 ```
 
-`init` defaults to `solo`. Vendor mode copies selected small skills. Link mode is reserved
-for immutable local versions and rejects a mutable source tree.
+`init` defaults to `solo`. Use `core` for the minimal two-lane DSH workflow: grilling,
+Solo TDD, autonomous execution, and handoff, without specialized skills or optional
+Codex agent presets. Vendor mode copies selected small skills. Link mode is reserved for
+immutable local versions and rejects a mutable source tree.
 
 ## Skills
 

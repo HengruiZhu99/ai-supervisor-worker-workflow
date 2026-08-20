@@ -21,9 +21,15 @@ def init_git(path: Path) -> None:
 
 class ProjectLifecycleTests(unittest.TestCase):
     def test_profile_graph_is_explicit_and_does_not_install_every_skill(self) -> None:
+        core = profile_skills("core")
         solo = profile_skills("solo")
         science = profile_skills("science")
         full = profile_skills("full")
+        self.assertEqual(
+            core,
+            ("grill-me-nr", "tdd-solo", "aiflow-autonomous", "handoff-nr"),
+        )
+        self.assertNotIn("scientific-code-review", core)
         self.assertEqual(solo[0], "tdd-solo")
         self.assertIn("scientific-code-review", science)
         self.assertNotIn("aiflow-autonomous", science)
@@ -94,7 +100,14 @@ class ProjectLifecycleTests(unittest.TestCase):
     def test_every_profile_installs_and_verifies_only_its_selected_skills(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
-            for profile in ("solo", "science", "hpc", "orchestrated", "full"):
+            for profile in (
+                "core",
+                "solo",
+                "science",
+                "hpc",
+                "orchestrated",
+                "full",
+            ):
                 project = base / profile
                 init_git(project)
                 installer = ProjectInstaller(project, distribution_root=ROOT)

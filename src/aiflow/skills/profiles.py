@@ -6,6 +6,7 @@ class ProfileError(ValueError):
 
 
 PROFILE_ADDITIONS: dict[str, tuple[str, ...]] = {
+    "core": ("grill-me-nr", "tdd-solo", "aiflow-autonomous", "handoff-nr"),
     "solo": ("tdd-solo", "systematic-debugging", "verification-before-completion"),
     "science": (
         "numerical-test-design",
@@ -19,11 +20,14 @@ PROFILE_ADDITIONS: dict[str, tuple[str, ...]] = {
     "full": ("experiment-sweep", "gui-ux-audit", "release-readiness"),
 }
 
+PROFILE_NAMES = tuple(PROFILE_ADDITIONS)
+
 
 def profile_skills(profile: str) -> tuple[str, ...]:
     if profile not in PROFILE_ADDITIONS:
         raise ProfileError(f"unknown project profile: {profile}")
     parents = {
+        "core": (),
         "solo": (),
         "science": ("solo",),
         "hpc": ("science",),

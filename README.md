@@ -54,8 +54,18 @@ bin/aiflow package build --distribution-root . --output-dir dist
 dist/aiflow-0.4.0.dev0.pyz --project-root /path/to/project project init --profile solo
 ```
 
-Profiles are cumulative: `solo`, `science`, `hpc`, `orchestrated`, and `full`. Project
-files and small skills are hash-locked; the runtime is not copied into the target.
+Use `--profile core` for the lightweight DSH integration. It installs only the four
+workflow skills needed for both lanes: `grill-me-nr`, `tdd-solo`,
+`aiflow-autonomous`, and `handoff-nr`. It does not install scientific/HPC extras or the
+nine optional Codex agent presets:
+
+```bash
+aiflow project init --profile core
+```
+
+The existing `solo`, `science`, `hpc`, `orchestrated`, and `full` profiles remain
+available for compatibility and specialization. Project files and selected skills are
+hash-locked; the runtime is not copied into the target.
 
 ## Solo TDD
 

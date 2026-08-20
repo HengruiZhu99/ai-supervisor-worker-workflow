@@ -16,16 +16,32 @@ from aiflow.skills.manager import SkillCollision, SkillManager, SkillValidationE
 from aiflow.skills.seed import SeedImportError, import_seed  # noqa: E402
 
 
-SEED = ROOT / "aiflow-v2-lightweight-multiproject-kit" / "nr-design-tdd-v0.2.0.zip"
-SEED_SHA = "195f2de8b4f164f276695ead06c875328b6b17d469c1df4cfefe5bf64a5cd705"
+SEED_SKILLS = ("grill-me-nr", "handoff-nr", "tdd-nr")
+
+
+def make_seed_archive(path: Path) -> str:
+    with zipfile.ZipFile(path, "w") as handle:
+        for name in SEED_SKILLS:
+            source = ROOT / ".agents" / "skills" / name
+            for item in sorted(source.rglob("*")):
+                if item.is_file():
+                    member = (
+                        Path("nr-design-tdd/skills") / name / item.relative_to(source)
+                    )
+                    handle.write(item, member.as_posix())
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class SkillManagementTests(unittest.TestCase):
     def test_authoritative_seed_imports_three_named_skills(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / ".agents" / "skills"
-            imported = import_seed(SEED, target, expected_sha256=SEED_SHA)
-            self.assertEqual(imported, ("grill-me-nr", "handoff-nr", "tdd-nr"))
+            root = Path(tmp)
+            archive = root / "seed.zip"
+            target = root / ".agents" / "skills"
+            imported = import_seed(
+                archive, target, expected_sha256=make_seed_archive(archive)
+            )
+            self.assertEqual(imported, SEED_SKILLS)
             self.assertTrue(
                 (target / "tdd-nr" / "references" / "GOAL_TEMPLATE.md").is_file()
             )

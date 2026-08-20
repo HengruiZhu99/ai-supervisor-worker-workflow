@@ -15,6 +15,7 @@ from aiflow.integration.transaction import GateCommands, IntegrationTransaction
 from aiflow.quality.checker import QualityChecker
 from aiflow.skills.installer import InstallError, ProjectInstaller
 from aiflow.skills.manager import SkillCollision, SkillManager, SkillValidationError
+from aiflow.skills.profiles import PROFILE_NAMES
 from aiflow.controller.lifecycle import RunLifecycle
 from aiflow.state.store import StateError
 from aiflow.state.handoff import verify_handoff
@@ -356,7 +357,7 @@ def parser() -> argparse.ArgumentParser:
     initialize = project_actions.add_parser("init")
     initialize.add_argument(
         "--profile",
-        choices=("solo", "science", "hpc", "orchestrated", "full"),
+        choices=PROFILE_NAMES,
         default="solo",
     )
     initialize.add_argument(
@@ -368,7 +369,7 @@ def parser() -> argparse.ArgumentParser:
     upgrade = project_actions.add_parser("upgrade")
     upgrade.add_argument(
         "--profile",
-        choices=("solo", "science", "hpc", "orchestrated", "full"),
+        choices=PROFILE_NAMES,
         required=True,
     )
     rollback = project_actions.add_parser("rollback")
